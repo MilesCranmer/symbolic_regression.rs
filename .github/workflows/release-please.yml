@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
 
     outputs:
-      created: ${{ steps.release.outputs.release_created }}
+      created: ${{ steps.release.outputs.releases_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
 
     steps:
