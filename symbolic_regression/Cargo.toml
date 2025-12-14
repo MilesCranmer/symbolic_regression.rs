@@ -1,0 +1,36 @@
+[package]
+name = "symbolic_regression"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Rust port of SymbolicRegression.jl."
+homepage = "https://github.com/MilesCranmer/symbolic_regression.rs"
+repository = "https://github.com/MilesCranmer/symbolic_regression.rs"
+readme = "README.md"
+documentation = "https://docs.rs/symbolic_regression"
+keywords = ["symbolic-regression", "genetic-programming", "evolutionary-algorithms"]
+categories = ["science", "mathematics", "algorithms"]
+include = [
+    "Cargo.toml",
+    "README.md",
+    "LICENSE*",
+    "src/**",
+    "tests/**",
+    "examples/**",
+    "benches/**",
+]
+
+[dependencies]
+dynamic_expressions = "0.1.0"
+num-traits = "0.2"
+rand = "0.8"
+rand_distr = "0.4"
+ndarray = "0.15"
+ndarray-rand = "0.14"
+indicatif = { version = "0.18", optional = true }
+console = { version = "0.16", optional = true }
+
+[features]
+default = ["progress"]
+progress = ["dep:indicatif", "dep:console"]
+[dev-dependencies]

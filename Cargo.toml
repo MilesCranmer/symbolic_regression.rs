@@ -1,0 +1,9 @@
+[workspace]
+resolver = "2"
+members = [
+    "dynamic_expressions",
+    "symbolic_regression",
+]
+
+[patch.crates-io]
+dynamic_expressions = { path = "dynamic_expressions" }

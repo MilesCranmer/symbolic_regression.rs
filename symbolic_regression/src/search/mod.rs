@@ -1,0 +1,405 @@
+pub(crate) mod migration;
+pub(crate) mod progress;
+pub(crate) mod regularized_evolution;
+pub(crate) mod single_iteration;
+pub(crate) mod warmup;
+
+use crate::adaptive_parsimony::RunningSearchStatistics;
+use crate::dataset::Dataset;
+use crate::hall_of_fame::HallOfFame;
+use crate::member::{Evaluator, MemberId, PopMember};
+use crate::mutate;
+use crate::options::Options;
+use crate::population::Population;
+use dynamic_expressions::operators::scalar::ScalarOpSet;
+use dynamic_expressions::strings::OpNames;
+use num_traits::Float;
+use progress::SearchProgress;
+use rand::rngs::StdRng;
+use rand::seq::SliceRandom;
+use rand::SeedableRng;
+
+pub struct SearchResult<T: Float, Ops, const D: usize> {
+    pub hall_of_fame: HallOfFame<T, Ops, D>,
+    pub best: PopMember<T, Ops, D>,
+}
+
+struct SearchCounters {
+    total_cycles: usize,
+    cycles_started: usize,
+    cycles_completed: usize,
+}
+
+impl SearchCounters {
+    fn cycles_remaining(&self) -> usize {
+        self.total_cycles.saturating_sub(self.cycles_completed)
+    }
+
+    fn cycles_remaining_start_for_next_dispatch(&mut self) -> usize {
+        let remaining = self.total_cycles.saturating_sub(self.cycles_started);
+        self.cycles_started += 1;
+        remaining
+    }
+
+    fn mark_completed(&mut self) -> usize {
+        self.cycles_completed += 1;
+        self.cycles_remaining()
+    }
+}
+
+struct SearchTask<T: Float, Ops, const D: usize> {
+    pop_idx: usize,
+    curmaxsize: usize,
+    stats: RunningSearchStatistics,
+    state: PopState<T, Ops, D>,
+}
+
+struct SearchTaskResult<T: Float, Ops, const D: usize> {
+    pop_idx: usize,
+    curmaxsize: usize,
+    evals: u64,
+    best_seen: HallOfFame<T, Ops, D>,
+    best_sub_pop: Vec<PopMember<T, Ops, D>>,
+    state: PopState<T, Ops, D>,
+}
+
+pub(crate) struct PopState<T: Float, Ops, const D: usize> {
+    pub(crate) pop: Population<T, Ops, D>,
+    pub(crate) evaluator: Evaluator<T, D>,
+    pub(crate) grad_ctx: dynamic_expressions::GradContext<T, D>,
+    pub(crate) rng: StdRng,
+    pub(crate) next_id: u64,
+    pub(crate) next_birth: u64,
+}
+
+struct SearchInit<T: Float, Ops, const D: usize> {
+    pops: Vec<Option<PopState<T, Ops, D>>>,
+    best_sub_pops: Vec<Vec<PopMember<T, Ops, D>>>,
+    best: PopMember<T, Ops, D>,
+    total_evals: u64,
+}
+
+struct EquationSearchState<'a, T: Float, Ops, const D: usize> {
+    dataset: &'a Dataset<T>,
+    options: &'a Options<T, D>,
+    n_workers: usize,
+    counters: SearchCounters,
+    stats: RunningSearchStatistics,
+    hall: HallOfFame<T, Ops, D>,
+    progress: SearchProgress,
+    init: SearchInit<T, Ops, D>,
+    order_rng: StdRng,
+}
+
+pub fn equation_search<T, Ops, const D: usize>(
+    dataset: &Dataset<T>,
+    options: &Options<T, D>,
+) -> SearchResult<T, Ops, D>
+where
+    T: Float
+        + num_traits::FromPrimitive
+        + num_traits::ToPrimitive
+        + std::fmt::Display
+        + Send
+        + Sync,
+    Ops: ScalarOpSet<T> + OpNames + Send + Sync,
+{
+    let counters = SearchCounters {
+        total_cycles: options.niterations * options.populations,
+        cycles_started: 0,
+        cycles_completed: 0,
+    };
+
+    let stats = RunningSearchStatistics::new(options.maxsize, 100_000);
+    let mut hall = HallOfFame::<T, Ops, D>::new(options.maxsize);
+
+    let mut progress = SearchProgress::new(options, counters.total_cycles);
+
+    let init = init_populations::<T, Ops, D>(dataset, options, &mut hall);
+    progress.set_initial_evals(init.total_evals);
+
+    let order_rng = StdRng::seed_from_u64(options.seed ^ 0x9e37_79b9_7f4a_7c15);
+
+    let n_workers = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .min(init.pops.len())
+        .max(1);
+
+    let mut state = EquationSearchState {
+        dataset,
+        options,
+        n_workers,
+        counters,
+        stats,
+        hall,
+        progress,
+        init,
+        order_rng,
+    };
+
+    std::thread::scope(|scope| run_scoped_search::<T, Ops, D>(scope, &mut state));
+    state.progress.finish();
+
+    SearchResult {
+        hall_of_fame: state.hall,
+        best: state.init.best,
+    }
+}
+
+fn run_scoped_search<'scope, 'env, T, Ops, const D: usize>(
+    scope: &'scope std::thread::Scope<'scope, 'env>,
+    state: &mut EquationSearchState<'env, T, Ops, D>,
+) where
+    T: Float
+        + num_traits::FromPrimitive
+        + num_traits::ToPrimitive
+        + std::fmt::Display
+        + Send
+        + Sync,
+    Ops: ScalarOpSet<T> + OpNames + Send + Sync + 'scope,
+{
+    let dataset = state.dataset;
+    let options = state.options;
+
+    let (result_tx, result_rx) = std::sync::mpsc::channel::<SearchTaskResult<T, Ops, D>>();
+    let mut task_txs: Vec<std::sync::mpsc::Sender<SearchTask<T, Ops, D>>> = Vec::new();
+
+    for _ in 0..state.n_workers {
+        let (task_tx, task_rx) = std::sync::mpsc::channel::<SearchTask<T, Ops, D>>();
+        task_txs.push(task_tx);
+        let result_tx = result_tx.clone();
+        scope.spawn(move || {
+            while let Ok(task) = task_rx.recv() {
+                let SearchTask {
+                    pop_idx,
+                    curmaxsize,
+                    stats,
+                    mut state,
+                } = task;
+
+                let mut ctx = single_iteration::IterationCtx::<T, Ops, D, _> {
+                    rng: &mut state.rng,
+                    dataset,
+                    curmaxsize,
+                    stats: &stats,
+                    options,
+                    evaluator: &mut state.evaluator,
+                    grad_ctx: &mut state.grad_ctx,
+                    next_id: &mut state.next_id,
+                    next_birth: &mut state.next_birth,
+                    _ops: core::marker::PhantomData,
+                };
+
+                let (evals1, best_seen) = single_iteration::s_r_cycle(&mut state.pop, &mut ctx);
+                let evals2 =
+                    single_iteration::optimize_and_simplify_population(&mut state.pop, &mut ctx);
+                let evals = (evals1.max(0.0) + evals2.max(0.0)) as u64;
+
+                let best_sub_pop = migration::best_sub_pop(&state.pop, options.topn);
+
+                let _ = result_tx.send(SearchTaskResult {
+                    pop_idx,
+                    curmaxsize,
+                    evals,
+                    best_seen,
+                    best_sub_pop,
+                    state,
+                });
+            }
+        });
+    }
+    drop(result_tx);
+
+    for _iter in 0..options.niterations {
+        let mut task_order: Vec<usize> = (0..state.init.pops.len()).collect();
+        task_order.shuffle(&mut state.order_rng);
+
+        let mut next_task = 0usize;
+        let mut in_flight = 0usize;
+        let mut worker_cursor = 0usize;
+
+        while next_task < task_order.len() || in_flight > 0 {
+            while in_flight < state.n_workers && next_task < task_order.len() {
+                let pop_idx = task_order[next_task];
+                next_task += 1;
+
+                let Some(st) = state.init.pops[pop_idx].take() else {
+                    continue;
+                };
+
+                let cycles_remaining_start =
+                    state.counters.cycles_remaining_start_for_next_dispatch();
+                let curmaxsize = warmup::get_cur_maxsize(
+                    options,
+                    state.counters.total_cycles,
+                    cycles_remaining_start,
+                );
+                let mut stats_snapshot = state.stats.clone();
+                stats_snapshot.normalize();
+
+                let task = SearchTask {
+                    pop_idx,
+                    curmaxsize,
+                    stats: stats_snapshot,
+                    state: st,
+                };
+
+                let tx = &task_txs[worker_cursor % state.n_workers];
+                worker_cursor += 1;
+                tx.send(task).expect("worker task channel closed");
+                in_flight += 1;
+            }
+
+            let res = result_rx
+                .recv()
+                .expect("worker result channel closed early");
+            in_flight -= 1;
+
+            state.init.total_evals = state.init.total_evals.saturating_add(res.evals);
+
+            let pop_idx = res.pop_idx;
+            let curmaxsize = res.curmaxsize;
+            state.init.best_sub_pops[pop_idx] = res.best_sub_pop;
+            state.init.pops[pop_idx] = Some(res.state);
+
+            let st = state.init.pops[pop_idx].as_mut().expect("pop exists");
+
+            state
+                .stats
+                .update_from_population(st.pop.members.iter().map(|m| m.complexity));
+            state.stats.move_window();
+
+            for m in res.best_seen.members() {
+                state.hall.consider(m, options, curmaxsize);
+            }
+            for m in &st.pop.members {
+                state.hall.consider(m, options, curmaxsize);
+                if m.loss < state.init.best.loss {
+                    state.init.best = m.clone();
+                }
+            }
+
+            if options.migration {
+                let mut candidates: Vec<PopMember<T, Ops, D>> = Vec::new();
+                for (i, v) in state.init.best_sub_pops.iter().enumerate() {
+                    if i != pop_idx {
+                        candidates.extend(v.iter().cloned());
+                    }
+                }
+                migration::migrate_into(
+                    &mut st.pop,
+                    &candidates,
+                    options.fraction_replaced,
+                    &mut st.rng,
+                    &mut st.next_id,
+                    &mut st.next_birth,
+                );
+            }
+
+            if options.hof_migration {
+                let dominating = state.hall.pareto_front();
+                migration::migrate_into(
+                    &mut st.pop,
+                    &dominating,
+                    options.fraction_replaced_hof,
+                    &mut st.rng,
+                    &mut st.next_id,
+                    &mut st.next_birth,
+                );
+            }
+
+            let cycles_remaining = state.counters.mark_completed();
+            state
+                .progress
+                .on_cycle_complete(&state.hall, state.init.total_evals, cycles_remaining);
+        }
+    }
+
+    drop(task_txs);
+}
+
+fn init_populations<T, Ops, const D: usize>(
+    dataset: &Dataset<T>,
+    options: &Options<T, D>,
+    hall: &mut HallOfFame<T, Ops, D>,
+) -> SearchInit<T, Ops, D>
+where
+    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive,
+    Ops: ScalarOpSet<T>,
+{
+    let mut total_evals: u64 = 0;
+    let mut pops: Vec<Option<PopState<T, Ops, D>>> = Vec::with_capacity(options.populations);
+
+    for pop_i in 0..options.populations {
+        let mut rng = StdRng::seed_from_u64(options.seed.wrapping_add(pop_i as u64));
+        let mut evaluator = Evaluator::<T, D>::new(dataset.n_rows);
+        let grad_ctx = dynamic_expressions::GradContext::<T, D>::new(dataset.n_rows);
+
+        let mut next_id = (pop_i as u64) << 32;
+        let mut next_birth = 0u64;
+
+        let nlength = 3usize.min(options.maxsize.max(1));
+        let mut members = Vec::with_capacity(options.population_size);
+        for _ in 0..options.population_size {
+            let expr = mutate::random_expr::<T, Ops, D, _>(
+                &mut rng,
+                &options.operators,
+                dataset.n_features,
+                nlength,
+                0.2,
+            );
+            let mut m = PopMember::from_expr(
+                MemberId(next_id),
+                None,
+                next_birth,
+                expr,
+                dataset.n_features,
+            );
+            next_id += 1;
+            next_birth += 1;
+            let _ = m.evaluate(dataset, options, &mut evaluator);
+            total_evals += 1;
+            hall.consider(&m, options, options.maxsize);
+            members.push(m);
+        }
+
+        pops.push(Some(PopState {
+            pop: Population::new(members),
+            evaluator,
+            grad_ctx,
+            rng,
+            next_id,
+            next_birth,
+        }));
+    }
+
+    let mut best = pops
+        .iter()
+        .flatten()
+        .next()
+        .expect("at least one population member exists")
+        .pop
+        .members[0]
+        .clone();
+    for st in pops.iter().flatten() {
+        for m in &st.pop.members {
+            if m.loss < best.loss {
+                best = m.clone();
+            }
+        }
+    }
+
+    let mut best_sub_pops: Vec<Vec<PopMember<T, Ops, D>>> = vec![Vec::new(); pops.len()];
+    for i in 0..pops.len() {
+        let st = pops[i].as_ref().expect("population exists");
+        best_sub_pops[i] = migration::best_sub_pop(&st.pop, options.topn);
+    }
+
+    SearchInit {
+        pops,
+        best_sub_pops,
+        best,
+        total_evals,
+    }
+}
