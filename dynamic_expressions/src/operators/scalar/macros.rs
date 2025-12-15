@@ -134,6 +134,7 @@ macro_rules! define_scalar_ops {
                 }
             }
         }
+
     };
 }
 
@@ -237,6 +238,34 @@ macro_rules! opset {
                     )*
                     _ => "unknown_op",
                 }
+            }
+        }
+
+        impl $Ops {
+            pub const REGISTRY: &'static [$crate::operators::registry::OpInfo] = &[
+                $(
+                    $(
+                        $crate::operators::registry::OpInfo {
+                            op: $crate::operators::scalar::OpId {
+                                arity: $arity as u8,
+                                id: $enum_name::$op_name as u16,
+                            },
+                            name: <$crate::operators::builtin::$op_name as $crate::operators::builtin::BuiltinOp<$t, $arity>>::NAME,
+                            display: <$crate::operators::builtin::$op_name as $crate::operators::builtin::BuiltinOp<$t, $arity>>::DISPLAY,
+                            infix: <$crate::operators::builtin::$op_name as $crate::operators::builtin::BuiltinOp<$t, $arity>>::INFIX,
+                            commutative: <$crate::operators::builtin::$op_name as $crate::operators::builtin::OpMeta<$arity>>::COMMUTATIVE,
+                            associative: <$crate::operators::builtin::$op_name as $crate::operators::builtin::OpMeta<$arity>>::ASSOCIATIVE,
+                            complexity: <$crate::operators::builtin::$op_name as $crate::operators::builtin::OpMeta<$arity>>::COMPLEXITY,
+                        },
+                    )*
+                )*
+            ];
+        }
+
+        impl $crate::operators::registry::OpRegistry for $Ops {
+            #[inline]
+            fn registry() -> &'static [$crate::operators::registry::OpInfo] {
+                Self::REGISTRY
             }
         }
     };
