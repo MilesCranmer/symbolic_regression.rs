@@ -105,7 +105,15 @@ pub(crate) fn bfgs_minimize(
         }
 
         let dx_dg = dot(&dx, &dg);
-        if dx_dg > 0.0 && dx_dg.is_finite() {
+        let curvature_eps = 1e-12;
+        if !(dx_dg.is_finite() && dx_dg > curvature_eps) {
+            inv_h.fill(0.0);
+            for i in 0..n {
+                inv_h[i * n + i] = 1.0;
+            }
+            continue;
+        }
+        if dx_dg > 0.0 {
             matvec(&mut u, &inv_h, &dg);
             let dg_u = dot(&dg, &u);
             if dg_u.is_finite() {
@@ -114,6 +122,14 @@ pub(crate) fn bfgs_minimize(
                 for i in 0..n {
                     for j in 0..n {
                         inv_h[i * n + j] += c1 * dx[i] * dx[j] - c2 * (u[i] * dx[j] + dx[i] * u[j]);
+                    }
+                }
+                // Keep symmetry; floating point drift can accumulate.
+                for i in 0..n {
+                    for j in (i + 1)..n {
+                        let a = 0.5 * (inv_h[i * n + j] + inv_h[j * n + i]);
+                        inv_h[i * n + j] = a;
+                        inv_h[j * n + i] = a;
                     }
                 }
             }
