@@ -1,6 +1,6 @@
 [package]
 name = "symbolic_regression"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 license = "Apache-2.0"
 description = "Rust port of SymbolicRegression.jl."
@@ -21,7 +21,7 @@ include = [
 ]
 
 [dependencies]
-dynamic_expressions = "0.2.0"
+dynamic_expressions = "0.3.0"
 num-traits = "0.2"
 rand = "0.9"
 rand_distr = "0.5"
