@@ -1,0 +1,31 @@
+[package]
+name = "sr_wasm"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+
+csv = "1"
+ndarray = "0.17"
+
+symbolic_regression = { path = "../../symbolic_regression", default-features = false }
+dynamic_expressions = { path = "../../dynamic_expressions", default-features = false }
+
+# Make `rand` work in the browser (via `getrandom`).
+getrandom = { version = "0.3", features = ["wasm_js"] }
+
+[features]
+default = ["panic-hook"]
+panic-hook = ["dep:console_error_panic_hook"]
+
+[dependencies.console_error_panic_hook]
+version = "0.1"
+optional = true

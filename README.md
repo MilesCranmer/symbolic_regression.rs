@@ -122,3 +122,25 @@ fn main() {
     */
 }
 ```
+
+## WASM
+
+This workspace includes a thin `wasm-bindgen` wrapper crate at `web/wasm/` and a minimal browser UI at `web/ui/` (Vite + WebWorker).
+
+```bash
+rustup target add wasm32-unknown-unknown
+
+# one-time
+cargo install wasm-pack
+
+# build the wasm package into the Vite app
+cd web/wasm
+wasm-pack build --target web --out-dir ../ui/src/pkg
+
+# run the dev server
+cd ../ui
+npm install
+npm run dev
+```
+
+See `web/ui/README.md` for details.
