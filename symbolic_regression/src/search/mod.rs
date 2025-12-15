@@ -485,12 +485,7 @@ fn run_scoped_search<'scope, 'env, T, Ops, const D: usize>(
                 } = task;
 
                 let res = execute_task::<T, Ops, D>(
-                    dataset,
-                    options,
-                    pop_idx,
-                    curmaxsize,
-                    stats,
-                    pop_state,
+                    dataset, options, pop_idx, curmaxsize, stats, pop_state,
                 );
                 let _ = result_tx.send(res);
             }
