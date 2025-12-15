@@ -386,7 +386,7 @@ mod imp {
 
         pub(crate) fn set_initial_evals(&mut self, _total_evals: u64) {}
 
-        pub(crate) fn on_cycle_complete<T, Ops, const D: usize>(
+        pub(crate) fn on_cycle_complete<T: Float, Ops, const D: usize>(
             &mut self,
             _hall: &HallOfFame<T, Ops, D>,
             _total_evals: u64,

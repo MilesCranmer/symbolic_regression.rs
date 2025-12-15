@@ -28,6 +28,7 @@ pub use operator_library::OperatorLibrary;
 pub use operators::Operators;
 pub use options::OutputStyle;
 pub use options::{MutationWeights, Options};
+pub use search::SearchEngine;
 pub use search::{equation_search, SearchResult};
 
 #[cfg(test)]

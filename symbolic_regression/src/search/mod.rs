@@ -47,6 +47,7 @@ impl SearchCounters {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 struct SearchTask<T: Float, Ops, const D: usize> {
     pop_idx: usize,
     curmaxsize: usize,
@@ -79,6 +80,7 @@ struct PopPools<T: Float, Ops, const D: usize> {
     total_evals: u64,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 struct EquationSearchState<'a, T: Float, Ops, const D: usize> {
     dataset: &'a Dataset<T>,
     options: &'a Options<T, D>,
@@ -92,6 +94,32 @@ struct EquationSearchState<'a, T: Float, Ops, const D: usize> {
 }
 
 pub fn equation_search<T, Ops, const D: usize>(
+    dataset: &Dataset<T>,
+    options: &Options<T, D>,
+) -> SearchResult<T, Ops, D>
+where
+    T: Float
+        + num_traits::FromPrimitive
+        + num_traits::ToPrimitive
+        + std::fmt::Display
+        + Send
+        + Sync,
+    Ops: ScalarOpSet<T> + OpNames + Send + Sync,
+{
+    #[cfg(target_arch = "wasm32")]
+    {
+        let engine = SearchEngine::<T, Ops, D>::new(dataset.clone(), options.clone());
+        return engine.run_to_completion();
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        return equation_search_parallel::<T, Ops, D>(dataset, options);
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn equation_search_parallel<T, Ops, const D: usize>(
     dataset: &Dataset<T>,
     options: &Options<T, D>,
 ) -> SearchResult<T, Ops, D>
@@ -147,6 +175,284 @@ where
     }
 }
 
+pub struct SearchEngine<T: Float, Ops, const D: usize> {
+    dataset: Dataset<T>,
+    options: Options<T, D>,
+    counters: SearchCounters,
+    stats: RunningSearchStatistics,
+    hall: HallOfFame<T, Ops, D>,
+    progress: SearchProgress,
+    pools: PopPools<T, Ops, D>,
+    order_rng: StdRng,
+    cur_iter: usize,
+    task_order: Vec<usize>,
+    next_task: usize,
+    progress_finished: bool,
+}
+
+impl<T, Ops, const D: usize> SearchEngine<T, Ops, D>
+where
+    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + std::fmt::Display,
+    Ops: ScalarOpSet<T> + OpNames,
+{
+    pub fn new(dataset: Dataset<T>, options: Options<T, D>) -> Self {
+        let counters = SearchCounters {
+            total_cycles: options.niterations * options.populations,
+            cycles_started: 0,
+            cycles_completed: 0,
+        };
+
+        let stats = RunningSearchStatistics::new(options.maxsize, 100_000);
+        let mut hall = HallOfFame::<T, Ops, D>::new(options.maxsize);
+
+        let mut progress = SearchProgress::new(&options, counters.total_cycles);
+
+        let pools = init_populations::<T, Ops, D>(&dataset, &options, &mut hall);
+        progress.set_initial_evals(pools.total_evals);
+
+        let order_rng = StdRng::seed_from_u64(options.seed ^ 0x9e37_79b9_7f4a_7c15);
+
+        Self {
+            dataset,
+            options,
+            counters,
+            stats,
+            hall,
+            progress,
+            pools,
+            order_rng,
+            cur_iter: 0,
+            task_order: Vec::new(),
+            next_task: 0,
+            progress_finished: false,
+        }
+    }
+
+    pub fn total_cycles(&self) -> usize {
+        self.counters.total_cycles
+    }
+
+    pub fn cycles_completed(&self) -> usize {
+        self.counters.cycles_completed
+    }
+
+    pub fn total_evals(&self) -> u64 {
+        self.pools.total_evals
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.counters.cycles_remaining() == 0
+    }
+
+    pub fn hall_of_fame(&self) -> &HallOfFame<T, Ops, D> {
+        &self.hall
+    }
+
+    pub fn best(&self) -> &PopMember<T, Ops, D> {
+        &self.pools.best
+    }
+
+    pub fn step(&mut self, n_cycles: usize) -> usize {
+        let mut completed = 0usize;
+        for _ in 0..n_cycles {
+            if !self.step_one_cycle() {
+                break;
+            }
+            completed += 1;
+        }
+        completed
+    }
+
+    pub fn run_to_completion(mut self) -> SearchResult<T, Ops, D> {
+        while self.step_one_cycle() {}
+        SearchResult {
+            hall_of_fame: self.hall,
+            best: self.pools.best,
+        }
+    }
+
+    fn step_one_cycle(&mut self) -> bool {
+        if self.is_finished() {
+            if !self.progress_finished {
+                self.progress.finish();
+                self.progress_finished = true;
+            }
+            return false;
+        }
+
+        self.prepare_iteration();
+        if self.is_finished() {
+            return false;
+        }
+
+        // `prepare_iteration` guarantees `next_task < task_order.len()` unless we're finished.
+        let pop_idx = self.task_order[self.next_task];
+        self.next_task += 1;
+
+        let Some(pop_state) = self.pools.pops[pop_idx].take() else {
+            return true;
+        };
+
+        let cycles_remaining_start = self.counters.cycles_remaining_start_for_next_dispatch();
+        let curmaxsize = warmup::get_cur_maxsize(
+            &self.options,
+            self.counters.total_cycles,
+            cycles_remaining_start,
+        );
+
+        let mut stats_snapshot = self.stats.clone();
+        stats_snapshot.normalize();
+
+        let res = execute_task::<T, Ops, D>(
+            &self.dataset,
+            &self.options,
+            pop_idx,
+            curmaxsize,
+            stats_snapshot,
+            pop_state,
+        );
+        apply_task_result::<T, Ops, D>(
+            &self.options,
+            &mut self.counters,
+            &mut self.stats,
+            &mut self.hall,
+            &mut self.progress,
+            &mut self.pools,
+            res,
+        );
+
+        if self.is_finished() && !self.progress_finished {
+            self.progress.finish();
+            self.progress_finished = true;
+        }
+
+        true
+    }
+
+    fn prepare_iteration(&mut self) {
+        if self.cur_iter >= self.options.niterations {
+            return;
+        }
+        if !self.task_order.is_empty() && self.next_task < self.task_order.len() {
+            return;
+        }
+
+        self.task_order = (0..self.pools.pops.len()).collect();
+        self.task_order.shuffle(&mut self.order_rng);
+        self.next_task = 0;
+        self.cur_iter += 1;
+    }
+}
+
+fn execute_task<T, Ops, const D: usize>(
+    dataset: &Dataset<T>,
+    options: &Options<T, D>,
+    pop_idx: usize,
+    curmaxsize: usize,
+    stats: RunningSearchStatistics,
+    mut pop_state: PopState<T, Ops, D>,
+) -> SearchTaskResult<T, Ops, D>
+where
+    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive,
+    Ops: ScalarOpSet<T>,
+{
+    let mut ctx = single_iteration::IterationCtx::<T, Ops, D, _> {
+        rng: &mut pop_state.rng,
+        dataset,
+        curmaxsize,
+        stats: &stats,
+        options,
+        evaluator: &mut pop_state.evaluator,
+        grad_ctx: &mut pop_state.grad_ctx,
+        next_id: &mut pop_state.next_id,
+        next_birth: &mut pop_state.next_birth,
+        _ops: core::marker::PhantomData,
+    };
+
+    let (evals1, best_seen) = single_iteration::s_r_cycle(&mut pop_state.pop, &mut ctx);
+    let evals2 = single_iteration::optimize_and_simplify_population(&mut pop_state.pop, &mut ctx);
+    let evals = (evals1.max(0.0) + evals2.max(0.0)) as u64;
+
+    let best_sub_pop = migration::best_sub_pop(&pop_state.pop, options.topn);
+
+    SearchTaskResult {
+        pop_idx,
+        curmaxsize,
+        evals,
+        best_seen,
+        best_sub_pop,
+        pop_state,
+    }
+}
+
+fn apply_task_result<T, Ops, const D: usize>(
+    options: &Options<T, D>,
+    counters: &mut SearchCounters,
+    stats: &mut RunningSearchStatistics,
+    hall: &mut HallOfFame<T, Ops, D>,
+    progress: &mut SearchProgress,
+    pools: &mut PopPools<T, Ops, D>,
+    res: SearchTaskResult<T, Ops, D>,
+) where
+    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + std::fmt::Display,
+    Ops: ScalarOpSet<T> + OpNames,
+{
+    pools.total_evals = pools.total_evals.saturating_add(res.evals);
+
+    let pop_idx = res.pop_idx;
+    let curmaxsize = res.curmaxsize;
+    pools.best_sub_pops[pop_idx] = res.best_sub_pop;
+    pools.pops[pop_idx] = Some(res.pop_state);
+
+    let st = pools.pops[pop_idx].as_mut().expect("pop exists");
+
+    stats.update_from_population(st.pop.members.iter().map(|m| m.complexity));
+    stats.move_window();
+
+    for m in res.best_seen.members() {
+        hall.consider(m, options, curmaxsize);
+    }
+    for m in &st.pop.members {
+        hall.consider(m, options, curmaxsize);
+        if m.loss < pools.best.loss {
+            pools.best = m.clone();
+        }
+    }
+
+    if options.migration {
+        let mut candidates: Vec<PopMember<T, Ops, D>> = Vec::new();
+        for (i, v) in pools.best_sub_pops.iter().enumerate() {
+            if i != pop_idx {
+                candidates.extend(v.iter().cloned());
+            }
+        }
+        migration::migrate_into(
+            &mut st.pop,
+            &candidates,
+            options.fraction_replaced,
+            &mut st.rng,
+            &mut st.next_id,
+            &mut st.next_birth,
+        );
+    }
+
+    if options.hof_migration {
+        let dominating = hall.pareto_front();
+        migration::migrate_into(
+            &mut st.pop,
+            &dominating,
+            options.fraction_replaced_hof,
+            &mut st.rng,
+            &mut st.next_id,
+            &mut st.next_birth,
+        );
+    }
+
+    let cycles_remaining = counters.mark_completed();
+    progress.on_cycle_complete(hall, pools.total_evals, cycles_remaining);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn run_scoped_search<'scope, 'env, T, Ops, const D: usize>(
     scope: &'scope std::thread::Scope<'scope, 'env>,
     state: &mut EquationSearchState<'env, T, Ops, D>,
@@ -175,39 +481,18 @@ fn run_scoped_search<'scope, 'env, T, Ops, const D: usize>(
                     pop_idx,
                     curmaxsize,
                     stats,
-                    mut pop_state,
+                    pop_state,
                 } = task;
 
-                let mut ctx = single_iteration::IterationCtx::<T, Ops, D, _> {
-                    rng: &mut pop_state.rng,
+                let res = execute_task::<T, Ops, D>(
                     dataset,
-                    curmaxsize,
-                    stats: &stats,
                     options,
-                    evaluator: &mut pop_state.evaluator,
-                    grad_ctx: &mut pop_state.grad_ctx,
-                    next_id: &mut pop_state.next_id,
-                    next_birth: &mut pop_state.next_birth,
-                    _ops: core::marker::PhantomData,
-                };
-
-                let (evals1, best_seen) = single_iteration::s_r_cycle(&mut pop_state.pop, &mut ctx);
-                let evals2 = single_iteration::optimize_and_simplify_population(
-                    &mut pop_state.pop,
-                    &mut ctx,
-                );
-                let evals = (evals1.max(0.0) + evals2.max(0.0)) as u64;
-
-                let best_sub_pop = migration::best_sub_pop(&pop_state.pop, options.topn);
-
-                let _ = result_tx.send(SearchTaskResult {
                     pop_idx,
                     curmaxsize,
-                    evals,
-                    best_seen,
-                    best_sub_pop,
+                    stats,
                     pop_state,
-                });
+                );
+                let _ = result_tx.send(res);
             }
         });
     }
@@ -257,65 +542,14 @@ fn run_scoped_search<'scope, 'env, T, Ops, const D: usize>(
                 .recv()
                 .expect("worker result channel closed early");
             in_flight -= 1;
-
-            state.pools.total_evals = state.pools.total_evals.saturating_add(res.evals);
-
-            let pop_idx = res.pop_idx;
-            let curmaxsize = res.curmaxsize;
-            state.pools.best_sub_pops[pop_idx] = res.best_sub_pop;
-            state.pools.pops[pop_idx] = Some(res.pop_state);
-
-            let st = state.pools.pops[pop_idx].as_mut().expect("pop exists");
-
-            state
-                .stats
-                .update_from_population(st.pop.members.iter().map(|m| m.complexity));
-            state.stats.move_window();
-
-            for m in res.best_seen.members() {
-                state.hall.consider(m, options, curmaxsize);
-            }
-            for m in &st.pop.members {
-                state.hall.consider(m, options, curmaxsize);
-                if m.loss < state.pools.best.loss {
-                    state.pools.best = m.clone();
-                }
-            }
-
-            if options.migration {
-                let mut candidates: Vec<PopMember<T, Ops, D>> = Vec::new();
-                for (i, v) in state.pools.best_sub_pops.iter().enumerate() {
-                    if i != pop_idx {
-                        candidates.extend(v.iter().cloned());
-                    }
-                }
-                migration::migrate_into(
-                    &mut st.pop,
-                    &candidates,
-                    options.fraction_replaced,
-                    &mut st.rng,
-                    &mut st.next_id,
-                    &mut st.next_birth,
-                );
-            }
-
-            if options.hof_migration {
-                let dominating = state.hall.pareto_front();
-                migration::migrate_into(
-                    &mut st.pop,
-                    &dominating,
-                    options.fraction_replaced_hof,
-                    &mut st.rng,
-                    &mut st.next_id,
-                    &mut st.next_birth,
-                );
-            }
-
-            let cycles_remaining = state.counters.mark_completed();
-            state.progress.on_cycle_complete(
-                &state.hall,
-                state.pools.total_evals,
-                cycles_remaining,
+            apply_task_result::<T, Ops, D>(
+                options,
+                &mut state.counters,
+                &mut state.stats,
+                &mut state.hall,
+                &mut state.progress,
+                &mut state.pools,
+                res,
             );
         }
     }
