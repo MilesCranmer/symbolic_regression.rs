@@ -51,7 +51,7 @@ struct SearchTask<T: Float, Ops, const D: usize> {
     pop_idx: usize,
     curmaxsize: usize,
     stats: RunningSearchStatistics,
-    state: PopState<T, Ops, D>,
+    pop_state: PopState<T, Ops, D>,
 }
 
 struct SearchTaskResult<T: Float, Ops, const D: usize> {
@@ -60,7 +60,7 @@ struct SearchTaskResult<T: Float, Ops, const D: usize> {
     evals: u64,
     best_seen: HallOfFame<T, Ops, D>,
     best_sub_pop: Vec<PopMember<T, Ops, D>>,
-    state: PopState<T, Ops, D>,
+    pop_state: PopState<T, Ops, D>,
 }
 
 pub(crate) struct PopState<T: Float, Ops, const D: usize> {
@@ -72,7 +72,7 @@ pub(crate) struct PopState<T: Float, Ops, const D: usize> {
     pub(crate) next_birth: u64,
 }
 
-struct SearchInit<T: Float, Ops, const D: usize> {
+struct PopPools<T: Float, Ops, const D: usize> {
     pops: Vec<Option<PopState<T, Ops, D>>>,
     best_sub_pops: Vec<Vec<PopMember<T, Ops, D>>>,
     best: PopMember<T, Ops, D>,
@@ -87,7 +87,7 @@ struct EquationSearchState<'a, T: Float, Ops, const D: usize> {
     stats: RunningSearchStatistics,
     hall: HallOfFame<T, Ops, D>,
     progress: SearchProgress,
-    init: SearchInit<T, Ops, D>,
+    pools: PopPools<T, Ops, D>,
     order_rng: StdRng,
 }
 
@@ -115,15 +115,15 @@ where
 
     let mut progress = SearchProgress::new(options, counters.total_cycles);
 
-    let init = init_populations::<T, Ops, D>(dataset, options, &mut hall);
-    progress.set_initial_evals(init.total_evals);
+    let pools = init_populations::<T, Ops, D>(dataset, options, &mut hall);
+    progress.set_initial_evals(pools.total_evals);
 
     let order_rng = StdRng::seed_from_u64(options.seed ^ 0x9e37_79b9_7f4a_7c15);
 
     let n_workers = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1)
-        .min(init.pops.len())
+        .min(pools.pops.len())
         .max(1);
 
     let mut state = EquationSearchState {
@@ -134,7 +134,7 @@ where
         stats,
         hall,
         progress,
-        init,
+        pools,
         order_rng,
     };
 
@@ -143,7 +143,7 @@ where
 
     SearchResult {
         hall_of_fame: state.hall,
-        best: state.init.best,
+        best: state.pools.best,
     }
 }
 
@@ -175,28 +175,30 @@ fn run_scoped_search<'scope, 'env, T, Ops, const D: usize>(
                     pop_idx,
                     curmaxsize,
                     stats,
-                    mut state,
+                    mut pop_state,
                 } = task;
 
                 let mut ctx = single_iteration::IterationCtx::<T, Ops, D, _> {
-                    rng: &mut state.rng,
+                    rng: &mut pop_state.rng,
                     dataset,
                     curmaxsize,
                     stats: &stats,
                     options,
-                    evaluator: &mut state.evaluator,
-                    grad_ctx: &mut state.grad_ctx,
-                    next_id: &mut state.next_id,
-                    next_birth: &mut state.next_birth,
+                    evaluator: &mut pop_state.evaluator,
+                    grad_ctx: &mut pop_state.grad_ctx,
+                    next_id: &mut pop_state.next_id,
+                    next_birth: &mut pop_state.next_birth,
                     _ops: core::marker::PhantomData,
                 };
 
-                let (evals1, best_seen) = single_iteration::s_r_cycle(&mut state.pop, &mut ctx);
-                let evals2 =
-                    single_iteration::optimize_and_simplify_population(&mut state.pop, &mut ctx);
+                let (evals1, best_seen) = single_iteration::s_r_cycle(&mut pop_state.pop, &mut ctx);
+                let evals2 = single_iteration::optimize_and_simplify_population(
+                    &mut pop_state.pop,
+                    &mut ctx,
+                );
                 let evals = (evals1.max(0.0) + evals2.max(0.0)) as u64;
 
-                let best_sub_pop = migration::best_sub_pop(&state.pop, options.topn);
+                let best_sub_pop = migration::best_sub_pop(&pop_state.pop, options.topn);
 
                 let _ = result_tx.send(SearchTaskResult {
                     pop_idx,
@@ -204,7 +206,7 @@ fn run_scoped_search<'scope, 'env, T, Ops, const D: usize>(
                     evals,
                     best_seen,
                     best_sub_pop,
-                    state,
+                    pop_state,
                 });
             }
         });
@@ -212,7 +214,7 @@ fn run_scoped_search<'scope, 'env, T, Ops, const D: usize>(
     drop(result_tx);
 
     for _iter in 0..options.niterations {
-        let mut task_order: Vec<usize> = (0..state.init.pops.len()).collect();
+        let mut task_order: Vec<usize> = (0..state.pools.pops.len()).collect();
         task_order.shuffle(&mut state.order_rng);
 
         let mut next_task = 0usize;
@@ -224,7 +226,7 @@ fn run_scoped_search<'scope, 'env, T, Ops, const D: usize>(
                 let pop_idx = task_order[next_task];
                 next_task += 1;
 
-                let Some(st) = state.init.pops[pop_idx].take() else {
+                let Some(st) = state.pools.pops[pop_idx].take() else {
                     continue;
                 };
 
@@ -242,7 +244,7 @@ fn run_scoped_search<'scope, 'env, T, Ops, const D: usize>(
                     pop_idx,
                     curmaxsize,
                     stats: stats_snapshot,
-                    state: st,
+                    pop_state: st,
                 };
 
                 let tx = &task_txs[worker_cursor % state.n_workers];
@@ -256,14 +258,14 @@ fn run_scoped_search<'scope, 'env, T, Ops, const D: usize>(
                 .expect("worker result channel closed early");
             in_flight -= 1;
 
-            state.init.total_evals = state.init.total_evals.saturating_add(res.evals);
+            state.pools.total_evals = state.pools.total_evals.saturating_add(res.evals);
 
             let pop_idx = res.pop_idx;
             let curmaxsize = res.curmaxsize;
-            state.init.best_sub_pops[pop_idx] = res.best_sub_pop;
-            state.init.pops[pop_idx] = Some(res.state);
+            state.pools.best_sub_pops[pop_idx] = res.best_sub_pop;
+            state.pools.pops[pop_idx] = Some(res.pop_state);
 
-            let st = state.init.pops[pop_idx].as_mut().expect("pop exists");
+            let st = state.pools.pops[pop_idx].as_mut().expect("pop exists");
 
             state
                 .stats
@@ -275,14 +277,14 @@ fn run_scoped_search<'scope, 'env, T, Ops, const D: usize>(
             }
             for m in &st.pop.members {
                 state.hall.consider(m, options, curmaxsize);
-                if m.loss < state.init.best.loss {
-                    state.init.best = m.clone();
+                if m.loss < state.pools.best.loss {
+                    state.pools.best = m.clone();
                 }
             }
 
             if options.migration {
                 let mut candidates: Vec<PopMember<T, Ops, D>> = Vec::new();
-                for (i, v) in state.init.best_sub_pops.iter().enumerate() {
+                for (i, v) in state.pools.best_sub_pops.iter().enumerate() {
                     if i != pop_idx {
                         candidates.extend(v.iter().cloned());
                     }
@@ -310,9 +312,11 @@ fn run_scoped_search<'scope, 'env, T, Ops, const D: usize>(
             }
 
             let cycles_remaining = state.counters.mark_completed();
-            state
-                .progress
-                .on_cycle_complete(&state.hall, state.init.total_evals, cycles_remaining);
+            state.progress.on_cycle_complete(
+                &state.hall,
+                state.pools.total_evals,
+                cycles_remaining,
+            );
         }
     }
 
@@ -323,7 +327,7 @@ fn init_populations<T, Ops, const D: usize>(
     dataset: &Dataset<T>,
     options: &Options<T, D>,
     hall: &mut HallOfFame<T, Ops, D>,
-) -> SearchInit<T, Ops, D>
+) -> PopPools<T, Ops, D>
 where
     T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive,
     Ops: ScalarOpSet<T>,
@@ -396,7 +400,7 @@ where
         best_sub_pops[i] = migration::best_sub_pop(&st.pop, options.topn);
     }
 
-    SearchInit {
+    PopPools {
         pops,
         best_sub_pops,
         best,
