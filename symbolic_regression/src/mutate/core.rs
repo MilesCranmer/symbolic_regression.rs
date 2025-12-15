@@ -2,8 +2,10 @@ use crate::adaptive_parsimony::RunningSearchStatistics;
 use crate::member::{Evaluator, MemberId, PopMember};
 use crate::operators::Operators;
 use crate::options::{MutationWeights, Options};
+pub use dynamic_expressions::compress_constants;
 use dynamic_expressions::expr::{PNode, PostfixExpr};
 use dynamic_expressions::operators::scalar::ScalarOpSet;
+use dynamic_expressions::operators::OpRegistry;
 use dynamic_expressions::tree::{count_depth, subtree_range, subtree_sizes};
 use num_traits::Float;
 use rand::distr::weighted::WeightedIndex;
@@ -49,31 +51,6 @@ pub struct CrossoverCtx<'a, T: Float, Ops, const D: usize, R: Rng> {
     pub next_id: &'a mut u64,
     pub next_birth: &'a mut u64,
     pub _ops: core::marker::PhantomData<Ops>,
-}
-
-pub fn compress_constants<T: Clone, Ops, const D: usize>(expr: &mut PostfixExpr<T, Ops, D>) {
-    let mut map: Vec<Option<u16>> = vec![None; expr.consts.len()];
-    let mut new_consts: Vec<T> = Vec::new();
-
-    for node in expr.nodes.iter_mut() {
-        if let PNode::Const { idx } = node {
-            let old = usize::from(*idx);
-            let new_idx = match map[old] {
-                Some(n) => n,
-                None => {
-                    let n: u16 = new_consts
-                        .len()
-                        .try_into()
-                        .unwrap_or_else(|_| panic!("too many constants to index in u16"));
-                    new_consts.push(expr.consts[old].clone());
-                    map[old] = Some(n);
-                    n
-                }
-            };
-            *idx = new_idx;
-        }
-    }
-    expr.consts = new_consts;
 }
 
 pub fn check_constraints<T: Float, Ops, const D: usize>(
@@ -669,7 +646,7 @@ pub fn next_generation<T: Float, Ops, const D: usize, R: Rng>(
     ctx: NextGenerationCtx<'_, T, Ops, D, R>,
 ) -> (PopMember<T, Ops, D>, bool, f64)
 where
-    Ops: ScalarOpSet<T>,
+    Ops: ScalarOpSet<T> + OpRegistry,
 {
     let NextGenerationCtx {
         rng,
@@ -694,6 +671,7 @@ where
 
     let max_attempts = 10;
     let mut successful = false;
+    let mut return_immediately = false;
     let mut tree = member.expr.clone();
 
     for _ in 0..max_attempts {
@@ -715,7 +693,14 @@ where
                 insert_random_op_in_place(rng, &mut tree, &options.operators, n_features, 0.2)
             }
             MutationChoice::DeleteNode => delete_random_op_in_place(rng, &mut tree),
-            MutationChoice::Simplify => true, // stub (no-op)
+            MutationChoice::Simplify => {
+                let _ = dynamic_expressions::simplify_in_place::<T, Ops, D>(
+                    &mut tree,
+                    &evaluator.eval_opts,
+                );
+                return_immediately = true;
+                true
+            }
             MutationChoice::Randomize => {
                 tree = random_expr::<T, Ops, D, _>(
                     rng,
@@ -751,6 +736,15 @@ where
         baby.loss = member.loss;
         baby.cost = member.cost;
         return (baby, false, 0.0);
+    }
+
+    if return_immediately {
+        let mut baby = PopMember::from_expr(id, Some(member.id), birth, tree, n_features);
+        baby.rebuild_plan(n_features);
+        baby.complexity = baby.expr.nodes.len();
+        baby.loss = member.loss;
+        baby.cost = member.cost;
+        return (baby, true, 0.0);
     }
 
     let mut baby = PopMember::from_expr(id, Some(member.id), birth, tree, n_features);

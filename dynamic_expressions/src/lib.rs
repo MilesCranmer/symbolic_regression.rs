@@ -6,6 +6,7 @@ pub mod eval;
 pub mod expr;
 pub mod math;
 pub mod operators;
+pub mod simplify;
 pub mod strings;
 pub mod tree;
 pub mod utils;
@@ -21,9 +22,10 @@ pub use crate::eval::{
 };
 pub use crate::expr::{Metadata, PNode, PostfixExpr, Src};
 pub use crate::expr::{PostfixExpression, PostfixExpressionMut};
+pub use crate::simplify::{combine_operators_in_place, simplify_in_place, simplify_tree_in_place};
 pub use crate::strings::{print_tree, string_tree, OpNames, StringTreeOptions};
 pub use crate::tree::{
     count_constant_nodes, count_depth, count_nodes, has_constants, has_operators, subtree_range,
     subtree_sizes, tree_mapreduce,
 };
-pub use crate::utils::{get_scalar_constants, set_scalar_constants, ConstRef};
+pub use crate::utils::{compress_constants, get_scalar_constants, set_scalar_constants, ConstRef};
