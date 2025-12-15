@@ -58,13 +58,12 @@ cargo run -p symbolic_regression --example example --release
 The code executed is:
 
 ```rust
-use symbolic_regression::prelude::*;
-
 use ndarray::{Array1, Array2, Axis};
 use ndarray_rand::RandomExt;
 use rand_distr::StandardNormal;
+use symbolic_regression::prelude::*;
 
-// Mirrors `example.jl` in the upstream `SymbolicRegression.jl` repository.
+// Mirrors `SymbolicRegression.jl/example.jl`.
 
 fn main() {
     let n_features = 5;
@@ -79,15 +78,16 @@ fn main() {
 
     let dataset = Dataset::new(x, y);
 
-    let operators = Operators::<2>::builder::<BuiltinOpsF32>()
-        .sr_default_binary()
-        .unary::<Cos>()
-        .unary::<Exp>()
-        .build();
+    let operators = Operators::<2>::from_names_by_arity::<BuiltinOpsF32>(
+        &["cos", "exp", "sin"],
+        &["+", "-", "*", "/"],
+        &[],
+    )
+    .expect("failed to build operators");
 
     let options = Options::<f32, 2> {
         operators,
-        niterations: 100,
+        niterations: 200,
         ..Default::default()
     };
 

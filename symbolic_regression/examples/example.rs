@@ -18,15 +18,16 @@ fn main() {
 
     let dataset = Dataset::new(x, y);
 
-    let operators = Operators::<2>::builder::<BuiltinOpsF32>()
-        .sr_default_binary()
-        .unary::<Cos>()
-        .unary::<Exp>()
-        .build();
+    let operators = Operators::<2>::from_names_by_arity::<BuiltinOpsF32>(
+        &["cos", "exp", "sin"],
+        &["+", "-", "*", "/"],
+        &[],
+    )
+    .expect("failed to build operators");
 
     let options = Options::<f32, 2> {
         operators,
-        niterations: 100,
+        niterations: 200,
         ..Default::default()
     };
 
