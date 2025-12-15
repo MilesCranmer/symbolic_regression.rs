@@ -1,4 +1,4 @@
-# sr_wasm
+# symbolic_regression_wasm
 
 WASM bindings for `symbolic_regression` intended for browser use.
 

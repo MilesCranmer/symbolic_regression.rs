@@ -1,6 +1,6 @@
 # sr_web
 
-Minimal browser UI for `sr_wasm` (runs symbolic regression in a WebWorker).
+Minimal browser UI for `symbolic_regression_wasm` (runs symbolic regression in a WebWorker).
 
 ## Prereqs
 

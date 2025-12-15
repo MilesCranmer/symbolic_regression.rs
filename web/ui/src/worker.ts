@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-import init, { WasmSearch } from "./pkg/sr_wasm.js";
+import init, { WasmSearch } from "./pkg/symbolic_regression_wasm.js";
 
 type InitMsg = {
   type: "init";
