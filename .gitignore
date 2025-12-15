@@ -7,3 +7,10 @@ Cargo.lock
 **/dist
 **/pkg
 **/.npm-cache
+**/playwright-report
+**/test-results
+**/.pw-browsers
+**/vite.log
+**/vite.pid
+.claude
+**/package-lock.json

@@ -135,19 +135,43 @@ export function ModelingTask(): React.ReactElement {
             <div className="subTitle">Search Budget</div>
             <label className="field">
               <div className="label">niterations</div>
-              <input type="number" min={1} value={options.niterations} onChange={(e) => setOptionsPatch({ niterations: Number(e.target.value) })} />
+              <input
+                type="number"
+                min={1}
+                value={options.niterations}
+                onChange={(e) => setOptionsPatch({ niterations: Number(e.target.value) })}
+                data-testid="opt-niterations"
+              />
             </label>
             <label className="field">
               <div className="label">populations</div>
-              <input type="number" min={1} value={options.populations} onChange={(e) => setOptionsPatch({ populations: Number(e.target.value) })} />
+              <input
+                type="number"
+                min={1}
+                value={options.populations}
+                onChange={(e) => setOptionsPatch({ populations: Number(e.target.value) })}
+                data-testid="opt-populations"
+              />
             </label>
             <label className="field">
               <div className="label">population_size</div>
-              <input type="number" min={1} value={options.population_size} onChange={(e) => setOptionsPatch({ population_size: Number(e.target.value) })} />
+              <input
+                type="number"
+                min={1}
+                value={options.population_size}
+                onChange={(e) => setOptionsPatch({ population_size: Number(e.target.value) })}
+                data-testid="opt-population-size"
+              />
             </label>
             <label className="field">
               <div className="label">ncycles_per_iteration</div>
-              <input type="number" min={1} value={options.ncycles_per_iteration} onChange={(e) => setOptionsPatch({ ncycles_per_iteration: Number(e.target.value) })} />
+              <input
+                type="number"
+                min={1}
+                value={options.ncycles_per_iteration}
+                onChange={(e) => setOptionsPatch({ ncycles_per_iteration: Number(e.target.value) })}
+                data-testid="opt-ncycles"
+              />
             </label>
           </section>
 

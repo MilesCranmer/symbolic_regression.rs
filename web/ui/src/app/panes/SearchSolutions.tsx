@@ -172,10 +172,14 @@ export function SearchSolutions(): React.ReactElement {
       <div className="card">
         <div className="cardTitle">Controls</div>
         <div className="row">
-          <button onClick={initSearch} disabled={!canInit}>
+          <button onClick={initSearch} disabled={!canInit} data-testid="search-init">
             Initialize
           </button>
-          <button onClick={start} disabled={runtime.status !== "ready" && runtime.status !== "paused"}>
+          <button
+            onClick={start}
+            disabled={runtime.status !== "ready" && runtime.status !== "paused"}
+            data-testid="search-start"
+          >
             Start / Resume
           </button>
           <button onClick={pause} disabled={runtime.status !== "running"}>
@@ -208,7 +212,9 @@ export function SearchSolutions(): React.ReactElement {
           </label>
 
           <div className="statusLine">
-            <span className="statusChip">{runtime.status}</span>
+            <span className="statusChip" data-testid="search-status">
+              {runtime.status}
+            </span>
             {runtime.error && <span className="errorText">{runtime.error}</span>}
             {snap && (
               <span className="muted">
@@ -223,7 +229,7 @@ export function SearchSolutions(): React.ReactElement {
         <div className="card gridCell">
           <div className="cardTitle">Current solutions</div>
           <div className="tableWrap">
-            <table className="table">
+            <table className="table" data-testid="solutions-table">
               <thead>
                 <tr>
                   <th>size</th>
@@ -236,7 +242,12 @@ export function SearchSolutions(): React.ReactElement {
                   .slice()
                   .reverse()
                   .map((m) => (
-                    <tr key={m.id} className={m.id === runtime.selectedId ? "selectedRow" : ""} onClick={() => selectEquation(m.id)}>
+                    <tr
+                      key={m.id}
+                      className={m.id === runtime.selectedId ? "selectedRow" : ""}
+                      onClick={() => selectEquation(m.id)}
+                      data-testid={`solution-row-${m.id}`}
+                    >
                       <td className="mono">{m.complexity}</td>
                       <td className="mono">{formatSci(m.loss)}</td>
                       <td className="mono">{m.equation}</td>
@@ -271,7 +282,9 @@ export function SearchSolutions(): React.ReactElement {
             <div className="muted">Select a solution to compute metrics.</div>
           ) : (
             <>
-              <div className="mono bigEq">{selectedSummary.equation}</div>
+              <div className="mono bigEq" data-testid="selected-equation">
+                {selectedSummary.equation}
+              </div>
               <div className="row">
                 <button onClick={() => copyToClipboard(selectedSummary.equation)}>Copy equation</button>
               </div>
@@ -279,7 +292,9 @@ export function SearchSolutions(): React.ReactElement {
               {evalTrain ? (
                 <MetricsTable m={evalTrain.metrics} />
               ) : (
-                <div className="muted">No metrics yet (click solution to evaluate).</div>
+                <div className="muted" data-testid="no-metrics">
+                  No metrics yet (click solution to evaluate).
+                </div>
               )}
               {split && split.val.length > 0 && (
                 <>

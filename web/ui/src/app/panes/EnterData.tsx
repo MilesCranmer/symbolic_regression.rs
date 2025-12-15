@@ -55,13 +55,14 @@ export function EnterData(): React.ReactElement {
             onChange={(e) => void onFile(e.target.files?.[0] ?? null)}
           />
           <button onClick={() => fileInputRef.current?.click()}>Choose file…</button>
-          <button onClick={parseCsv} disabled={!options}>
+          <button onClick={parseCsv} disabled={!options} data-testid="parse-preview">
             Parse / Preview
           </button>
         </div>
 
         <div
           className={dragActive ? "dropzone active" : "dropzone"}
+          data-testid="csv-dropzone"
           onDragEnter={(e) => {
             e.preventDefault();
             e.stopPropagation();

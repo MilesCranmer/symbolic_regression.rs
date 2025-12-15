@@ -1,0 +1,87 @@
+name: CI (Web UI)
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - web/**
+      - symbolic_regression/**
+      - dynamic_expressions/**
+      - .cargo/**
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/ci-web.yml
+  push:
+    branches:
+      - main
+    paths:
+      - web/**
+      - symbolic_regression/**
+      - dynamic_expressions/**
+      - .cargo/**
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/ci-web.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  web-ui:
+    name: web/ui (unit + e2e)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+
+      - name: Build WASM package for web/ui
+        run: |
+          cd web/wasm
+          wasm-pack build --mode no-install --no-opt --target web --out-dir ../ui/src/pkg
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/ui/package.json
+
+      - name: npm install
+        working-directory: web/ui
+        run: npm install
+
+      - name: UI unit tests (Vitest)
+        working-directory: web/ui
+        run: npm test
+
+      - name: UI build (Vite)
+        working-directory: web/ui
+        run: npm run build
+
+      - name: Install Playwright browsers
+        working-directory: web/ui
+        run: npx playwright install --with-deps chromium
+
+      - name: UI e2e (Playwright, real WASM)
+        working-directory: web/ui
+        run: npm run test:e2e
