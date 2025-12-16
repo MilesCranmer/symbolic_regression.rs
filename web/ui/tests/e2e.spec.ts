@@ -17,6 +17,10 @@ test("loads real WASM + worker and can run a tiny search", async ({ page }) => {
   // Shrink search budget so CI stays fast.
   await page.getByRole("button", { name: "Modeling Task" }).click();
   await page.getByTestId("opt-niterations").fill("1");
+
+  // Expand Advanced hyperparameters section to access fields inside.
+  await page.getByText("Advanced hyperparameters").click();
+
   await page.getByTestId("opt-populations").fill("1");
   await page.getByTestId("opt-population-size").fill("16");
   await page.getByTestId("opt-ncycles").fill("20");
