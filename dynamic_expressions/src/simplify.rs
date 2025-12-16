@@ -411,6 +411,22 @@ where
     T: Float,
     Ops: ScalarOpSet<T>,
 {
+    fn push_nonconst_frame<T: Float>(stack: &mut Vec<Frame<T>>, start: usize) {
+        stack.push(Frame {
+            start,
+            is_const: false,
+            const_value: T::zero(),
+        });
+    }
+
+    fn push_const_frame<T: Float>(stack: &mut Vec<Frame<T>>, start: usize, v: T) {
+        stack.push(Frame {
+            start,
+            is_const: true,
+            const_value: v,
+        });
+    }
+
     let mut out_nodes: Vec<PNode> = Vec::with_capacity(expr.nodes.len());
     let mut out_consts: Vec<T> = expr.consts.clone();
     let mut stack: Vec<Frame<T>> = Vec::new();
@@ -420,20 +436,12 @@ where
         match node {
             PNode::Var { .. } => {
                 out_nodes.push(node);
-                stack.push(Frame {
-                    start: out_nodes.len() - 1,
-                    is_const: false,
-                    const_value: T::zero(),
-                });
+                push_nonconst_frame(&mut stack, out_nodes.len() - 1);
             }
             PNode::Const { idx } => {
                 let v = out_consts[idx as usize];
                 out_nodes.push(node);
-                stack.push(Frame {
-                    start: out_nodes.len() - 1,
-                    is_const: true,
-                    const_value: v,
-                });
+                push_const_frame(&mut stack, out_nodes.len() - 1, v);
             }
             PNode::Op { arity, op } => {
                 let a = arity as usize;
@@ -442,11 +450,7 @@ where
                 if stack_len < a {
                     // Invalid postfix; keep as-is.
                     out_nodes.push(node);
-                    stack.push(Frame {
-                        start: out_nodes.len() - 1,
-                        is_const: false,
-                        const_value: T::zero(),
-                    });
+                    push_nonconst_frame(&mut stack, out_nodes.len() - 1);
                     continue;
                 }
 
@@ -456,11 +460,7 @@ where
 
                 if !all_const {
                     out_nodes.push(node);
-                    stack.push(Frame {
-                        start: child_start,
-                        is_const: false,
-                        const_value: T::zero(),
-                    });
+                    push_nonconst_frame(&mut stack, child_start);
                     continue;
                 }
 
@@ -471,11 +471,7 @@ where
 
                 if vals[..a].iter().any(|v| !v.is_finite()) {
                     out_nodes.push(node);
-                    stack.push(Frame {
-                        start: child_start,
-                        is_const: false,
-                        const_value: T::zero(),
-                    });
+                    push_nonconst_frame(&mut stack, child_start);
                     continue;
                 }
 
@@ -497,21 +493,13 @@ where
                 let folded = ok && out[0].is_finite();
                 if !folded {
                     out_nodes.push(node);
-                    stack.push(Frame {
-                        start: child_start,
-                        is_const: false,
-                        const_value: T::zero(),
-                    });
+                    push_nonconst_frame(&mut stack, child_start);
                     continue;
                 }
 
                 if out_consts.len() > u16::MAX as usize {
                     out_nodes.push(node);
-                    stack.push(Frame {
-                        start: child_start,
-                        is_const: false,
-                        const_value: T::zero(),
-                    });
+                    push_nonconst_frame(&mut stack, child_start);
                     continue;
                 }
 
@@ -519,11 +507,7 @@ where
                 let new_idx = out_consts.len() as u16;
                 out_consts.push(out[0]);
                 out_nodes.push(PNode::Const { idx: new_idx });
-                stack.push(Frame {
-                    start: child_start,
-                    is_const: true,
-                    const_value: out[0],
-                });
+                push_const_frame(&mut stack, child_start, out[0]);
                 changed = true;
             }
         }
