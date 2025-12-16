@@ -1,4 +1,3 @@
-//! 
 #[cfg(feature = "progress")]
 mod imp {
     use crate::hall_of_fame::HallOfFame;

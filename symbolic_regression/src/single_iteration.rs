@@ -1,4 +1,3 @@
-//! 
 use crate::adaptive_parsimony::RunningSearchStatistics;
 use crate::constant_optimization::{optimize_constants, OptimizeConstantsCtx};
 use crate::dataset::TaggedDataset;

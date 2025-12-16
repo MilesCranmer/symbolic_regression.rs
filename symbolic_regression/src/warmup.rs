@@ -1,4 +1,3 @@
-//! 
 use crate::options::Options;
 use num_traits::Float;
 
