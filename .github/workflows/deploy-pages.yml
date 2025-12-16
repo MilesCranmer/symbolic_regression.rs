@@ -1,0 +1,102 @@
+name: Deploy GitHub Pages (web/ui)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - web/**
+      - symbolic_regression/**
+      - dynamic_expressions/**
+      - .cargo/**
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/deploy-pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Compute Vite base path
+        id: base
+        shell: bash
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY%/*}"
+          repo="${GITHUB_REPOSITORY#*/}"
+          if [[ "$repo" == "${owner}.github.io" ]]; then
+            echo "base=/" >> "$GITHUB_OUTPUT"
+          else
+            echo "base=/$repo/" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+
+      - name: Build WASM package for web/ui
+        run: |
+          cd web/wasm
+          wasm-pack build --release --target web --out-dir ../ui/src/pkg
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/ui/package-lock.json
+
+      - name: npm ci
+        working-directory: web/ui
+        run: npm ci
+
+      - name: Build site (Vite)
+        working-directory: web/ui
+        env:
+          VITE_BASE: ${{ steps.base.outputs.base }}
+        run: npm run build
+
+      - name: Disable Jekyll
+        run: touch web/ui/dist/.nojekyll
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/ui/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

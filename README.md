@@ -14,12 +14,13 @@ Experimental Rust port of [`SymbolicRegression.jl`](https://github.com/MilesCran
 > This package is an **experiment**. The API is not stabilized, and you should expect large breaking changes in the syntax.
 > This library is not ready for use.
 
-This workspace contains two crates:
+This workspace contains three crates:
 
 | Crate | crates.io | CI |
 |---|---|---|
 | [`symbolic_regression`](./symbolic_regression) | [![crates.io](https://img.shields.io/crates/v/symbolic_regression)](https://crates.io/crates/symbolic_regression) | [![CI (symbolic_regression)](https://github.com/MilesCranmer/symbolic_regression.rs/actions/workflows/ci-symbolic-regression.yml/badge.svg?branch=main)](https://github.com/MilesCranmer/symbolic_regression.rs/actions/workflows/ci-symbolic-regression.yml) |
 | [`dynamic_expressions`](./dynamic_expressions) | [![crates.io](https://img.shields.io/crates/v/dynamic_expressions)](https://crates.io/crates/dynamic_expressions) | [![CI (dynamic_expressions)](https://github.com/MilesCranmer/symbolic_regression.rs/actions/workflows/ci-dynamic-expressions.yml/badge.svg?branch=main)](https://github.com/MilesCranmer/symbolic_regression.rs/actions/workflows/ci-dynamic-expressions.yml) |
+| [`symbolic_regression_wasm`](./web/wasm) | [![crates.io](https://img.shields.io/crates/v/symbolic_regression_wasm)](https://crates.io/crates/symbolic_regression_wasm) | [![CI (Web UI)](https://github.com/MilesCranmer/symbolic_regression.rs/actions/workflows/ci-web.yml/badge.svg?branch=main)](https://github.com/MilesCranmer/symbolic_regression.rs/actions/workflows/ci-web.yml) |
 
 ## CLI (`symreg`)
 
@@ -125,7 +126,7 @@ fn main() {
 
 ## WASM
 
-This workspace includes a thin `wasm-bindgen` wrapper crate at `web/wasm/` and a minimal browser UI at `web/ui/` (Vite + WebWorker).
+This workspace includes a thin `wasm-bindgen` wrapper crate (`symbolic_regression_wasm`) at `web/wasm/` and a minimal browser UI at `web/ui/` (Vite + WebWorker).
 
 ```bash
 rustup target add wasm32-unknown-unknown
