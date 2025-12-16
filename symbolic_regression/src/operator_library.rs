@@ -38,7 +38,7 @@ impl OperatorLibrary {
                             || op.id == <Ops as HasOp<Mul, 2>>::ID,
                         associative: op.id == <Ops as HasOp<Add, 2>>::ID
                             || op.id == <Ops as HasOp<Mul, 2>>::ID,
-                        complexity: 1.0,
+                        complexity: 1,
                     },
                 );
             }

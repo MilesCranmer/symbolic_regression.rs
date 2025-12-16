@@ -1,5 +1,7 @@
 pub(crate) mod adaptive_parsimony;
+pub(crate) mod complexity;
 pub(crate) mod constant_optimization;
+pub(crate) mod constraints;
 pub(crate) mod dataset;
 pub(crate) mod hall_of_fame;
 pub(crate) mod loss;
@@ -20,7 +22,8 @@ pub mod cli;
 #[cfg(feature = "bench")]
 pub mod bench;
 
-pub use dataset::Dataset;
+pub use complexity::compute_complexity;
+pub use constraints::{NestedConstraints, OpConstraints};
 pub use hall_of_fame::HallOfFame;
 pub use loss::{huber, mae, make_loss, mse, rmse, LossKind};
 pub use member::{MemberId, PopMember};
