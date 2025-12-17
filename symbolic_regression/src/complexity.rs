@@ -42,8 +42,8 @@ pub(crate) fn compute_custom_complexity_checked<T: Float, const D: usize>(
                 }
 
                 let mut sum: i32 = 0;
-                for j in 0..a {
-                    sum = sum.saturating_add(child[j]);
+                for c in child {
+                    sum = sum.saturating_add(c);
                 }
                 let base = options
                     .operator_complexity_overrides
