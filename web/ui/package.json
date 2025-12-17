@@ -4,10 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "gen:csv": "node scripts/generate_default_csv.mjs",
+    "dev": "npm run gen:csv && vite",
+    "build": "npm run gen:csv && vite build",
     "preview": "vite preview",
-    "test": "vitest run",
+    "test": "npm run gen:csv && vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test"
   },

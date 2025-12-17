@@ -110,6 +110,7 @@ function setCommonState(args: { xColumns: number[] }) {
       snapshot: snap,
       front: [{ id: "1", complexity: 3, loss: 0.1, cost: 0.1, equation: "x" }],
       selectedId: "1",
+      selectedComplexity: 3,
       evalByKey: {
         "1:train": {
           metrics: {
