@@ -89,7 +89,7 @@ fn custom_operator_is_used_in_end_to_end_search() {
     let dataset = Dataset::new(x, y);
 
     let operators = Operators::<1>::from_names::<CustomOps>(&["square"]).unwrap();
-    let options = Options::<f64, 1>{
+    let options = Options::<f64, 1> {
         seed: 0,
         niterations: 1,
         populations: 1,
