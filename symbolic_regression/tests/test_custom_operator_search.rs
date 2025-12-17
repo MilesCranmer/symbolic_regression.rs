@@ -88,18 +88,21 @@ fn custom_operator_is_used_in_end_to_end_search() {
     let y = Array1::from_vec(y);
     let dataset = Dataset::new(x, y);
 
-    let mut options = Options::<f64, 1>::default();
-    options.seed = 0;
-    options.niterations = 1;
-    options.populations = 1;
-    options.population_size = 128;
-    options.ncycles_per_iteration = 5;
-    options.maxsize = 2;
-    options.maxdepth = 2;
-    options.progress = false;
-    options.should_optimize_constants = false;
-    options.annealing = false;
-    options.operators = Operators::<1>::from_names::<CustomOps>(&["square"]).unwrap();
+    let operators = Operators::<1>::from_names::<CustomOps>(&["square"]).unwrap();
+    let options = Options::<f64, 1>{
+        seed: 0,
+        niterations: 1,
+        populations: 1,
+        population_size: 128,
+        ncycles_per_iteration: 5,
+        maxsize: 2,
+        maxdepth: 2,
+        progress: false,
+        should_optimize_constants: false,
+        annealing: false,
+        operators,
+        ..Default::default()
+    };
 
     let result = equation_search::<f64, CustomOps, 1>(&dataset, &options);
 
