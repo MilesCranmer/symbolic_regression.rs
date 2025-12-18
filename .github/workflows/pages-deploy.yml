@@ -12,18 +12,22 @@ concurrency:
 
 jobs:
   deploy:
-    name: deploy
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
+
+    # Needed to download artifacts from the workflow_run.
     permissions:
-      pages: write
-      id-token: write
+      contents: read
       actions: read
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+
+    env:
+      TARGET_REPO: MilesCranmer/milescranmer.github.io
+      TARGET_BRANCH: master
+      TARGET_SUBDIR: symbolic_regression.rs
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+
     steps:
-      - name: Download build artifact from Pages (Build)
+      - name: Download built site artifact from "Pages (Build)"
         uses: actions/download-artifact@v4
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -31,11 +35,42 @@ jobs:
           name: pages-dist
           path: dist
 
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Checkout target website repo
+        uses: actions/checkout@v4
         with:
-          path: dist
+          repository: ${{ env.TARGET_REPO }}
+          ref: ${{ env.TARGET_BRANCH }}
+          token: ${{ secrets.MILESCRANMER_WEBSITE_PUSH_TOKEN }}
+          path: website
+          fetch-depth: 1
 
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Replace /symbolic_regression.rs/ with new build
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -d dist || (echo "dist/ missing (artifact download failed)" && exit 1)
+          test -f dist/index.html || (echo "dist/index.html missing (unexpected artifact contents)" && exit 1)
+
+          rm -rf "website/${TARGET_SUBDIR}"
+          mkdir -p "website/${TARGET_SUBDIR}"
+          rsync -a --delete "dist/" "website/${TARGET_SUBDIR}/"
+
+      - name: Commit and push to target repo
+        working-directory: website
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -A "${TARGET_SUBDIR}"
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Deploy ${TARGET_SUBDIR} from astroautomata/symbolic_regression.rs@${SOURCE_SHA}"
+          git push origin "${TARGET_BRANCH}"
