@@ -258,7 +258,7 @@ fn child_ranges(sizes: &[usize], root_idx: usize, arity: usize) -> Vec<(usize, u
     out
 }
 
-fn mutate_constant_in_place<T: Float, Ops, const D: usize, R: Rng>(
+pub(crate) fn mutate_constant_in_place<T: Float, Ops, const D: usize, R: Rng>(
     rng: &mut R,
     expr: &mut PostfixExpr<T, Ops, D>,
     temperature: f64,
@@ -377,7 +377,7 @@ fn swap_operands_in_place<T, Ops, const D: usize, R: Rng>(
     true
 }
 
-fn rotate_tree_in_place<T, Ops, const D: usize, R: Rng>(
+pub(crate) fn rotate_tree_in_place<T, Ops, const D: usize, R: Rng>(
     rng: &mut R,
     expr: &mut PostfixExpr<T, Ops, D>,
 ) -> bool {
@@ -451,11 +451,10 @@ fn rotate_tree_in_place<T, Ops, const D: usize, R: Rng>(
 
     // Build the rotated version of the old root, with its `pivot_pos` child replaced by `grandchild`.
     let mut rotated_root: Vec<PNode> = Vec::with_capacity(sub_end + 1 - sub_start);
-    for j in 0..root_arity {
+    for (j, c) in root_children.iter().enumerate() {
         if j == pivot_pos {
             rotated_root.extend_from_slice(&expr.nodes[grandchild.0..=grandchild.1]);
         } else {
-            let c = root_children[j];
             rotated_root.extend_from_slice(&expr.nodes[c.0..=c.1]);
         }
     }
@@ -466,11 +465,10 @@ fn rotate_tree_in_place<T, Ops, const D: usize, R: Rng>(
 
     // Build the new subtree rooted at `pivot`, replacing its `grandchild_pos` with `rotated_root`.
     let mut new_sub: Vec<PNode> = Vec::with_capacity(sub_end + 1 - sub_start);
-    for k in 0..pivot_arity {
+    for (k, c) in pivot_children.iter().enumerate() {
         if k == grandchild_pos {
             new_sub.extend_from_slice(&rotated_root);
         } else {
-            let c = pivot_children[k];
             new_sub.extend_from_slice(&expr.nodes[c.0..=c.1]);
         }
     }
@@ -826,86 +824,6 @@ where
     }
 
     (baby, true, 1.0)
-}
-
-#[cfg(test)]
-mod regression_tests {
-    use super::*;
-    use dynamic_expressions::expression::Metadata;
-    use rand::rngs::StdRng;
-    use rand::SeedableRng;
-
-    #[test]
-    fn constant_mutation_is_bounded_with_floor_at_zero_temperature() {
-        let mut expr = PostfixExpr::<f64, (), 2>::new(
-            vec![PNode::Const { idx: 0 }],
-            vec![1.0],
-            Metadata::default(),
-        );
-        let mut options: Options<f64, 2> = Options::default();
-        options.probability_negate_constant = 1.0; // `rand() > 1.0` never, so no sign flip.
-        options.perturbation_factor = 123.0; // irrelevant at temperature=0.
-
-        let mut rng = StdRng::seed_from_u64(0);
-        for _ in 0..256 {
-            let before = expr.consts[0];
-            assert!(mutate_constant_in_place(&mut rng, &mut expr, 0.0, &options));
-            let after = expr.consts[0];
-            let ratio = after / before;
-            assert!(
-                (1.0 / 1.1) - 1e-12 <= ratio && ratio <= 1.1 + 1e-12,
-                "ratio={ratio} out of bounds at temperature=0"
-            );
-        }
-    }
-
-    #[test]
-    fn constant_mutation_uses_inverted_sign_flip_probability() {
-        let mut expr = PostfixExpr::<f64, (), 2>::new(
-            vec![PNode::Const { idx: 0 }],
-            vec![1.0],
-            Metadata::default(),
-        );
-        let mut options: Options<f64, 2> = Options::default();
-        options.probability_negate_constant = 0.0; // `rand() > 0.0` almost surely, so it negates.
-
-        let mut rng = StdRng::seed_from_u64(1);
-        assert!(mutate_constant_in_place(&mut rng, &mut expr, 0.0, &options));
-        assert!(expr.consts[0].is_sign_negative());
-    }
-
-    #[test]
-    fn rotate_tree_supports_non_binary_arity() {
-        // Root has arity 3 and its middle child is a unary operator:
-        //   root(A, pivot(B), C)
-        // After rotation (with deterministic choices here):
-        //   pivot(root(A, B, C))
-        let mut expr = PostfixExpr::<f64, (), 3>::new(
-            vec![
-                PNode::Var { feature: 0 },
-                PNode::Var { feature: 1 },
-                PNode::Op { arity: 1, op: 11 },
-                PNode::Var { feature: 2 },
-                PNode::Op { arity: 3, op: 7 },
-            ],
-            Vec::new(),
-            Metadata::default(),
-        );
-
-        let mut rng = StdRng::seed_from_u64(0);
-        assert!(rotate_tree_in_place(&mut rng, &mut expr));
-
-        assert_eq!(
-            expr.nodes,
-            vec![
-                PNode::Var { feature: 0 },
-                PNode::Var { feature: 1 },
-                PNode::Var { feature: 2 },
-                PNode::Op { arity: 3, op: 7 },
-                PNode::Op { arity: 1, op: 11 },
-            ]
-        );
-    }
 }
 
 pub fn crossover_generation<T: Float, Ops, const D: usize, R: Rng>(

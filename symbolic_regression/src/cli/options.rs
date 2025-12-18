@@ -57,14 +57,6 @@ fn validate_options(opt: &crate::Options<T, D>) -> anyhow::Result<()> {
         "tournament_selection_n must be < population_size"
     );
     anyhow::ensure!(opt.maxsize >= 4, "maxsize must be >= 4");
-    anyhow::ensure!(
-        opt.complexity_of_constants >= 0,
-        "complexity_of_constants must be >= 0"
-    );
-    anyhow::ensure!(
-        opt.complexity_of_variables >= 0,
-        "complexity_of_variables must be >= 0"
-    );
     anyhow::ensure!(opt.operators.total_ops_up_to(D) > 0, "no operators enabled");
     Ok(())
 }

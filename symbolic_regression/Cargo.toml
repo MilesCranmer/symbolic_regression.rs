@@ -50,6 +50,7 @@ cli = [
 bench = []
 [dev-dependencies]
 criterion = "0.8"
+proptest = "1"
 rust_xlsxwriter = "0.92"
 tempfile = "3"
 
