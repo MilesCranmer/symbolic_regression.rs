@@ -115,6 +115,8 @@ body {
   border-radius: 14px;
   padding: 12px 12px;
   background: var(--bg);
+  /* Cards often sit inside flex/grid layouts; allow them to shrink without forcing overflow. */
+  min-width: 0;
 }
 
 .cardTitle {
@@ -234,31 +236,73 @@ select option {
   gap: 10px 14px;
 }
 
-.grid4 {
+.resultsColumns {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  /*
-    Keep plots reasonably sized, but allow the bottom row (metrics) to grow.
-    This avoids metrics being cut off when the selected equation wraps.
-  */
-  grid-template-rows: 360px minmax(360px, auto);
+  /* minmax(0, 1fr) prevents long content from forcing horizontal overflow */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas:
+    "table fit"
+    "stats pareto";
   gap: 14px;
+  align-items: start;
 }
 
-.grid4 .gridCell {
-  /* Allow inner scroll areas to actually scroll instead of forcing the grid row to grow. */
-  min-height: 0;
+.resultsFixed {
+  height: 360px;
+}
+
+@media (max-width: 900px) {
+  .topbar {
+    flex-wrap: wrap;
+  }
+
+  .topbarLinks {
+    margin-left: 0;
+    flex-wrap: wrap;
+    /* When links wrap onto their own line, keep them visually right-aligned. */
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .resultsColumns {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "table"
+      "fit"
+      "stats"
+      "pareto";
+  }
+
+  .resultsFixed {
+    height: 340px;
+  }
+}
+
+.resultsCard--table {
+  grid-area: table;
+}
+.resultsCard--fit {
+  grid-area: fit;
+}
+.resultsCard--stats {
+  grid-area: stats;
+}
+.resultsCard--pareto {
+  grid-area: pareto;
 }
 
 .gridCell {
   min-height: 320px;
   display: flex;
   flex-direction: column;
+  /* Allow cards (especially tables/plots) to shrink in flex/grid layouts. */
+  min-width: 0;
 }
 
 .tableWrap {
   overflow: auto;
   flex: 1;
+  min-width: 0;
   border-radius: 12px;
   border: 1px solid rgba(127, 127, 127, 0.18);
 }
@@ -405,6 +449,7 @@ select option {
 .plotWrap {
   flex: 1;
   min-height: 260px;
+  min-width: 0;
 }
 
 /* Quick-stats: keep the copy button aligned with the equation box. */
@@ -416,6 +461,8 @@ select option {
 
 .eqHeader .bigEq {
   flex: 1;
+  /* Prevent long equations from forcing horizontal overflow in flex layouts. */
+  min-width: 0;
 }
 
 .errorText {

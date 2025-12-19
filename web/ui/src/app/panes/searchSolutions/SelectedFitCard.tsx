@@ -16,24 +16,25 @@ export function SelectedFitCard(props: {
   valXY: { x: number[]; y: number[] };
 }): React.ReactElement {
   return (
-    <div className="card gridCell">
+    <div className="card gridCell resultsCard resultsCard--fit resultsFixed">
       <div className="cardTitle">Selected solution fit</div>
       {!props.selectedSummary ? (
         <div className="muted">Select a solution.</div>
       ) : (
-        <FitPlot
-          prefersDark={props.prefersDark}
-          mode={props.effectiveFitMode}
-          hasVal={props.hasVal}
-          trainActual={props.trainActual}
-          valActual={props.valActual}
-          trainYhat={props.trainYhat}
-          valYhat={props.valYhat}
-          trainXY={props.trainXY}
-          valXY={props.valXY}
-        />
+        <div className="plotWrap">
+          <FitPlot
+            prefersDark={props.prefersDark}
+            mode={props.effectiveFitMode}
+            hasVal={props.hasVal}
+            trainActual={props.trainActual}
+            valActual={props.valActual}
+            trainYhat={props.trainYhat}
+            valYhat={props.valYhat}
+            trainXY={props.trainXY}
+            valXY={props.valXY}
+          />
+        </div>
       )}
     </div>
   );
 }
-

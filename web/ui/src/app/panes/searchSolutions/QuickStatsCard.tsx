@@ -10,7 +10,7 @@ export function QuickStatsCard(props: {
   hasVal: boolean;
 }): React.ReactElement {
   return (
-    <div className="card gridCell">
+    <div className="card gridCell resultsCard resultsCard--stats">
       <div className="cardTitle">Quick stats</div>
       {!props.selectedSummary ? (
         <div className="muted">Select a solution to compute metrics.</div>
@@ -44,4 +44,3 @@ export function QuickStatsCard(props: {
     </div>
   );
 }
-

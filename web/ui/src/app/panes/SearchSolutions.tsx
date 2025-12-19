@@ -32,7 +32,7 @@ export function SearchSolutions(): React.ReactElement {
         reset={c.reset}
       />
 
-      <div className="grid4">
+      <div className="resultsColumns">
         <SolutionsTableCard front={c.runtime.front} selectedId={c.runtime.selectedId} selectEquation={c.selectEquation} />
         <SelectedFitCard
           prefersDark={prefersDark}
@@ -46,7 +46,12 @@ export function SearchSolutions(): React.ReactElement {
           trainXY={c.trainXY}
           valXY={c.valXY}
         />
-        <QuickStatsCard selectedSummary={c.selectedSummary} evalTrain={c.evalTrain} evalVal={c.evalVal} hasVal={Boolean(c.split && c.split.val.length > 0)} />
+        <QuickStatsCard
+          selectedSummary={c.selectedSummary}
+          evalTrain={c.evalTrain}
+          evalVal={c.evalVal}
+          hasVal={Boolean(c.split && c.split.val.length > 0)}
+        />
         <ParetoPlotCard
           prefersDark={prefersDark}
           points={c.points}

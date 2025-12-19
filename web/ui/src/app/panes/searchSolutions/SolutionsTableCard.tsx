@@ -8,7 +8,7 @@ export function SolutionsTableCard(props: {
   selectEquation: (sel: { id: string; complexity: number }) => void;
 }): React.ReactElement {
   return (
-    <div className="card gridCell">
+    <div className="card gridCell resultsCard resultsCard--table resultsFixed">
       <div className="cardTitle">Current solutions</div>
       <div className="tableWrap">
         <table className="table fixed" data-testid="solutions-table">

@@ -14,7 +14,7 @@ export function ParetoPlotCard(props: {
   const selectedLine = props.prefersDark ? "rgba(255,255,255,0.75)" : "rgba(0,0,0,0.55)";
 
   return (
-    <div className="card gridCell">
+    <div className="card gridCell resultsCard resultsCard--pareto resultsFixed">
       <div className="cardTitle">Pareto front</div>
       <div className="plotWrap">
         {props.points.length === 0 ? (
