@@ -1,6 +1,7 @@
 use crate::adaptive_parsimony::RunningSearchStatistics;
 use crate::check_constraints::check_constraints;
 use crate::complexity::compute_complexity;
+use crate::constant_optimization::{optimize_constants, OptimizeConstantsCtx};
 use crate::dataset::TaggedDataset;
 use crate::loss_functions::loss_to_cost;
 use crate::operators::Operators;
@@ -688,7 +689,12 @@ fn crossover_trees<T: Clone, Ops, const D: usize, R: Rng>(
     (child_a, child_b)
 }
 
-pub fn next_generation<T: Float, Ops, const D: usize, R: Rng>(
+pub fn next_generation<
+    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive,
+    Ops,
+    const D: usize,
+    R: Rng,
+>(
     member: &PopMember<T, Ops, D>,
     ctx: NextGenerationCtx<'_, T, Ops, D, R>,
 ) -> (PopMember<T, Ops, D>, bool, f64)
@@ -720,41 +726,80 @@ where
     let mut successful = false;
     let mut return_immediately = false;
     let mut tree = member.expr.clone();
+    let mut evals = 0.0f64;
 
     for _ in 0..max_attempts {
         tree = member.expr.clone();
-        let mutated = match choice {
-            MutationChoice::MutateConstant => {
-                mutate_constant_in_place(rng, &mut tree, temperature, options)
+        let (mutated, tmp_evals) = match choice {
+            MutationChoice::MutateConstant => (
+                mutate_constant_in_place(rng, &mut tree, temperature, options),
+                0.0,
+            ),
+            MutationChoice::MutateOperator => (
+                mutate_operator_in_place(rng, &mut tree, &options.operators),
+                0.0,
+            ),
+            MutationChoice::MutateFeature => {
+                (mutate_feature_in_place(rng, &mut tree, n_features), 0.0)
             }
-            MutationChoice::MutateOperator => {
-                mutate_operator_in_place(rng, &mut tree, &options.operators)
-            }
-            MutationChoice::MutateFeature => mutate_feature_in_place(rng, &mut tree, n_features),
-            MutationChoice::SwapOperands => swap_operands_in_place(rng, &mut tree),
-            MutationChoice::RotateTree => rotate_tree_in_place(rng, &mut tree),
-            MutationChoice::AddNode => {
-                add_node_in_place(rng, &mut tree, &options.operators, n_features)
-            }
-            MutationChoice::InsertNode => {
-                insert_random_op_in_place(rng, &mut tree, &options.operators, n_features)
-            }
-            MutationChoice::DeleteNode => delete_random_op_in_place(rng, &mut tree),
+            MutationChoice::SwapOperands => (swap_operands_in_place(rng, &mut tree), 0.0),
+            MutationChoice::RotateTree => (rotate_tree_in_place(rng, &mut tree), 0.0),
+            MutationChoice::AddNode => (
+                add_node_in_place(rng, &mut tree, &options.operators, n_features),
+                0.0,
+            ),
+            MutationChoice::InsertNode => (
+                insert_random_op_in_place(rng, &mut tree, &options.operators, n_features),
+                0.0,
+            ),
+            MutationChoice::DeleteNode => (delete_random_op_in_place(rng, &mut tree), 0.0),
             MutationChoice::Simplify => {
                 let _ = dynamic_expressions::simplify_in_place(&mut tree, &evaluator.eval_opts);
                 return_immediately = true;
-                true
+                (true, 0.0)
             }
             MutationChoice::Randomize => {
                 // Match SymbolicRegression.jl: sample a *uniform* random size in 1:curmaxsize.
                 let max_size = curmaxsize.max(1).min(options.maxsize.max(1));
                 let target_size = rng.random_range(1..=max_size);
                 tree = random_expr(rng, &options.operators, n_features, target_size);
-                true
+                (true, 0.0)
             }
-            MutationChoice::DoNothing => true,
-            MutationChoice::Optimize => true, // handled outside in tuning pass; as mutation it is a no-op here
+            MutationChoice::DoNothing => (true, 0.0),
+            MutationChoice::Optimize => {
+                // Match SymbolicRegression.jl: `:optimize` is a mutation that runs constant
+                // optimization without structural changes.
+                let mut tmp = PopMember::from_expr(MemberId(0), None, 0, tree, n_features);
+                // Avoid consuming global birth counters: the caller already assigns birth/id.
+                let orig_birth = tmp.birth;
+                let mut dummy_next_birth = orig_birth;
+
+                // Preserve cached plan/loss/cost as the starting point.
+                tmp.plan = member.plan.clone();
+                tmp.complexity = member.complexity;
+                tmp.loss = member.loss;
+                tmp.cost = member.cost;
+
+                let mut grad_ctx = dynamic_expressions::GradContext::new(dataset.n_rows);
+                let (_improved, evals) = optimize_constants(
+                    rng,
+                    &mut tmp,
+                    OptimizeConstantsCtx {
+                        dataset,
+                        options,
+                        evaluator,
+                        grad_ctx: &mut grad_ctx,
+                        next_birth: &mut dummy_next_birth,
+                    },
+                );
+                tmp.birth = orig_birth;
+
+                tree = tmp.expr;
+                (true, evals)
+            }
         };
+        evals += tmp_evals;
+
         if !mutated {
             continue;
         }
@@ -796,6 +841,7 @@ where
 
     let mut baby = PopMember::from_expr(id, Some(member.id), birth, tree, n_features);
     let ok = baby.evaluate(&dataset, options, evaluator);
+    evals += 1.0;
     let after_cost = baby.cost.to_f64().unwrap_or(f64::INFINITY);
     let after_loss = baby.loss.to_f64().unwrap_or(f64::INFINITY);
     let _ = after_loss;
@@ -835,10 +881,10 @@ where
         reject.complexity = member.complexity;
         reject.loss = member.loss;
         reject.cost = member.cost;
-        return (reject, false, 0.0);
+        return (reject, false, evals);
     }
 
-    (baby, true, 1.0)
+    (baby, true, evals)
 }
 
 pub fn crossover_generation<T: Float, Ops, const D: usize, R: Rng>(
