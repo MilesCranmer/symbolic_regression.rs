@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.1](https://github.com/astroautomata/symbolic_regression.rs/compare/symbolic_regression_wasm-v0.4.0...symbolic_regression_wasm-v0.4.1) (2025-12-19)
+
+
+### Features
+
+* switch to u16 for custom complexities ([8e6d78c](https://github.com/astroautomata/symbolic_regression.rs/commit/8e6d78ccf97b7841d5b5ae39bd24fe42d510fd90))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * symbolic_regression bumped from 0.6.0 to 0.7.0
+
 ## [0.4.0](https://github.com/astro-automata/symbolic_regression.rs/compare/symbolic_regression_wasm-v0.3.0...symbolic_regression_wasm-v0.4.0) (2025-12-17)
 
 

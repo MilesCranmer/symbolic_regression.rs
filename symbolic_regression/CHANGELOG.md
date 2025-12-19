@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.7.0](https://github.com/astroautomata/symbolic_regression.rs/compare/symbolic_regression-v0.6.0...symbolic_regression-v0.7.0) (2025-12-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* corrected tree rotation for n-arity nodes
+
+### Features
+
+* closer to original SR.jl algorithm ([b64b6a1](https://github.com/astroautomata/symbolic_regression.rs/commit/b64b6a1b84284b979dcc0cdfe9072a880a16913d))
+* switch to u16 for custom complexities ([8e6d78c](https://github.com/astroautomata/symbolic_regression.rs/commit/8e6d78ccf97b7841d5b5ae39bd24fe42d510fd90))
+
+
+### Bug Fixes
+
+* corrected tree rotation for n-arity nodes ([6cab7ee](https://github.com/astroautomata/symbolic_regression.rs/commit/6cab7ee7b9b535348c6ac1a59ae9e1ee7bc2ed9b))
+
 ## [0.6.0](https://github.com/astro-automata/symbolic_regression.rs/compare/symbolic_regression-v0.5.0...symbolic_regression-v0.6.0) (2025-12-17)
 
 
