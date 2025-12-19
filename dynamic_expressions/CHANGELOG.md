@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.7.0](https://github.com/astroautomata/symbolic_regression.rs/compare/dynamic_expressions-v0.6.0...dynamic_expressions-v0.7.0) (2025-12-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* change operator construction syntax
+
+### Features
+
+* change operator construction syntax ([d8b39b9](https://github.com/astroautomata/symbolic_regression.rs/commit/d8b39b98015e3c9df592435aadc6793d328e04a3))
+
 ## [0.6.0](https://github.com/astro-automata/symbolic_regression.rs/compare/dynamic_expressions-v0.5.0...dynamic_expressions-v0.6.0) (2025-12-17)
 
 

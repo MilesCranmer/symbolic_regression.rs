@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.0](https://github.com/astroautomata/symbolic_regression.rs/compare/symbolic_regression_wasm-v0.4.1...symbolic_regression_wasm-v0.5.0) (2025-12-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* change operator construction syntax
+
+### Features
+
+* change operator construction syntax ([d8b39b9](https://github.com/astroautomata/symbolic_regression.rs/commit/d8b39b98015e3c9df592435aadc6793d328e04a3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * symbolic_regression bumped from 0.7.0 to 0.8.0
+    * dynamic_expressions bumped from 0.6.0 to 0.7.0
+
 ## [0.4.1](https://github.com/astroautomata/symbolic_regression.rs/compare/symbolic_regression_wasm-v0.4.0...symbolic_regression_wasm-v0.4.1) (2025-12-19)
 
 
