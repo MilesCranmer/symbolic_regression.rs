@@ -15,7 +15,7 @@ fn constant_mutation_is_bounded_with_floor_at_zero_temperature() {
     );
     let options: Options<f64, 2> = Options {
         probability_negate_constant: 1.0, // `rand() > 1.0` never, so no sign flip.
-        perturbation_factor: 123.0, // irrelevant at temperature=0.
+        perturbation_factor: 123.0,       // irrelevant at temperature=0.
         ..Default::default()
     };
 
