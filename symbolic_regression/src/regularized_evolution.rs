@@ -38,7 +38,7 @@ where
     for _ in 0..n_evol_cycles {
         if ctx.rng.random::<f64>() > ctx.options.crossover_probability {
             let allstar = best_of_sample(ctx.rng, pop, ctx.stats, ctx.options);
-            let (baby, accepted, tmp) = mutate::next_generation::<T, Ops, D, _>(
+            let (baby, accepted, tmp) = mutate::next_generation(
                 &allstar,
                 NextGenerationCtx {
                     rng: ctx.rng,
@@ -61,7 +61,7 @@ where
         } else {
             let allstar1 = best_of_sample(ctx.rng, pop, ctx.stats, ctx.options);
             let allstar2 = best_of_sample(ctx.rng, pop, ctx.stats, ctx.options);
-            let (baby1, baby2, accepted, tmp) = mutate::crossover_generation::<T, Ops, D, _>(
+            let (baby1, baby2, accepted, tmp) = mutate::crossover_generation(
                 &allstar1,
                 &allstar2,
                 CrossoverCtx {

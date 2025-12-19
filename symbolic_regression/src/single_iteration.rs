@@ -47,7 +47,7 @@ where
             let t = (i as f64) / ((ncycles - 1) as f64);
             max_temp + t * (min_temp - max_temp)
         };
-        num_evals += reg_evol_cycle::<T, Ops, D, _>(
+        num_evals += reg_evol_cycle(
             pop,
             RegEvolCtx {
                 rng: ctx.rng,
@@ -80,10 +80,8 @@ where
 
     if ctx.options.should_simplify {
         for m in &mut pop.members {
-            let changed = dynamic_expressions::simplify_in_place::<T, Ops, D>(
-                &mut m.expr,
-                &ctx.evaluator.eval_opts,
-            );
+            let changed =
+                dynamic_expressions::simplify_in_place(&mut m.expr, &ctx.evaluator.eval_opts);
             if changed {
                 m.rebuild_plan(ctx.full_dataset.n_features);
             }
@@ -95,7 +93,7 @@ where
         ctx.grad_ctx.n_rows = opt_dataset.n_rows;
         for m in &mut pop.members {
             if ctx.rng.random::<f64>() < ctx.options.optimizer_probability {
-                let (improved, evals) = optimize_constants::<T, Ops, D, _>(
+                let (improved, evals) = optimize_constants(
                     ctx.rng,
                     m,
                     OptimizeConstantsCtx {

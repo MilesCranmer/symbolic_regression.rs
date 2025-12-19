@@ -25,7 +25,7 @@ pub fn print_front<T, Ops, const D: usize>(
     println!("target: {target}");
     println!("{:<10} {:<14} equation", "complexity", "loss");
     for m in front {
-        let eq = string_tree::<T, Ops, D>(
+        let eq = string_tree(
             &m.expr,
             StringTreeOptions {
                 variable_names: Some(&dataset.variable_names),
@@ -85,7 +85,7 @@ where
 
     for r in results {
         for m in &r.front {
-            let eq = string_tree::<T, Ops, D>(
+            let eq = string_tree(
                 &m.expr,
                 StringTreeOptions {
                     variable_names: Some(&r.variable_names),
@@ -125,7 +125,7 @@ where
     let mut rows = Vec::new();
     for r in results {
         for m in &r.front {
-            let eq = string_tree::<T, Ops, D>(
+            let eq = string_tree(
                 &m.expr,
                 StringTreeOptions {
                     variable_names: Some(&r.variable_names),

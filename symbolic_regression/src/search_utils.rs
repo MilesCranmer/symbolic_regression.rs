@@ -109,7 +109,7 @@ impl<T: Float, Ops, const D: usize> PopState<T, Ops, D> {
             full_dataset
         };
 
-        let mut ctx = single_iteration::IterationCtx::<T, Ops, D, _> {
+        let mut ctx = single_iteration::IterationCtx {
             rng: &mut self.rng,
             full_dataset,
             curmaxsize,
@@ -161,13 +161,13 @@ where
 {
     #[cfg(target_arch = "wasm32")]
     {
-        let engine = SearchEngine::<T, Ops, D>::new(dataset.clone(), options.clone());
+        let engine = SearchEngine::new(dataset.clone(), options.clone());
         engine.run_to_completion()
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     {
-        equation_search_parallel::<T, Ops, D>(dataset, options)
+        equation_search_parallel(dataset, options)
     }
 }
 
@@ -194,11 +194,11 @@ where
     };
 
     let stats = RunningSearchStatistics::new(options.maxsize, 100_000);
-    let mut hall = HallOfFame::<T, Ops, D>::new(options.maxsize);
+    let mut hall = HallOfFame::new(options.maxsize);
 
     let mut progress = SearchProgress::new(options, counters.total_cycles);
 
-    let pools = init_populations::<T, Ops, D>(full_dataset, options, &mut hall);
+    let pools = init_populations(full_dataset, options, &mut hall);
     progress.set_initial_evals(pools.total_evals);
 
     let order_rng = StdRng::seed_from_u64(options.seed ^ 0x9e37_79b9_7f4a_7c15);
@@ -221,7 +221,7 @@ where
         order_rng,
     };
 
-    std::thread::scope(|scope| run_scoped_search::<T, Ops, D>(scope, &mut state));
+    std::thread::scope(|scope| run_scoped_search(scope, &mut state));
     state.progress.finish();
 
     SearchResult {
@@ -264,7 +264,7 @@ where
         };
 
         let stats = RunningSearchStatistics::new(options.maxsize, 100_000);
-        let mut hall = HallOfFame::<T, Ops, D>::new(options.maxsize);
+        let mut hall = HallOfFame::new(options.maxsize);
 
         let mut progress = SearchProgress::new(&options, counters.total_cycles);
 
@@ -272,7 +272,7 @@ where
             data: &dataset,
             baseline_loss,
         };
-        let pools = init_populations::<T, Ops, D>(full_dataset, &options, &mut hall);
+        let pools = init_populations(full_dataset, &options, &mut hall);
         progress.set_initial_evals(pools.total_evals);
 
         let order_rng = StdRng::seed_from_u64(options.seed ^ 0x9e37_79b9_7f4a_7c15);
@@ -385,7 +385,7 @@ where
         stats_snapshot.normalize();
 
         let full_dataset = self.full_dataset_tagged();
-        let res = execute_task::<T, Ops, D>(
+        let res = execute_task(
             full_dataset,
             &self.options,
             pop_idx,
@@ -393,7 +393,7 @@ where
             stats_snapshot,
             pop_state,
         );
-        apply_task_result::<T, Ops, D>(
+        apply_task_result(
             &self.options,
             &mut self.counters,
             &mut self.stats,
@@ -568,14 +568,8 @@ fn run_scoped_search<'scope, 'env, T, Ops, const D: usize>(
                     pop_state,
                 } = task;
 
-                let res = execute_task::<T, Ops, D>(
-                    full_dataset,
-                    options,
-                    pop_idx,
-                    curmaxsize,
-                    stats,
-                    pop_state,
-                );
+                let res =
+                    execute_task(full_dataset, options, pop_idx, curmaxsize, stats, pop_state);
                 let _ = result_tx.send(res);
             }
         });
@@ -626,7 +620,7 @@ fn run_scoped_search<'scope, 'env, T, Ops, const D: usize>(
                 .recv()
                 .expect("worker result channel closed early");
             in_flight -= 1;
-            apply_task_result::<T, Ops, D>(
+            apply_task_result(
                 options,
                 &mut state.counters,
                 &mut state.stats,
@@ -656,8 +650,8 @@ where
 
     for pop_i in 0..options.populations {
         let mut rng = StdRng::seed_from_u64(options.seed.wrapping_add(pop_i as u64));
-        let mut evaluator = Evaluator::<T, D>::new(dataset.n_rows);
-        let grad_ctx = dynamic_expressions::GradContext::<T, D>::new(dataset.n_rows);
+        let mut evaluator = Evaluator::new(dataset.n_rows);
+        let grad_ctx = dynamic_expressions::GradContext::new(dataset.n_rows);
 
         let mut next_id = (pop_i as u64) << 32;
         let mut next_birth = 0u64;
@@ -665,13 +659,8 @@ where
         let nlength = 3usize.min(options.maxsize.max(1));
         let mut members = Vec::with_capacity(options.population_size);
         for _ in 0..options.population_size {
-            let expr = mutate::random_expr::<T, Ops, D, _>(
-                &mut rng,
-                &options.operators,
-                dataset.n_features,
-                nlength,
-                0.2,
-            );
+            let expr =
+                mutate::random_expr(&mut rng, &options.operators, dataset.n_features, nlength);
             let mut m = PopMember::from_expr(
                 MemberId(next_id),
                 None,

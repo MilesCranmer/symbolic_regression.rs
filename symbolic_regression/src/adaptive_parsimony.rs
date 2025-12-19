@@ -73,7 +73,7 @@ impl RunningSearchStatistics {
     }
 
     pub fn normalize(&mut self) {
-        let sum = self.frequencies.iter().sum::<f64>();
+        let sum: f64 = self.frequencies.iter().sum();
         if sum == 0.0 {
             self.normalized_frequencies.fill(0.0);
             return;

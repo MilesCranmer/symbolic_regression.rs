@@ -2,14 +2,13 @@ mod common;
 
 use approx::assert_relative_eq;
 use common::{make_x, TestOps};
+use dynamic_expressions::math::{cos, div, exp, fma, log, neg, sin};
 use dynamic_expressions::operator_enum::scalar::OpId;
 use dynamic_expressions::strings::{string_tree, OpNames, StringTreeOptions};
 use dynamic_expressions::{eval_tree_array, lit, EvalOptions};
 
 #[test]
 fn algebra_overloads_and_string_paths_are_exercised() {
-    use dynamic_expressions::math::{cos, div, exp, fma, log, neg, sin};
-
     let (x_data, x) = make_x(2, 16);
     let x_view = x.view();
     let opts = EvalOptions {

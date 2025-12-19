@@ -28,7 +28,7 @@ where
     debug_assert_eq!(dloss_dyhat.len(), n_rows);
 
     let x = dataset.x.view();
-    let (yhat, dy_dc, ok) = eval_grad_tree_array::<T, Ops, D>(expr, x, false, grad_ctx, eval_opts);
+    let (yhat, dy_dc, ok) = eval_grad_tree_array(expr, x, false, grad_ctx, eval_opts);
     if !ok {
         return None;
     }
@@ -79,7 +79,7 @@ fn eval_loss_only<T: Float, Ops, const D: usize>(
 where
     Ops: ScalarOpSet<T>,
 {
-    let ok = eval_plan_array_into::<T, Ops, D>(
+    let ok = eval_plan_array_into(
         &mut evaluator.yhat,
         plan,
         expr,
@@ -126,7 +126,7 @@ where
         for (dst, &src) in self.expr.consts.iter_mut().zip(x.iter()) {
             *dst = T::from_f64(src)?;
         }
-        eval_loss_only::<T, Ops, D>(
+        eval_loss_only(
             self.plan,
             self.expr,
             self.dataset,
@@ -146,7 +146,7 @@ where
         for (dst, &src) in self.expr.consts.iter_mut().zip(x.iter()) {
             *dst = T::from_f64(src)?;
         }
-        eval_loss_and_grad::<T, Ops, D>(
+        eval_loss_and_grad(
             self.expr,
             self.dataset,
             self.options,
@@ -199,7 +199,7 @@ where
 
     let mut dloss_dyhat = vec![T::zero(); dataset_ref.n_rows];
 
-    let baseline = match eval_loss_only::<T, Ops, D>(
+    let baseline = match eval_loss_only(
         &member.plan,
         &member.expr,
         dataset_ref,
@@ -232,7 +232,7 @@ where
 
     // Main run at x0:
     {
-        let mut obj = ConstObjective::<T, Ops, D> {
+        let mut obj = ConstObjective {
             plan: &member.plan,
             expr: &mut member.expr,
             dataset: dataset_ref,
@@ -268,7 +268,7 @@ where
             *v *= 1.0 + 0.5 * eps;
         }
 
-        let mut obj = ConstObjective::<T, Ops, D> {
+        let mut obj = ConstObjective {
             plan: &member.plan,
             expr: &mut member.expr,
             dataset: dataset_ref,

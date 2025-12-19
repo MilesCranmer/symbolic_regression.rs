@@ -1,6 +1,7 @@
 mod common;
 
 use common::TestOps;
+use dynamic_expressions::math::cos;
 use dynamic_expressions::{
     eval_diff_tree_array, eval_grad_tree_array, eval_tree_array, DiffContext, EvalOptions,
     GradContext, PNode, PostfixExpr,
@@ -23,8 +24,6 @@ fn make_x_static(n_features: usize, n_rows: usize) -> Array2<f64> {
 
 #[test]
 fn eval_diff_grad_work_for_d2() {
-    use dynamic_expressions::math::cos;
-
     let x = make_x_static(2, 32);
     let expr: PostfixExpr<f64, TestOps, 2> = var::<2>(0) * cos(var::<2>(1) - 3.2);
 
@@ -51,8 +50,6 @@ fn eval_diff_grad_work_for_d2() {
 
 #[test]
 fn eval_diff_grad_work_for_d1_unary_only() {
-    use dynamic_expressions::math::cos;
-
     let x = make_x_static(1, 32);
     let expr: PostfixExpr<f64, TestOps, 1> = cos(var::<1>(0));
 
@@ -79,8 +76,6 @@ fn eval_diff_grad_work_for_d1_unary_only() {
 
 #[test]
 fn eval_early_exit_path_is_instantiated_for_d2() {
-    use dynamic_expressions::math::cos;
-
     let x = make_x_static(1, 8);
     let nan_const: PostfixExpr<f64, TestOps, 2> = PostfixExpr::new(
         vec![PNode::Const { idx: 0 }],
@@ -100,8 +95,6 @@ fn eval_early_exit_path_is_instantiated_for_d2() {
 
 #[test]
 fn eval_early_exit_path_is_instantiated_for_d1() {
-    use dynamic_expressions::math::cos;
-
     let x = make_x_static(1, 8);
     let nan_const: PostfixExpr<f64, TestOps, 1> = PostfixExpr::new(
         vec![PNode::Const { idx: 0 }],

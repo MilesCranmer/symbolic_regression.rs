@@ -6,8 +6,7 @@ use dynamic_expressions::compile_plan;
 use dynamic_expressions::eval_plan_array_into;
 use dynamic_expressions::expression::PostfixExpr;
 use dynamic_expressions::operator_enum::scalar::ScalarOpSet;
-use dynamic_expressions::EvalOptions;
-use ndarray::ArrayView2;
+use dynamic_expressions::{EvalOptions, EvalPlan};
 use num_traits::Float;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -19,7 +18,7 @@ pub struct PopMember<T: Float, Ops, const D: usize> {
     pub parent: Option<MemberId>,
     pub birth: u64,
     pub expr: PostfixExpr<T, Ops, D>,
-    pub plan: dynamic_expressions::EvalPlan<D>,
+    pub plan: EvalPlan<D>,
     pub complexity: usize,
     pub loss: T,
     pub cost: T,
@@ -81,7 +80,7 @@ where
         expr: PostfixExpr<T, Ops, D>,
         n_features: usize,
     ) -> Self {
-        let plan = compile_plan::<D>(&expr.nodes, n_features, expr.consts.len());
+        let plan = compile_plan(&expr.nodes, n_features, expr.consts.len());
         Self {
             id,
             parent,
@@ -95,7 +94,7 @@ where
     }
 
     pub fn rebuild_plan(&mut self, n_features: usize) {
-        self.plan = compile_plan::<D>(&self.expr.nodes, n_features, self.expr.consts.len());
+        self.plan = compile_plan(&self.expr.nodes, n_features, self.expr.consts.len());
     }
 
     pub fn evaluate(
@@ -104,8 +103,8 @@ where
         options: &Options<T, D>,
         evaluator: &mut Evaluator<T, D>,
     ) -> bool {
-        let x: ArrayView2<'_, T> = dataset.x.view();
-        let ok = eval_plan_array_into::<T, Ops, D>(
+        let x = dataset.x.view();
+        let ok = eval_plan_array_into(
             &mut evaluator.yhat,
             &self.plan,
             &self.expr,
@@ -114,7 +113,7 @@ where
             &evaluator.eval_opts,
         );
 
-        self.complexity = compute_complexity::<T, Ops, D>(&self.expr.nodes, options);
+        self.complexity = compute_complexity(&self.expr.nodes, options);
 
         if !ok {
             self.loss = T::infinity();

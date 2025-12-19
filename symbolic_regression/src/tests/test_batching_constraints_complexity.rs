@@ -193,5 +193,5 @@ fn compute_complexity_respects_custom_weights_and_rounding() {
 
     // sin(x0): 3 + 2 = 5
     // add: 1 + 5 + 1 = 7
-    assert_eq!(compute_complexity::<f64, Ops, D>(&expr.nodes, &options), 7);
+    assert_eq!(compute_complexity(&expr.nodes, &options), 7);
 }

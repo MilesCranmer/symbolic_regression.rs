@@ -120,8 +120,8 @@ pub fn constant_opt_linear_env() -> ConstantOptLinearEnv {
 pub fn run_constant_opt_linear(env: &ConstantOptLinearEnv) -> (bool, f64, Vec<f64>) {
     let expr = build_linear_expr_for_constant_optimization();
     let mut member = PopMember::from_expr(MemberId(0), None, 0, expr, env.dataset.n_features);
-    let mut evaluator = Evaluator::<T, D>::new(env.dataset.n_rows);
-    let mut grad_ctx = dynamic_expressions::GradContext::<T, D>::new(env.dataset.n_rows);
+    let mut evaluator = Evaluator::new(env.dataset.n_rows);
+    let mut grad_ctx = dynamic_expressions::GradContext::new(env.dataset.n_rows);
     let full_dataset = TaggedDataset::new(
         &env.dataset,
         env.options.loss.as_ref(),
@@ -132,7 +132,7 @@ pub fn run_constant_opt_linear(env: &ConstantOptLinearEnv) -> (bool, f64, Vec<f6
     let mut rng = StdRng::seed_from_u64(0);
     let mut next_birth = 1000u64;
 
-    let (improved, evals) = optimize_constants::<T, Ops, D, _>(
+    let (improved, evals) = optimize_constants(
         &mut rng,
         &mut member,
         OptimizeConstantsCtx {

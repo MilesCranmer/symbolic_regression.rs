@@ -56,9 +56,9 @@ macro_rules! sr_options_spec {
                 batch_size:
                     (usize, 50, "batch-size"),
                 complexity_of_constants:
-                    (i32, 1, "complexity-of-constants"),
+                    (u16, 1, "complexity-of-constants"),
                 complexity_of_variables:
-                    (i32, 1, "complexity-of-variables"),
+                    (u16, 1, "complexity-of-variables"),
                 maxsize:
                     (usize, 30, "maxsize"),
                 maxdepth:
@@ -175,10 +175,10 @@ macro_rules! __define_options {
 
             pub output_style: OutputStyle,
 
-            pub variable_complexities: Option<Vec<i32>>,
+            pub variable_complexities: Option<Vec<u16>>,
             pub operator_complexity_overrides: std::collections::HashMap<
                 dynamic_expressions::operator_enum::scalar::OpId,
-                i32,
+                u16,
             >,
             pub op_constraints: crate::check_constraints::OpConstraints<D>,
             pub nested_constraints: crate::check_constraints::NestedConstraints,

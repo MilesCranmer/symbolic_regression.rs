@@ -10,8 +10,8 @@ use std::collections::HashMap;
 #[derive(Clone, Debug)]
 pub struct OpConstraints<const D: usize> {
     /// Per-operator, per-argument complexity limits.
-    /// A value of `-1` means no constraint for that argument.
-    pub limits: HashMap<OpId, [i32; D]>,
+    /// `None` means no constraint for that argument.
+    pub limits: HashMap<OpId, [Option<u16>; D]>,
 }
 
 impl<const D: usize> Default for OpConstraints<D> {
@@ -23,10 +23,10 @@ impl<const D: usize> Default for OpConstraints<D> {
 }
 
 impl<const D: usize> OpConstraints<D> {
-    pub fn set_op_arg_constraint(&mut self, op: OpId, arg_idx: usize, max_complexity: i32) {
+    pub fn set_op_arg_constraint(&mut self, op: OpId, arg_idx: usize, max_complexity: u16) {
         assert!(arg_idx < D);
-        let entry = self.limits.entry(op).or_insert_with(|| [-1; D]);
-        entry[arg_idx] = max_complexity;
+        let entry = self.limits.entry(op).or_insert([None; D]);
+        entry[arg_idx] = Some(max_complexity);
     }
 }
 
@@ -61,7 +61,7 @@ pub fn check_constraints<T: Float, Ops, const D: usize>(
             return false;
         }
     } else {
-        let Some(total) = complexity::compute_custom_complexity_checked::<T, D>(
+        let Some(total) = complexity::compute_custom_complexity_checked(
             &expr.nodes,
             options,
             Some(&options.op_constraints.limits),
@@ -95,11 +95,13 @@ fn check_default_op_arg_constraints<T: Float, const D: usize>(
         let a = arity as usize;
         let ranges = child_ranges(&sizes, i, a);
         for j in 0..a {
-            let lim = lims[j];
-            if lim >= 0 {
+            let Some(lim) = lims[j] else {
+                continue;
+            };
+            {
                 let (_start, end) = ranges[j];
-                let child_sz = sizes[end] as i32;
-                if child_sz > lim {
+                let child_sz = sizes[end];
+                if child_sz > (lim as usize) {
                     return false;
                 }
             }

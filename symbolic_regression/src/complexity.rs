@@ -7,9 +7,9 @@ use std::collections::HashMap;
 pub(crate) fn compute_custom_complexity_checked<T: Float, const D: usize>(
     nodes: &[PNode],
     options: &Options<T, D>,
-    op_arg_limits: Option<&HashMap<OpId, [i32; D]>>,
+    op_arg_limits: Option<&HashMap<OpId, [Option<u16>; D]>>,
 ) -> Option<usize> {
-    let mut st: Vec<i32> = Vec::with_capacity(nodes.len().min(256));
+    let mut st: Vec<usize> = Vec::with_capacity(nodes.len().min(256));
 
     for n in nodes {
         match *n {
@@ -21,12 +21,12 @@ pub(crate) fn compute_custom_complexity_checked<T: Float, const D: usize>(
                     .and_then(|v| v.get(idx))
                     .copied()
                     .unwrap_or(options.complexity_of_variables);
-                st.push(c.max(0));
+                st.push(c as usize);
             }
-            PNode::Const { .. } => st.push(options.complexity_of_constants.max(0)),
+            PNode::Const { .. } => st.push(options.complexity_of_constants as usize),
             PNode::Op { arity, op } => {
                 let a = arity as usize;
-                let mut child = [0_i32; D];
+                let mut child = [0usize; D];
                 for j in (0..a).rev() {
                     child[j] = st.pop().unwrap_or(0);
                 }
@@ -34,14 +34,16 @@ pub(crate) fn compute_custom_complexity_checked<T: Float, const D: usize>(
                 let oid = OpId { arity, id: op };
                 if let Some(limits) = op_arg_limits.and_then(|m| m.get(&oid)) {
                     for j in 0..a {
-                        let lim = limits[j];
-                        if lim >= 0 && child[j] > lim {
+                        let Some(lim) = limits[j] else {
+                            continue;
+                        };
+                        if child[j] > (lim as usize) {
                             return None;
                         }
                     }
                 }
 
-                let mut sum: i32 = 0;
+                let mut sum: usize = 0;
                 for c in child {
                     sum = sum.saturating_add(c);
                 }
@@ -50,7 +52,7 @@ pub(crate) fn compute_custom_complexity_checked<T: Float, const D: usize>(
                     .get(&oid)
                     .copied()
                     .unwrap_or(1);
-                st.push(base.max(0).saturating_add(sum));
+                st.push((base as usize).saturating_add(sum));
             }
         }
     }
@@ -58,10 +60,10 @@ pub(crate) fn compute_custom_complexity_checked<T: Float, const D: usize>(
     if st.len() != 1 {
         return None;
     }
-    Some(usize::try_from(st[0].max(0)).unwrap_or(usize::MAX))
+    Some(st[0])
 }
 
-pub fn compute_complexity<T: Float, Ops, const D: usize>(
+pub fn compute_complexity<T: Float, const D: usize>(
     nodes: &[PNode],
     options: &Options<T, D>,
 ) -> usize {
