@@ -3,7 +3,6 @@ import * as Papa from "papaparse";
 import initWasm, {
   builtin_operator_registry,
   default_search_options,
-  init_thread_pool
 } from "../pkg/symbolic_regression_wasm.js";
 import { DEFAULT_CSV } from "../generated/defaultCsv";
 import type {
@@ -146,16 +145,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (get().wasmLoaded) return;
     try {
       await initWasm();
-
-      // Don't block UI initialization on thread pool startup; if this hangs/fails,
-      // we still want to show defaults and allow non-Rayoned paths to work.
-      if (globalThis.crossOriginIsolated) {
-        const n = Math.max(1, Math.min(Number(globalThis.navigator?.hardwareConcurrency ?? 4), 16));
-        void init_thread_pool(n).catch((err: unknown) => {
-          // eslint-disable-next-line no-console
-          console.warn("init_thread_pool failed:", err);
-        });
-      }
 
       const [ops, defaults] = await Promise.all([builtin_operator_registry(), default_search_options()]);
 

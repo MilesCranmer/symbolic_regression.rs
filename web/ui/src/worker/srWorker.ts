@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-import init, { WasmSearch } from "../pkg/symbolic_regression_wasm.js";
+import init, { init_thread_pool, WasmSearch } from "../pkg/symbolic_regression_wasm.js";
 import type { WorkerFromWorkerMsg, WorkerToWorkerMsg } from "./protocol";
 
 let search: WasmSearch | null = null;
@@ -65,6 +65,15 @@ self.onmessage = async (e: MessageEvent<WorkerToWorkerMsg>) => {
     if (msg.type === "init") {
       running = false;
       await init();
+      if (self.crossOriginIsolated && typeof SharedArrayBuffer === "function") {
+        const n = Math.max(2, Math.min(Number(self.navigator?.hardwareConcurrency ?? 4), 16));
+        try {
+          await init_thread_pool(n);
+        } catch (err) {
+          post({ type: "error", error: `init_thread_pool failed: ${String(err)}` });
+          return;
+        }
+      }
       search = new WasmSearch(msg.csvText, msg.options as any, msg.unary as any, msg.binary as any, msg.ternary as any);
       search.set_pareto_k(PARETO_K);
       const split = search.get_split_indices();
