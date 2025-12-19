@@ -1,4 +1,5 @@
 use crate::adaptive_parsimony::RunningSearchStatistics;
+use crate::check_constraints::check_constraints;
 use crate::dataset::{Dataset, TaggedDataset};
 use crate::hall_of_fame::HallOfFame;
 use crate::loss_functions::baseline_loss_from_zero_expression;
@@ -498,7 +499,7 @@ fn apply_task_result<T, Ops, const D: usize>(
     }
     for m in &st.pop.members {
         hall.consider(m, options, curmaxsize);
-        if m.loss < pools.best.loss {
+        if check_constraints(&m.expr, options, curmaxsize) && m.loss < pools.best.loss {
             pools.best = m.clone();
         }
     }
@@ -656,11 +657,16 @@ where
         let mut next_id = (pop_i as u64) << 32;
         let mut next_birth = 0u64;
 
-        let nlength = 3usize.min(options.maxsize.max(1));
+        let nlength = 3usize;
         let mut members = Vec::with_capacity(options.population_size);
         for _ in 0..options.population_size {
-            let expr =
-                mutate::random_expr(&mut rng, &options.operators, dataset.n_features, nlength);
+            let expr = mutate::random_expr_append_ops(
+                &mut rng,
+                &options.operators,
+                dataset.n_features,
+                nlength,
+                options.maxsize,
+            );
             let mut m = PopMember::from_expr(
                 MemberId(next_id),
                 None,
@@ -687,21 +693,31 @@ where
         }));
     }
 
-    let mut best = pops
-        .iter()
-        .flatten()
-        .next()
-        .expect("at least one population member exists")
-        .pop
-        .members[0]
-        .clone();
+    let mut best: Option<PopMember<T, Ops, D>> = None;
     for st in pops.iter().flatten() {
         for m in &st.pop.members {
-            if m.loss < best.loss {
-                best = m.clone();
+            if !check_constraints(&m.expr, options, options.maxsize) {
+                continue;
+            }
+            match &best {
+                None => best = Some(m.clone()),
+                Some(cur) => {
+                    if m.loss < cur.loss {
+                        best = Some(m.clone());
+                    }
+                }
             }
         }
     }
+    let best = best.unwrap_or_else(|| {
+        pops.iter()
+            .flatten()
+            .next()
+            .expect("at least one population member exists")
+            .pop
+            .members[0]
+            .clone()
+    });
 
     let mut best_sub_pops: Vec<Vec<PopMember<T, Ops, D>>> = vec![Vec::new(); pops.len()];
     for i in 0..pops.len() {

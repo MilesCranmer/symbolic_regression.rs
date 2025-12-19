@@ -206,6 +206,60 @@ pub fn random_expr<T: Float, Ops, const D: usize, R: Rng>(
     PostfixExpr::new(nodes, consts, Default::default())
 }
 
+/// Match SymbolicRegression.jl `gen_random_tree(nlength, ...)`:
+/// start from a placeholder `init_value(T)` leaf (0 for numeric types), then
+/// do `n_append_ops` rounds of `append_random_op`, which expands a random leaf
+/// by replacing it with an operator node and fresh random leaf children.
+///
+/// Note: final node count is generally larger than `n_append_ops`.
+pub fn random_expr_append_ops<T: Float, Ops, const D: usize, R: Rng>(
+    rng: &mut R,
+    operators: &Operators<D>,
+    n_features: usize,
+    n_append_ops: usize,
+    max_size: usize,
+) -> PostfixExpr<T, Ops, D> {
+    let max_size = max_size.max(1);
+    let mut expr = PostfixExpr::<T, Ops, D>::zero();
+
+    for _ in 0..n_append_ops {
+        let rem = max_size.saturating_sub(expr.nodes.len());
+        if rem == 0 {
+            break;
+        }
+        let max_arity = rem.min(D);
+        if operators.total_ops_up_to(max_arity) == 0 {
+            break;
+        }
+        let arity = operators.sample_arity(rng, max_arity);
+        let op_id = operators.sample_op(rng, arity).op.id;
+
+        let leaf_positions: Vec<usize> = expr
+            .nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(i, n)| matches!(n, PNode::Var { .. } | PNode::Const { .. }).then_some(i))
+            .collect();
+        if leaf_positions.is_empty() {
+            break;
+        }
+        let leaf_idx = leaf_positions[rng.random_range(0..leaf_positions.len())];
+
+        let mut repl: Vec<PNode> = Vec::with_capacity(arity + 1);
+        for _ in 0..arity {
+            repl.push(random_leaf(rng, n_features, &mut expr.consts));
+        }
+        repl.push(PNode::Op {
+            arity: arity as u8,
+            op: op_id,
+        });
+        expr.nodes.splice(leaf_idx..=leaf_idx, repl);
+    }
+
+    compress_constants(&mut expr);
+    expr
+}
+
 fn op_indices(nodes: &[PNode]) -> Vec<usize> {
     nodes
         .iter()

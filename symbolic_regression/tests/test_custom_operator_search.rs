@@ -4,7 +4,7 @@ use dynamic_expressions::operator_enum::scalar::{
 use dynamic_expressions::operator_registry::{OpInfo, OpRegistry};
 use dynamic_expressions::strings::OpNames;
 use ndarray::{Array1, Array2};
-use symbolic_regression::{equation_search, Dataset, Operators, Options};
+use symbolic_regression::{equation_search, Dataset, MutationWeights, Operators, Options};
 
 #[derive(Copy, Clone, Debug, Default)]
 struct CustomOps;
@@ -89,18 +89,34 @@ fn custom_operator_is_used_in_end_to_end_search() {
     let dataset = Dataset::new(x, y);
 
     let operators = Operators::<1>::from_names::<CustomOps>(&["square"]).unwrap();
+    let mut mutation_weights = MutationWeights::default();
+    mutation_weights.mutate_constant = 0.0;
+    mutation_weights.mutate_operator = 0.0;
+    mutation_weights.mutate_feature = 0.0;
+    mutation_weights.swap_operands = 0.0;
+    mutation_weights.rotate_tree = 0.0;
+    mutation_weights.add_node = 0.0;
+    mutation_weights.insert_node = 0.0;
+    mutation_weights.delete_node = 0.0;
+    mutation_weights.simplify = 0.0;
+    mutation_weights.randomize = 1.0;
+    mutation_weights.do_nothing = 0.0;
+    mutation_weights.optimize = 0.0;
+    mutation_weights.form_connection = 0.0;
+    mutation_weights.break_connection = 0.0;
     let options = Options::<f64, 1> {
         seed: 0,
         niterations: 1,
         populations: 1,
         population_size: 128,
-        ncycles_per_iteration: 5,
+        ncycles_per_iteration: 20,
         maxsize: 2,
         maxdepth: 2,
         progress: false,
         should_optimize_constants: false,
         annealing: false,
         operators,
+        mutation_weights,
         ..Default::default()
     };
 
