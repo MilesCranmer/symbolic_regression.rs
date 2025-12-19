@@ -31,7 +31,7 @@ pub struct WasmOpInfo {
     pub infix: Option<String>,
     pub commutative: bool,
     pub associative: bool,
-    pub complexity: f32,
+    pub complexity: u16,
 }
 
 #[wasm_bindgen]

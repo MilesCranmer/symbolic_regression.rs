@@ -98,12 +98,10 @@ fn check_default_op_arg_constraints<T: Float, const D: usize>(
             let Some(lim) = lims[j] else {
                 continue;
             };
-            {
-                let (_start, end) = ranges[j];
-                let child_sz = sizes[end];
-                if child_sz > (lim as usize) {
-                    return false;
-                }
+            let (_start, end) = ranges[j];
+            let child_sz = sizes[end];
+            if child_sz > (lim as usize) {
+                return false;
             }
         }
     }

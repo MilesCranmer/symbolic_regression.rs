@@ -8,7 +8,7 @@ pub(crate) mod loss_functions;
 pub(crate) mod migration;
 pub(crate) mod mutate;
 pub(crate) mod operator_library;
-pub(crate) mod operators;
+pub mod operators;
 pub(crate) mod optim;
 pub(crate) mod options;
 pub(crate) mod pop_member;
@@ -35,12 +35,15 @@ pub use loss_functions::{
     epsilon_insensitive, huber, log_cosh, lp, mae, make_loss, mse, quantile, rmse, LossKind,
 };
 pub use operator_library::OperatorLibrary;
-pub use operators::Operators;
+pub use operators::{OperatorRegistryExt, OperatorSelectError, Operators};
 pub use options::OutputStyle;
 pub use options::{MutationWeights, Options};
 pub use pop_member::{MemberId, PopMember};
 pub use search_utils::SearchEngine;
 pub use search_utils::{equation_search, SearchResult};
+
+#[doc(hidden)]
+pub use dynamic_expressions::custom_opset as __dynamic_expressions_custom_opset;
 
 #[cfg(test)]
 mod tests;

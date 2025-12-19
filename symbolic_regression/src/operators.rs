@@ -12,13 +12,165 @@ pub struct OpSpec {
     pub op: OpId,
     pub commutative: bool,
     pub associative: bool,
-    pub complexity: i32,
+    pub complexity: u16,
 }
 
 #[derive(Clone, Debug)]
 pub struct Operators<const D: usize> {
     pub ops_by_arity: [Vec<OpSpec>; D],
 }
+
+/// Convenience constructors for [`Operators`] based on a registry's declared maximum arity.
+pub trait OperatorRegistryExt: Sized {
+    type OperatorSet;
+
+    fn from_names(names: &[&str]) -> Result<Self::OperatorSet, OperatorSelectError>;
+
+    fn from_names_by_arity(
+        unary: &[&str],
+        binary: &[&str],
+        ternary: &[&str],
+    ) -> Result<Self::OperatorSet, OperatorSelectError>;
+}
+
+pub const fn max_arity(a: usize, b: usize) -> usize {
+    if a > b {
+        a
+    } else {
+        b
+    }
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __impl_operator_registry_ext_for {
+    ($Ops:ty; $($arity:literal),+ $(,)?) => {
+        $crate::__impl_operator_registry_ext_for!(@max $Ops; 0; $($arity),+);
+    };
+
+    (@max $Ops:ty; $cur:expr; $head:literal $(, $tail:literal)*) => {
+        $crate::__impl_operator_registry_ext_for!(
+            @max $Ops;
+            { $crate::operators::max_arity($cur, $head as usize) };
+            $($tail),*
+        );
+    };
+
+    (@max $Ops:ty; $max:expr; ) => {
+        impl $crate::OperatorRegistryExt for $Ops {
+            type OperatorSet = $crate::Operators<{ $max }>;
+
+            fn from_names(names: &[&str]) -> Result<Self::OperatorSet, $crate::OperatorSelectError> {
+                $crate::Operators::<{ $max }>::from_names::<Self>(names)
+            }
+
+            fn from_names_by_arity(
+                unary: &[&str],
+                binary: &[&str],
+                ternary: &[&str],
+            ) -> Result<Self::OperatorSet, $crate::OperatorSelectError> {
+                $crate::Operators::<{ $max }>::from_names_by_arity::<Self>(unary, binary, ternary)
+            }
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __sr_custom_opset_bind_idx {
+    ($idx_val:ident, $idx_name:pat_param) => {
+        let $idx_name = $idx_val;
+    };
+    ($idx_val:ident) => {};
+}
+
+#[macro_export]
+macro_rules! custom_opset {
+    // New DSL:
+    //
+    // custom_opset! {
+    //     pub struct CustomOps<T = f64>;
+    //
+    //     1 => {
+    //         square { eval: |[x]| x * x, partial: |[x]| 2.0 * x },
+    //     },
+    // }
+    (
+        $(#[$meta:meta])*
+        $vis:vis struct $Ops:ident<$T:ident = $t:ty>;
+
+        $(
+            $arity:literal => {
+                $(
+                    $op_name:ident {
+                        $(display: $display:expr,)?
+                        $(infix: $infix:expr,)?
+                        $(commutative: $commutative:expr,)?
+                        $(associative: $associative:expr,)?
+                        $(complexity: $complexity:expr,)?
+                        eval: |[ $($eval_pat:pat),* $(,)? ]| $eval_body:expr,
+                        partial: |[ $($partial_pat:pat),* $(,)? ] $(, $idx:pat_param)?| $partial_body:expr $(,)?
+                    }
+                ),* $(,)?
+            }
+        ),+ $(,)?
+    ) => {
+        $crate::__dynamic_expressions_custom_opset! {
+            $(#[$meta])*
+            $vis struct $Ops<$t> {
+                $(
+                    $arity {
+                        $(
+                            $op_name {
+                                $(display: $display,)?
+                                $(infix: $infix,)?
+                                $(commutative: $commutative,)?
+                                $(associative: $associative,)?
+                                $(complexity: $complexity,)?
+                                eval: |__sr_custom_opset_args: &[$t; $arity]| {
+                                    let [ $($eval_pat),* ] = *__sr_custom_opset_args;
+                                    $eval_body
+                                },
+                                partial: |__sr_custom_opset_args: &[$t; $arity], __sr_custom_opset_idx: usize| {
+                                    let [ $($partial_pat),* ] = *__sr_custom_opset_args;
+                                    $crate::__sr_custom_opset_bind_idx!(
+                                        __sr_custom_opset_idx $(, $idx)?
+                                    );
+                                    $partial_body
+                                },
+                            }
+                        )*
+                    }
+                )*
+            }
+        }
+        $crate::__impl_operator_registry_ext_for!($Ops; $($arity),+);
+    };
+
+    // Legacy syntax (passthrough to `dynamic_expressions::custom_opset!`).
+    (
+        $(#[$meta:meta])* $vis:vis struct $Ops:ident<$t:ty> {
+            $( $arity:literal { $( $op_name:ident { $($op_body:tt)* } )* } )*
+        }
+    ) => {
+        $crate::__dynamic_expressions_custom_opset! {
+            $(#[$meta])*
+            $vis struct $Ops<$t> {
+                $( $arity { $( $op_name { $($op_body)* } )* } )*
+            }
+        }
+        $crate::__impl_operator_registry_ext_for!($Ops; $($arity),*);
+    };
+}
+
+__impl_operator_registry_ext_for!(
+    dynamic_expressions::operator_enum::presets::BuiltinOpsF32;
+    1, 2, 3
+);
+__impl_operator_registry_ext_for!(
+    dynamic_expressions::operator_enum::presets::BuiltinOpsF64;
+    1, 2, 3
+);
 
 #[derive(Debug, Clone)]
 pub enum OperatorSelectError {
@@ -86,7 +238,7 @@ impl<const D: usize> Operators<D> {
         (1..=max_arity).map(|a| self.nops(a)).sum()
     }
 
-    pub fn get_op_complexity(&self, op: OpId) -> Option<i32> {
+    pub fn get_op_complexity(&self, op: OpId) -> Option<u16> {
         let a = op.arity as usize;
         if !(1..=D).contains(&a) {
             return None;
@@ -144,7 +296,7 @@ impl<const D: usize> Operators<D> {
                     op: info.op,
                     commutative: info.commutative,
                     associative: info.associative,
-                    complexity: info.complexity.round() as i32,
+                    complexity: info.complexity,
                 },
             );
         }
@@ -191,7 +343,7 @@ impl<const D: usize> Operators<D> {
                         op: info.op,
                         commutative: info.commutative,
                         associative: info.associative,
-                        complexity: info.complexity.round() as i32,
+                        complexity: info.complexity,
                     },
                 );
             }
@@ -290,7 +442,7 @@ impl<Ops, const D: usize> OperatorsBuilder<Ops, D> {
                 },
                 commutative,
                 associative,
-                complexity: (<Op as OpMeta<A>>::COMPLEXITY).round() as i32,
+                complexity: <Op as OpMeta<A>>::COMPLEXITY,
             },
         );
         self
@@ -303,6 +455,14 @@ mod tests {
     use dynamic_expressions::operator_enum::builtin::{Neg, Sub};
     use dynamic_expressions::operator_enum::presets::BuiltinOpsF64;
     use dynamic_expressions::operator_enum::scalar::HasOp;
+
+    crate::custom_opset! {
+        struct V2Ops<T = f64>;
+
+        1 => {
+            square { eval: |[x]| x * x, partial: |[x]| 2.0 * x },
+        },
+    }
 
     #[test]
     fn from_names_by_arity_resolves_dash_by_arity() {
@@ -321,5 +481,11 @@ mod tests {
             ops.ops_by_arity[1][0].op.id,
             <BuiltinOpsF64 as HasOp<Sub, 2>>::ID
         );
+    }
+
+    #[test]
+    fn v2_custom_opset_dsl_builds_operator_set() {
+        let ops = V2Ops::from_names(&["square"]).unwrap();
+        assert_eq!(ops.nops(1), 1);
     }
 }

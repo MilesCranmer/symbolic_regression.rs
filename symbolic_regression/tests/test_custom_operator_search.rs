@@ -18,7 +18,7 @@ const CUSTOM_REGISTRY: [OpInfo; 1] = [OpInfo {
     infix: None,
     commutative: false,
     associative: false,
-    complexity: 1.0,
+    complexity: 1,
 }];
 
 fn square_eval(args: &[f64; 1]) -> f64 {

@@ -8,7 +8,7 @@ pub struct OpInfo {
     pub infix: Option<&'static str>,
     pub commutative: bool,
     pub associative: bool,
-    pub complexity: f32,
+    pub complexity: u16,
 }
 
 impl OpInfo {

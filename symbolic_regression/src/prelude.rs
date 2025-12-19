@@ -1,12 +1,13 @@
 //! Convenience re-exports for examples and quickstarts.
 
 pub use crate::dataset::Dataset;
-pub use crate::operators::Operators;
+pub use crate::operators::{OperatorRegistryExt, Operators};
 pub use crate::options::{MutationWeights, Options};
 pub use crate::search_utils::{equation_search, SearchResult};
 
 // Re-export common `dynamic_expressions` types/functions so callers (and examples) don't need to
 // depend on `dynamic_expressions` directly.
+pub use crate::custom_opset;
 pub use dynamic_expressions::evaluate::EvalOptions;
 pub use dynamic_expressions::expression::PostfixExpr;
 pub use dynamic_expressions::math::*;

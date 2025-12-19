@@ -25,13 +25,9 @@ fn main() {
 
     let dataset = Dataset::new(x, y);
 
-    const MAX_ARITY: usize = 2;
-    let operators = Operators::<MAX_ARITY>::from_names_by_arity::<BuiltinOpsF32>(
-        &["cos", "exp", "sin"],
-        &["+", "-", "*", "/"],
-        &[],
-    )
-    .expect("failed to build operators");
+    let operators =
+        BuiltinOpsF32::from_names_by_arity(&["cos", "exp", "sin"], &["+", "-", "*", "/"], &[])
+            .unwrap();
 
     let options = Options::<f32, _> {
         operators,
@@ -51,7 +47,7 @@ fn main() {
     /*
         let tree = dominating
             .last()
-            .expect("no members on the pareto front")
+            .unwrap()
             .expr
             .clone();
         let _ = eval_tree_array::<f32, BuiltinOpsF32, 2>(

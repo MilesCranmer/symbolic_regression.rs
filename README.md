@@ -86,13 +86,8 @@ fn main() {
 
     let dataset = Dataset::new(x, y);
 
-    const MAX_ARITY: usize = 2;
-    let operators = Operators::<MAX_ARITY>::from_names_by_arity::<BuiltinOpsF32>(
-        &["cos", "exp", "sin"],
-        &["+", "-", "*", "/"],
-        &[],
-    )
-    .expect("failed to build operators");
+    let operators = BuiltinOpsF32::from_names_by_arity(&["cos", "exp", "sin"], &["+", "-", "*", "/"], &[])
+        .unwrap();
 
     let options = Options::<f32, _> {
         operators,
@@ -112,7 +107,7 @@ fn main() {
     /*
         let tree = dominating
             .last()
-            .expect("no members on the pareto front")
+            .unwrap()
             .expr
             .clone();
         let _ = eval_tree_array::<f32, BuiltinOpsF32, 2>(
@@ -122,6 +117,52 @@ fn main() {
         );
     */
 }
+```
+
+## Custom operators
+
+Define light-weight operator sets with inline evaluation and derivatives using the `custom_opset!` macro (re-exported from `symbolic_regression`):
+
+```rust
+use symbolic_regression::custom_opset;
+use symbolic_regression::prelude::*;
+
+custom_opset! {
+    pub struct CustomOps<T = f64>;
+
+    // Unary operators.
+    1 => {
+        square {
+            eval: |[x]| x * x,
+            partial: |[x]| 2.0 * x,
+        },
+        exp {
+            eval: |[x]| x.exp(),
+            partial: |[x]| x.exp(),
+        },
+    },
+
+    // Binary operators.
+    2 => {
+        add {
+            eval: |[x, y]| x + y,
+            partial: |[_, _], _idx| 1.0,
+        },
+        sub {
+            infix: "-",    // optional
+            complexity: 2, // optional
+            eval: |[x, y]| x - y,
+            partial: |[_, _], idx| if idx == 0 { 1.0 } else { -1.0 },
+        },
+    },
+}
+
+let operators = CustomOps::from_names_by_arity(
+    &["square", "exp"],
+    &["add", "sub"],
+    &[],
+).unwrap();
+let options = Options::<f64, _> { operators, ..Default::default() };
 ```
 
 ## WASM
