@@ -70,9 +70,12 @@ self.onmessage = async (e: MessageEvent<WorkerToWorkerMsg>) => {
         try {
           await init_thread_pool(n);
         } catch (err) {
-          post({ type: "error", error: `init_thread_pool failed: ${String(err)}` });
-          return;
+          // eslint-disable-next-line no-console
+          console.warn("init_thread_pool failed, continuing single-threaded:", err);
         }
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn("SharedArrayBuffer unavailable; running single-threaded.");
       }
       search = new WasmSearch(msg.csvText, msg.options as any, msg.unary as any, msg.binary as any, msg.ternary as any);
       search.set_pareto_k(PARETO_K);
