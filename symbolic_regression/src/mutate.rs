@@ -152,6 +152,17 @@ struct MutationOutcome<T: Float, Ops, const D: usize> {
     return_immediately: bool,
 }
 
+struct MutationApplyCtx<'a, 'd, T: Float, Ops, const D: usize, R: Rng> {
+    rng: &'a mut R,
+    member: &'a PopMember<T, Ops, D>,
+    expr: PostfixExpr<T, Ops, D>,
+    dataset: TaggedDataset<'d, T>,
+    temperature: f64,
+    curmaxsize: usize,
+    options: &'a Options<T, D>,
+    evaluator: &'a mut Evaluator<T, D>,
+}
+
 impl MutationChoice {
     #[allow(clippy::too_many_arguments)]
     fn apply<
@@ -161,18 +172,21 @@ impl MutationChoice {
         R: Rng,
     >(
         self,
-        rng: &mut R,
-        member: &PopMember<T, Ops, D>,
-        mut expr: PostfixExpr<T, Ops, D>,
-        dataset: TaggedDataset<'_, T>,
-        temperature: f64,
-        curmaxsize: usize,
-        options: &Options<T, D>,
-        evaluator: &mut Evaluator<T, D>,
+        ctx: MutationApplyCtx<'_, '_, T, Ops, D, R>,
     ) -> MutationOutcome<T, Ops, D>
     where
         Ops: ScalarOpSet<T> + OpRegistry,
     {
+        let MutationApplyCtx {
+            rng,
+            member,
+            mut expr,
+            dataset,
+            temperature,
+            curmaxsize,
+            options,
+            evaluator,
+        } = ctx;
         let n_features = dataset.n_features;
         match self {
             MutationChoice::MutateConstant => MutationOutcome {
@@ -352,16 +366,16 @@ where
     let mut evals = 0.0f64;
 
     for _ in 0..max_attempts {
-        let outcome = choice.apply(
+        let outcome = choice.apply(MutationApplyCtx {
             rng,
             member,
-            member.expr.clone(),
+            expr: member.expr.clone(),
             dataset,
             temperature,
             curmaxsize,
             options,
             evaluator,
-        );
+        });
         evals += outcome.evals;
         if !outcome.mutated {
             continue;

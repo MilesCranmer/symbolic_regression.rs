@@ -1,0 +1,103 @@
+name: Benchmarks
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - symbolic_regression/**
+      - dynamic_expressions/**
+      - .cargo/**
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/benchmarks.yml
+  push:
+    branches:
+      - main
+    paths:
+      - symbolic_regression/**
+      - dynamic_expressions/**
+      - .cargo/**
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/benchmarks.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  benchmark:
+    name: Performance regression check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Download previous benchmark data (cache)
+        uses: actions/cache/restore@v4
+        with:
+          path: ./cache
+          key: ${{ runner.os }}-benchmark-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-benchmark-
+
+      - name: Ensure cache directory exists
+        run: |
+          mkdir -p ./cache
+
+      - name: Run benchmarks (dynamic_expressions)
+        run: cargo bench -p dynamic_expressions --bench eval -- --output-format bencher | tee output-dynamic-expressions.txt
+
+      - name: Store benchmark result (dynamic_expressions)
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: dynamic_expressions / eval
+          tool: cargo
+          output-file-path: output-dynamic-expressions.txt
+          external-data-json-path: ./cache/benchmark-data.json
+          summary-always: true
+          fail-on-alert: true
+          save-data-file: ${{ github.event_name == 'push' }}
+
+      - name: Run benchmarks (symbolic_regression)
+        run: cargo bench -p symbolic_regression --bench optim --features bench -- --output-format bencher | tee output-symbolic-regression.txt
+
+      - name: Store benchmark result (symbolic_regression)
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: symbolic_regression / optim
+          tool: cargo
+          output-file-path: output-symbolic-regression.txt
+          external-data-json-path: ./cache/benchmark-data.json
+          summary-always: true
+          fail-on-alert: true
+          save-data-file: ${{ github.event_name == 'push' }}
+
+      - name: Upload raw benchmark output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-outputs-${{ github.run_id }}
+          path: |
+            output-dynamic-expressions.txt
+            output-symbolic-regression.txt
+
+      - name: Upload updated benchmark data (cache)
+        if: github.event_name == 'push'
+        uses: actions/cache/save@v4
+        with:
+          path: ./cache
+          key: ${{ runner.os }}-benchmark-${{ github.sha }}
