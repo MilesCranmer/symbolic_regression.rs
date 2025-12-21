@@ -275,7 +275,7 @@ pub(crate) fn swap_operands_in_place<T, Ops, const D: usize, R: Rng>(
     true
 }
 
-pub(crate) fn rotate_tree_in_place<T, Ops, const D: usize, R: Rng>(
+pub fn rotate_tree_in_place<T, Ops, const D: usize, R: Rng>(
     rng: &mut R,
     expr: &mut PostfixExpr<T, Ops, D>,
 ) -> bool {
@@ -379,7 +379,7 @@ pub(crate) fn rotate_tree_in_place<T, Ops, const D: usize, R: Rng>(
     true
 }
 
-pub(crate) fn insert_random_op_in_place<T: Float, Ops, const D: usize, R: Rng>(
+pub fn insert_random_op_in_place<T: Float, Ops, const D: usize, R: Rng>(
     rng: &mut R,
     expr: &mut PostfixExpr<T, Ops, D>,
     operators: &Operators<D>,

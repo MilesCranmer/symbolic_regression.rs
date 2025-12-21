@@ -1,212 +1,221 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use dynamic_expressions::{
-    eval_grad_tree_array, eval_tree_array_into, EvalContext, EvalOptions, GradContext, PNode,
-    PostfixExpr,
-};
+use dynamic_expressions::evaluate::EvalOptions;
+use dynamic_expressions::evaluate_derivative::GradContext;
+use dynamic_expressions::expression::PostfixExpr;
+use dynamic_expressions::node::PNode;
+use dynamic_expressions::node_utils::{count_constant_nodes, count_depth, count_nodes};
+use dynamic_expressions::operator_enum::presets::{BuiltinOpsF32, BuiltinOpsF64};
+use dynamic_expressions::operator_enum::scalar::ScalarOpSet;
+use dynamic_expressions::operator_registry::OpRegistry;
+use dynamic_expressions::opset;
+use dynamic_expressions::{combine_operators_in_place, eval_grad_tree_array, eval_tree_array_into};
 use ndarray::Array2;
+use num_traits::Float;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
-dynamic_expressions::opset! {
-    pub struct ReadmeOps<f64>;
+const N_FEATURES: usize = 5;
+const TREE_SIZE: usize = 20;
+const N_TREES: usize = 100;
+const N_ROWS: usize = 1_000;
+
+opset! {
+    pub struct BenchOpsF32<f32>;
     ops {
-        (1, Op1) { Cos, }
-        (2, Op2) { Add, Sub, Mul, }
+        (1, UnaryF32) { Cos, Exp, }
+        (2, BinaryF32) { Add, Sub, Mul, Div, }
     }
 }
 
-fn var(feature: u16) -> PostfixExpr<f64, ReadmeOps, 2> {
-    PostfixExpr::new(vec![PNode::Var { feature }], vec![], Default::default())
+opset! {
+    pub struct BenchOpsF64<f64>;
+    ops {
+        (1, UnaryF64) { Cos, Exp, }
+        (2, BinaryF64) { Add, Sub, Mul, Div, }
+    }
 }
 
-fn build_expr() -> PostfixExpr<f64, ReadmeOps, 2> {
-    // x1 * cos(x2 - 3.2)
-    use dynamic_expressions::math::cos;
-    var(0) * cos(var(1) - 3.2)
+fn random_leaf<T: Float, R: Rng>(rng: &mut R, n_features: usize, consts: &mut Vec<T>) -> PNode {
+    if rng.random_bool(0.5) {
+        let val: T = T::from(rng.random_range(-2.0..2.0)).unwrap();
+        let idx: u16 = consts.len().try_into().expect("too many constants");
+        consts.push(val);
+        PNode::Const { idx }
+    } else {
+        let f: u16 = rng
+            .random_range(0..n_features)
+            .try_into()
+            .expect("feature index overflow");
+        PNode::Var { feature: f }
+    }
 }
 
-fn eval_naive(expr: &PostfixExpr<f64, ReadmeOps, 2>, x: ndarray::ArrayView2<'_, f64>) -> Vec<f64> {
-    let n_rows = x.nrows();
-    let mut out = vec![0.0f64; n_rows];
+fn gen_random_tree_fixed_size<T: Float, Ops: OpRegistry, const D: usize, R: Rng>(
+    rng: &mut R,
+    target_size: usize,
+    n_features: usize,
+) -> PostfixExpr<T, Ops, D> {
+    assert!(target_size >= 1);
+    let mut nodes = Vec::with_capacity(target_size);
+    let mut consts: Vec<T> = Vec::new();
+    nodes.push(random_leaf(rng, n_features, &mut consts));
 
-    for row in 0..n_rows {
-        let x1 = x[(row, 0)];
-        let x2 = x[(row, 1)];
-        let mut stack: Vec<f64> = Vec::with_capacity(expr.nodes.len());
-        for node in &expr.nodes {
-            match *node {
-                PNode::Var { feature: 0 } => stack.push(x1),
-                PNode::Var { feature: 1 } => stack.push(x2),
-                PNode::Var { feature } => panic!("unexpected feature {}", feature),
-                PNode::Const { idx } => stack.push(expr.consts[usize::from(idx)]),
-                PNode::Op { arity: 1, op } => {
-                    let a = stack.pop().unwrap();
-                    match op {
-                        x if x == (Op1::Cos as u16) => stack.push(a.cos()),
-                        _ => panic!("unknown unary op {}", op),
-                    }
-                }
-                PNode::Op { arity: 2, op } => {
-                    let b = stack.pop().unwrap();
-                    let a = stack.pop().unwrap();
-                    match op {
-                        x if x == (Op2::Add as u16) => stack.push(a + b),
-                        x if x == (Op2::Sub as u16) => stack.push(a - b),
-                        x if x == (Op2::Mul as u16) => stack.push(a * b),
-                        _ => panic!("unknown binary op {}", op),
-                    }
-                }
-                PNode::Op { arity, op } => panic!("unsupported arity {} op {}", arity, op),
-            }
+    let ops_by_arity: [Vec<_>; D] = core::array::from_fn(|arity_minus_one| {
+        let arity = (arity_minus_one + 1) as u8;
+        Ops::registry()
+            .iter()
+            .filter(|info| info.op.arity == arity)
+            .map(|info| info.op)
+            .collect()
+    });
+
+    while nodes.len() < target_size {
+        let rem = target_size - nodes.len();
+        let max_arity = rem.min(D);
+        let arity = match 1..=max_arity {
+            range if range.is_empty() => break,
+            range => rng.random_range(range),
+        } as u8;
+
+        let Some(choices) = ops_by_arity.get(usize::from(arity) - 1) else {
+            break;
+        };
+        if choices.is_empty() {
+            break;
         }
-        out[row] = stack.pop().unwrap();
+        let op = choices[rng.random_range(0..choices.len())];
+
+        let leaves: Vec<_> = nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(i, n)| matches!(n, PNode::Var { .. } | PNode::Const { .. }).then_some(i))
+            .collect();
+        if leaves.is_empty() {
+            break;
+        }
+        let pos = leaves[rng.random_range(0..leaves.len())];
+
+        let mut repl = Vec::with_capacity(usize::from(arity) + 1);
+        for _ in 0..arity {
+            repl.push(random_leaf(rng, n_features, &mut consts));
+        }
+        repl.push(PNode::Op { arity, op: op.id });
+        nodes.splice(pos..=pos, repl);
     }
 
-    out
+    PostfixExpr::new(nodes, consts, Default::default())
 }
 
-fn bench_readme_like(c: &mut Criterion) {
-    let n_features = 2usize;
-    let n_rows = 100usize;
-    let mut data = vec![0.0f64; n_features * n_rows];
-    for row in 0..n_rows {
-        for feature in 0..n_features {
-            data[row * n_features + feature] = (row as f64 + 1.0) * (feature as f64 + 1.0) * 0.001;
+fn make_data<T: Float>() -> Array2<T> {
+    let mut data: Vec<T> = Vec::with_capacity(N_FEATURES * N_ROWS);
+    for row in 0..N_ROWS {
+        for feature in 0..N_FEATURES {
+            let v = (row as f64 * 0.01) + (feature as f64 * 0.1);
+            data.push(T::from(v).unwrap());
         }
     }
-    let x = Array2::from_shape_vec((n_rows, n_features), data).unwrap();
-    let x_data = x.as_slice().unwrap();
+    Array2::from_shape_vec((N_ROWS, N_FEATURES), data).unwrap()
+}
+
+fn bench_eval_group<T, Ops, const D: usize>(c: &mut Criterion, type_name: &str)
+where
+    T: Float + Send + Sync,
+    Ops: OpRegistry + ScalarOpSet<T> + Send + Sync,
+{
+    let mut rng = StdRng::seed_from_u64(0);
+    let trees: Vec<PostfixExpr<T, Ops, D>> = (0..N_TREES)
+        .map(|_| gen_random_tree_fixed_size(&mut rng, TREE_SIZE, N_FEATURES))
+        .collect();
+    let x = make_data::<T>();
     let x_view = x.view();
-    let expr = build_expr();
     let opts = EvalOptions {
         check_finite: false,
         early_exit: false,
     };
 
-    let mut group = c.benchmark_group("readme_like");
-    group.bench_with_input(
-        BenchmarkId::new("naive_stack_eval", n_rows),
-        &n_rows,
-        |b, _| b.iter(|| eval_naive(&expr, x_view)),
-    );
-    group.bench_with_input(BenchmarkId::new("hardcoded", n_rows), &n_rows, |b, _| {
+    let mut group = c.benchmark_group(format!("evaluation/{type_name}"));
+    group.bench_function(BenchmarkId::from_parameter("eval"), |b| {
+        let mut out = vec![T::zero(); N_ROWS];
+        let mut ctx = dynamic_expressions::EvalContext::<T, D>::new(N_ROWS);
         b.iter(|| {
-            let mut out = vec![0.0f64; n_rows];
-            for row in 0..n_rows {
-                let x1 = x_data[row * n_features];
-                let x2 = x_data[row * n_features + 1];
-                out[row] = x1 * (x2 - 3.2).cos();
+            for tree in &trees {
+                let _ = eval_tree_array_into(&mut out, tree, x_view, &mut ctx, &opts);
             }
-            out
         })
     });
-    group.bench_with_input(
-        BenchmarkId::new("hardcoded_optimized", n_rows),
-        &n_rows,
-        |b, _| {
-            let mut out = vec![0.0f64; n_rows];
-            b.iter(|| {
-                for row in 0..n_rows {
-                    let x1 = x_data[row * n_features];
-                    let x2 = x_data[row * n_features + 1];
-                    out[row] = x1 * (x2 - 3.2).cos();
-                }
-            })
-        },
-    );
-    group.bench_with_input(BenchmarkId::new("dynamic_eval", n_rows), &n_rows, |b, _| {
-        let mut out = vec![0.0f64; n_rows];
-        let mut ctx = EvalContext::<f64, 2>::new(n_rows);
-        b.iter(|| {
-            let _ok =
-                eval_tree_array_into::<f64, ReadmeOps, 2>(&mut out, &expr, x_view, &mut ctx, &opts);
-        })
-    });
-    group.bench_with_input(
-        BenchmarkId::new("dynamic_eval_mutate_op", n_rows),
-        &n_rows,
-        |b, _| {
-            let mut out = vec![0.0f64; n_rows];
-            let mut ctx = EvalContext::<f64, 2>::new(n_rows);
-            let mut which: u16 = 0;
-            b.iter(|| {
-                let mut ex = expr.clone();
-                // Mutate the root binary op among {Add, Sub, Mul}.
-                let op = match which % 3 {
-                    0 => Op2::Add as u16,
-                    1 => Op2::Sub as u16,
-                    _ => Op2::Mul as u16,
-                };
-                which = which.wrapping_add(1);
-                if let Some(PNode::Op {
-                    arity: 2,
-                    op: ref mut id,
-                }) = ex.nodes.last_mut()
-                {
-                    *id = op;
-                }
-                let _ok = eval_tree_array_into::<f64, ReadmeOps, 2>(
-                    &mut out, &ex, x_view, &mut ctx, &opts,
-                );
-            })
-        },
-    );
-    group.finish();
 
-    // Derivatives (matches README's "Derivatives" section).
-    let mut group = c.benchmark_group("readme_like_derivatives");
-    group.bench_with_input(
-        BenchmarkId::new("grad_variables", n_rows),
-        &n_rows,
-        |b, _| {
-            let mut gctx = GradContext::<f64, 2>::new(n_rows);
+    if T::from(0.0f32).unwrap().is_finite() {
+        group.bench_function(BenchmarkId::from_parameter("derivative"), |b| {
+            let mut gctx = GradContext::<T, D>::new(N_ROWS);
             b.iter(|| {
-                let _ = eval_grad_tree_array::<f64, ReadmeOps, 2>(
-                    &expr, x_view, true, &mut gctx, &opts,
-                );
-            })
-        },
-    );
-    group.bench_with_input(
-        BenchmarkId::new("grad_mutate_op", n_rows),
-        &n_rows,
-        |b, _| {
-            let mut gctx = GradContext::<f64, 2>::new(n_rows);
-            let mut which: u16 = 0;
-            b.iter(|| {
-                let mut ex = expr.clone();
-                // Mutate the root binary op among {Add, Sub, Mul}.
-                let op = match which % 3 {
-                    0 => Op2::Add as u16,
-                    1 => Op2::Sub as u16,
-                    _ => Op2::Mul as u16,
-                };
-                which = which.wrapping_add(1);
-                if let Some(PNode::Op {
-                    arity: 2,
-                    op: ref mut id,
-                }) = ex.nodes.last_mut()
-                {
-                    *id = op;
+                for tree in &trees {
+                    let _ = eval_grad_tree_array(tree, x_view, true, &mut gctx, &opts);
                 }
-
-                let _ =
-                    eval_grad_tree_array::<f64, ReadmeOps, 2>(&ex, x_view, true, &mut gctx, &opts);
             })
-        },
-    );
-    group.bench_with_input(
-        BenchmarkId::new("grad_constants", n_rows),
-        &n_rows,
-        |b, _| {
-            let mut gctx = GradContext::<f64, 2>::new(n_rows);
-            b.iter(|| {
-                let _ = eval_grad_tree_array::<f64, ReadmeOps, 2>(
-                    &expr, x_view, false, &mut gctx, &opts,
-                );
-            })
-        },
-    );
+        });
+    }
     group.finish();
 }
 
-criterion_group!(benches, bench_readme_like);
+fn bench_utilities<T, Ops, const D: usize>(c: &mut Criterion, type_name: &str)
+where
+    T: Float + Send + Sync,
+    Ops: OpRegistry + ScalarOpSet<T> + Send + Sync,
+{
+    let mut rng = StdRng::seed_from_u64(1);
+    let mut trees: Vec<PostfixExpr<T, Ops, D>> = (0..N_TREES)
+        .map(|_| gen_random_tree_fixed_size(&mut rng, TREE_SIZE, N_FEATURES))
+        .collect();
+    let eval_opts = EvalOptions {
+        check_finite: false,
+        early_exit: false,
+    };
+
+    let mut group = c.benchmark_group(format!("utilities/{type_name}"));
+    group.bench_function(BenchmarkId::from_parameter("clone"), |b| {
+        b.iter(|| trees.to_vec())
+    });
+
+    group.bench_function(BenchmarkId::from_parameter("simplify"), |b| {
+        b.iter(|| {
+            for tree in &mut trees {
+                let _ = dynamic_expressions::simplify_in_place(tree, &eval_opts);
+            }
+        })
+    });
+
+    group.bench_function(BenchmarkId::from_parameter("combine_operators"), |b| {
+        b.iter(|| {
+            for tree in &mut trees {
+                let _ = combine_operators_in_place(tree);
+            }
+        })
+    });
+
+    group.bench_function(BenchmarkId::from_parameter("counting"), |b| {
+        b.iter(|| {
+            for tree in &trees {
+                let _ = count_nodes(&tree.nodes);
+                let _ = count_depth(&tree.nodes);
+                let _ = count_constant_nodes(&tree.nodes);
+            }
+        })
+    });
+
+    group.finish();
+}
+
+fn criterion_benchmark(c: &mut Criterion) {
+    bench_eval_group::<f32, BenchOpsF32, 2>(c, "Float32");
+    bench_eval_group::<f64, BenchOpsF64, 2>(c, "Float64");
+
+    bench_utilities::<f32, BenchOpsF32, 2>(c, "Float32");
+    bench_utilities::<f64, BenchOpsF64, 2>(c, "Float64");
+
+    // Builtin opsets include ternary operators; benchmark them as well.
+    bench_eval_group::<f32, BuiltinOpsF32, 3>(c, "BuiltinF32");
+    bench_eval_group::<f64, BuiltinOpsF64, 3>(c, "BuiltinF64");
+}
+
+criterion_group!(benches, criterion_benchmark);
 criterion_main!(benches);

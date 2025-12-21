@@ -89,21 +89,22 @@ fn custom_operator_is_used_in_end_to_end_search() {
     let dataset = Dataset::new(x, y);
 
     let operators = Operators::<1>::from_names::<CustomOps>(&["square"]).unwrap();
-    let mut mutation_weights = MutationWeights::default();
-    mutation_weights.mutate_constant = 0.0;
-    mutation_weights.mutate_operator = 0.0;
-    mutation_weights.mutate_feature = 0.0;
-    mutation_weights.swap_operands = 0.0;
-    mutation_weights.rotate_tree = 0.0;
-    mutation_weights.add_node = 0.0;
-    mutation_weights.insert_node = 0.0;
-    mutation_weights.delete_node = 0.0;
-    mutation_weights.simplify = 0.0;
-    mutation_weights.randomize = 1.0;
-    mutation_weights.do_nothing = 0.0;
-    mutation_weights.optimize = 0.0;
-    mutation_weights.form_connection = 0.0;
-    mutation_weights.break_connection = 0.0;
+    let mutation_weights = MutationWeights {
+        mutate_constant: 0.0,
+        mutate_operator: 0.0,
+        mutate_feature: 0.0,
+        swap_operands: 0.0,
+        rotate_tree: 0.0,
+        add_node: 0.0,
+        insert_node: 0.0,
+        delete_node: 0.0,
+        simplify: 0.0,
+        randomize: 1.0,
+        do_nothing: 0.0,
+        optimize: 0.0,
+        form_connection: 0.0,
+        break_connection: 0.0,
+    };
     let options = Options::<f64, 1> {
         seed: 0,
         niterations: 1,
