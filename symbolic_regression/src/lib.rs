@@ -26,8 +26,10 @@ pub(crate) mod warmup;
 pub mod cli;
 
 #[cfg(feature = "bench")]
+pub mod bench;
+
+#[cfg(feature = "bench")]
 pub use crate::{
-    bench,
     check_constraints::check_constraints,
     constant_optimization::{optimize_constants, OptimizeConstantsCtx},
     mutate::next_generation,
