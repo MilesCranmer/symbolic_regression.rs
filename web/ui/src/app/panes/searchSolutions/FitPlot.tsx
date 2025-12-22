@@ -106,3 +106,4 @@ export function FitPlot(props: {
     />
   );
 }
+

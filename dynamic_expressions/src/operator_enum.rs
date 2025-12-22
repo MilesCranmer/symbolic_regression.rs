@@ -703,9 +703,8 @@ pub mod registry {
 
 pub mod scalar {
     mod types {
-        use num_traits::Float;
-
         use crate::evaluate::EvalOptions;
+        use num_traits::Float;
 
         #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
         pub struct OpId {
@@ -788,13 +787,21 @@ pub mod scalar {
         pub fn __src_val<T: Float>(src: SrcRef<'_, T>, row: usize) -> T {
             match src {
                 SrcRef::Slice(s) => s[row],
-                SrcRef::Strided { data, offset, stride } => data[row * stride + offset],
+                SrcRef::Strided {
+                    data,
+                    offset,
+                    stride,
+                } => data[row * stride + offset],
                 SrcRef::Const(c) => c,
             }
         }
 
         #[doc(hidden)]
-        pub fn __maybe_mark_nonfinite<T: Float>(v: T, opts: &EvalOptions, complete: &mut bool) -> bool {
+        pub fn __maybe_mark_nonfinite<T: Float>(
+            v: T,
+            opts: &EvalOptions,
+            complete: &mut bool,
+        ) -> bool {
             if opts.check_finite && !v.is_finite() {
                 *complete = false;
                 if opts.early_exit {
@@ -806,11 +813,11 @@ pub mod scalar {
     }
 
     mod kernels {
-        use num_traits::Float;
-
-        use super::{__maybe_mark_nonfinite, __src_val, GradKernelCtx, SrcRef, grad_at};
         use crate::evaluate::EvalOptions;
         use crate::operator_enum::builtin::BuiltinOp;
+        use num_traits::Float;
+
+        use super::{grad_at, GradKernelCtx, SrcRef, __maybe_mark_nonfinite, __src_val};
 
         fn __all_finite<T: Float>(vals: &[T]) -> bool {
             vals.iter().all(|v| v.is_finite())
@@ -1080,7 +1087,12 @@ pub mod scalar {
                 }
             }
 
-            for (dir, grad_dir) in ctx.out_grad.chunks_mut(ctx.n_rows).enumerate().take(ctx.n_dir) {
+            for (dir, grad_dir) in ctx
+                .out_grad
+                .chunks_mut(ctx.n_rows)
+                .enumerate()
+                .take(ctx.n_dir)
+            {
                 for (row, outg) in grad_dir.iter_mut().enumerate() {
                     for (v, src) in vals.iter_mut().zip(ctx.args.iter().copied()) {
                         *v = __src_val(src, row);
@@ -1136,7 +1148,12 @@ pub mod scalar {
                 }
             }
 
-            for (dir, grad_dir) in ctx.out_grad.chunks_mut(ctx.n_rows).enumerate().take(ctx.n_dir) {
+            for (dir, grad_dir) in ctx
+                .out_grad
+                .chunks_mut(ctx.n_rows)
+                .enumerate()
+                .take(ctx.n_dir)
+            {
                 for (row, outg) in grad_dir.iter_mut().enumerate() {
                     for (v, src) in vals.iter_mut().zip(ctx.args.iter().copied()) {
                         *v = __src_val(src, row);

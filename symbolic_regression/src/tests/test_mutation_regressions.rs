@@ -1,20 +1,27 @@
-use dynamic_expressions::expression::{Metadata, PostfixExpr};
-use dynamic_expressions::node::PNode;
-use dynamic_expressions::operator_enum::{builtin, scalar};
-use ndarray::{Array1, Array2};
-use rand::SeedableRng;
-use rand::rngs::StdRng;
-
-use super::common::{D, T, TestOps};
+use super::common::{TestOps, D, T};
 use crate::adaptive_parsimony::RunningSearchStatistics;
 use crate::dataset::TaggedDataset;
+use crate::loss_functions::baseline_loss_from_zero_expression;
+use crate::mutate::{condition_mutation_weights, next_generation, NextGenerationCtx};
 use crate::operator_library::OperatorLibrary;
+use crate::operators::{OpSpec, Operators};
 use crate::options::MutationWeights;
 use crate::pop_member::{Evaluator, MemberId, PopMember};
-use crate::{Options, mutate, operators};
+use crate::Options;
+use dynamic_expressions::expression::{Metadata, PostfixExpr};
+use dynamic_expressions::node::PNode;
+use dynamic_expressions::operator_enum::builtin::Add;
+use dynamic_expressions::operator_enum::scalar::{HasOp, OpId};
+use ndarray::{Array1, Array2};
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 
 fn leaf_expr(feature: u16) -> PostfixExpr<T, TestOps, D> {
-    PostfixExpr::new(vec![PNode::Var { feature }], Vec::new(), Metadata::default())
+    PostfixExpr::new(
+        vec![PNode::Var { feature }],
+        Vec::new(),
+        Metadata::default(),
+    )
 }
 
 #[test]
@@ -49,7 +56,7 @@ fn randomize_mutation_can_succeed_below_size_3() {
 
     let mut evaluator = Evaluator::<T, D>::new(dataset.n_rows);
     let baseline_loss = if options.use_baseline {
-        crate::loss_functions::baseline_loss_from_zero_expression::<T, TestOps, D>(&dataset, options.loss.as_ref())
+        baseline_loss_from_zero_expression::<T, TestOps, D>(&dataset, options.loss.as_ref())
     } else {
         None
     };
@@ -63,9 +70,9 @@ fn randomize_mutation_can_succeed_below_size_3() {
     let mut next_id = 1u64;
     let mut next_birth = 0u64;
 
-    let (child, ok, _) = mutate::next_generation::<T, TestOps, D, _>(
+    let (child, ok, _) = next_generation::<T, TestOps, D, _>(
         &parent,
-        mutate::NextGenerationCtx {
+        NextGenerationCtx {
             rng: &mut rng,
             dataset: full_dataset,
             temperature: 0.0,
@@ -110,7 +117,7 @@ fn rotate_tree_is_not_disabled_on_non_binary_trees() {
         swap_operands: 1.0,
         ..MutationWeights::default()
     };
-    mutate::condition_mutation_weights(&mut weights, &member, &options, 10, 1);
+    condition_mutation_weights(&mut weights, &member, &options, 10, 1);
 
     assert_eq!(weights.swap_operands, 0.0);
     assert_eq!(weights.rotate_tree, 1.0);
@@ -142,7 +149,9 @@ fn contains_contiguous_slice<T: PartialEq>(haystack: &[T], needle: &[T]) -> bool
     if needle.is_empty() {
         return true;
     }
-    haystack.windows(needle.len()).any(|window| window == needle)
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle)
 }
 
 #[test]
@@ -152,13 +161,13 @@ fn add_node_includes_append_at_leaf_move() {
         Array1::from_vec(vec![0.0]),
     );
 
-    let mut ops = operators::Operators::<D>::new();
+    let mut ops = Operators::<D>::new();
     ops.push(
         2,
-        operators::OpSpec {
-            op: scalar::OpId {
+        OpSpec {
+            op: OpId {
                 arity: 2,
-                id: <TestOps as scalar::HasOp<builtin::Add, 2>>::ID,
+                id: <TestOps as HasOp<Add, 2>>::ID,
             },
             commutative: true,
             associative: true,
@@ -194,7 +203,7 @@ fn add_node_includes_append_at_leaf_move() {
             PNode::Var { feature: 1 },
             PNode::Op {
                 arity: 2,
-                op: <TestOps as scalar::HasOp<builtin::Add, 2>>::ID,
+                op: <TestOps as HasOp<Add, 2>>::ID,
             },
         ],
         Vec::new(),
@@ -203,7 +212,7 @@ fn add_node_includes_append_at_leaf_move() {
 
     let mut evaluator = Evaluator::<T, D>::new(dataset.n_rows);
     let baseline_loss = if options.use_baseline {
-        crate::loss_functions::baseline_loss_from_zero_expression::<T, TestOps, D>(&dataset, options.loss.as_ref())
+        baseline_loss_from_zero_expression::<T, TestOps, D>(&dataset, options.loss.as_ref())
     } else {
         None
     };
@@ -222,9 +231,9 @@ fn add_node_includes_append_at_leaf_move() {
     let mut saw_append = false;
 
     for _ in 0..64 {
-        let (child, ok, _) = mutate::next_generation::<T, TestOps, D, _>(
+        let (child, ok, _) = next_generation::<T, TestOps, D, _>(
             &parent,
-            mutate::NextGenerationCtx {
+            NextGenerationCtx {
                 rng: &mut rng,
                 dataset: full_dataset,
                 temperature: 0.0,
@@ -250,7 +259,10 @@ fn add_node_includes_append_at_leaf_move() {
         }
     }
 
-    assert!(saw_prepend, "expected add_node to sometimes prepend at root");
+    assert!(
+        saw_prepend,
+        "expected add_node to sometimes prepend at root"
+    );
     assert!(saw_append, "expected add_node to sometimes append at leaf");
 }
 
@@ -261,13 +273,13 @@ fn mutate_operator_can_be_a_noop_and_still_succeeds() {
         Array1::from_vec(vec![0.0]),
     );
 
-    let mut ops = operators::Operators::<D>::new();
+    let mut ops = Operators::<D>::new();
     ops.push(
         2,
-        operators::OpSpec {
-            op: scalar::OpId {
+        OpSpec {
+            op: OpId {
                 arity: 2,
-                id: <TestOps as scalar::HasOp<builtin::Add, 2>>::ID,
+                id: <TestOps as HasOp<Add, 2>>::ID,
             },
             commutative: true,
             associative: true,
@@ -304,7 +316,7 @@ fn mutate_operator_can_be_a_noop_and_still_succeeds() {
             PNode::Var { feature: 1 },
             PNode::Op {
                 arity: 2,
-                op: <TestOps as scalar::HasOp<builtin::Add, 2>>::ID,
+                op: <TestOps as HasOp<Add, 2>>::ID,
             },
         ],
         Vec::new(),
@@ -313,7 +325,7 @@ fn mutate_operator_can_be_a_noop_and_still_succeeds() {
 
     let mut evaluator = Evaluator::<T, D>::new(dataset.n_rows);
     let baseline_loss = if options.use_baseline {
-        crate::loss_functions::baseline_loss_from_zero_expression::<T, TestOps, D>(&dataset, options.loss.as_ref())
+        baseline_loss_from_zero_expression::<T, TestOps, D>(&dataset, options.loss.as_ref())
     } else {
         None
     };
@@ -327,9 +339,9 @@ fn mutate_operator_can_be_a_noop_and_still_succeeds() {
     let mut next_id = 1u64;
     let mut next_birth = 0u64;
 
-    let (child, ok, _) = mutate::next_generation::<T, TestOps, D, _>(
+    let (child, ok, _) = next_generation::<T, TestOps, D, _>(
         &parent,
-        mutate::NextGenerationCtx {
+        NextGenerationCtx {
             rng: &mut rng,
             dataset: full_dataset,
             temperature: 0.0,

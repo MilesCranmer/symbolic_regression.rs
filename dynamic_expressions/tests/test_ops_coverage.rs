@@ -2,7 +2,8 @@ mod common;
 
 use common::*;
 use dynamic_expressions::{
-    DiffContext, EvalOptions, GradContext, eval_diff_tree_array, eval_grad_tree_array, eval_tree_array,
+    eval_diff_tree_array, eval_grad_tree_array, eval_tree_array, DiffContext, EvalOptions,
+    GradContext,
 };
 use ndarray::Array2;
 
@@ -21,9 +22,8 @@ fn covers_all_ops_in_eval_diff_and_grad() {
     };
 
     // Unary ops: Log, Exp, Sin, Neg (via -(sin(exp(log(x1))))).
-    let expr_unary = -dynamic_expressions::operators::sin(dynamic_expressions::operators::exp(
-        dynamic_expressions::operators::log(var(0)),
-    ));
+    use dynamic_expressions::math::{exp, log, sin};
+    let expr_unary = -sin(exp(log(var(0))));
     let (out, ok) = eval_tree_array::<f64, TestOps, 3>(&expr_unary, x.view(), &opts);
     assert!(ok);
     let manual: Vec<f64> = (0..n_rows)
@@ -34,12 +34,14 @@ fn covers_all_ops_in_eval_diff_and_grad() {
         .collect();
     assert_close_vec(&out, &manual, 1e-12);
     let mut dctx = DiffContext::<f64, 3>::new(n_rows);
-    let (_e, d, ok) = eval_diff_tree_array::<f64, TestOps, 3>(&expr_unary, x.view(), 0, &mut dctx, &opts);
+    let (_e, d, ok) =
+        eval_diff_tree_array::<f64, TestOps, 3>(&expr_unary, x.view(), 0, &mut dctx, &opts);
     assert!(ok);
     let fd = finite_diff_dir(&expr_unary, &x_data, n_features, n_rows, 0, 1e-6);
     assert_close_vec(&d, &fd, 1e-6);
     let mut gctx = GradContext::<f64, 3>::new(n_rows);
-    let (_e, _g, ok) = eval_grad_tree_array::<f64, TestOps, 3>(&expr_unary, x.view(), true, &mut gctx, &opts);
+    let (_e, _g, ok) =
+        eval_grad_tree_array::<f64, TestOps, 3>(&expr_unary, x.view(), true, &mut gctx, &opts);
     assert!(ok);
     grad_matches_diffs(&expr_unary, &x.view(), true);
 
@@ -57,7 +59,8 @@ fn covers_all_ops_in_eval_diff_and_grad() {
         .collect();
     assert_close_vec(&out, &manual, 1e-12);
     let mut dctx = DiffContext::<f64, 3>::new(n_rows);
-    let (_e, d, ok) = eval_diff_tree_array::<f64, TestOps, 3>(&expr_bin, x.view(), 1, &mut dctx, &opts);
+    let (_e, d, ok) =
+        eval_diff_tree_array::<f64, TestOps, 3>(&expr_bin, x.view(), 1, &mut dctx, &opts);
     assert!(ok);
     let fd = finite_diff_dir(&expr_bin, &x_data, n_features, n_rows, 1, 1e-6);
     assert_close_vec(&d, &fd, 1e-6);

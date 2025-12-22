@@ -1,14 +1,12 @@
 #[cfg(feature = "progress")]
 mod imp {
-    use std::io::IsTerminal;
-    use std::time::{Duration, Instant};
-
+    use crate::hall_of_fame::HallOfFame;
+    use crate::options::{Options, OutputStyle};
     use dynamic_expressions::strings::OpNames;
     use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
     use num_traits::Float;
-
-    use crate::hall_of_fame::HallOfFame;
-    use crate::options::{Options, OutputStyle};
+    use std::io::IsTerminal;
+    use std::time::{Duration, Instant};
 
     struct ProgressTracking {
         last_speed_time: Instant,
@@ -32,7 +30,10 @@ mod imp {
     }
 
     impl SearchProgress {
-        pub(crate) fn new<T: Float, const D: usize>(options: &Options<T, D>, total_cycles: usize) -> Self {
+        pub(crate) fn new<T: Float, const D: usize>(
+            options: &Options<T, D>,
+            total_cycles: usize,
+        ) -> Self {
             let show = options.progress && std::io::stderr().is_terminal();
 
             let ansi = match options.output_style {
@@ -51,7 +52,10 @@ mod imp {
             let bar = if show {
                 let pb = ProgressBar::new(total_cycles as u64);
                 pb.set_draw_target(ProgressDrawTarget::stderr_with_hz(10));
-                pb.set_prefix(format!("Evolving for {} iterations...", options.niterations));
+                pb.set_prefix(format!(
+                    "Evolving for {} iterations...",
+                    options.niterations
+                ));
                 let style = ProgressStyle::with_template(
                     "{prefix} {wide_bar} {pos:>7}/{len:7} [{elapsed_precise}<{eta_precise}]\n{msg}",
                 )
@@ -143,7 +147,10 @@ mod imp {
 
         let now = Instant::now();
         if now.duration_since(progress.last_speed_time) >= Duration::from_secs(1) {
-            let dt = now.duration_since(progress.last_speed_time).as_secs_f64().max(1e-9);
+            let dt = now
+                .duration_since(progress.last_speed_time)
+                .as_secs_f64()
+                .max(1e-9);
             let evals_since = total_evals.saturating_sub(progress.evals_last);
             progress.speeds.push((evals_since as f64) / dt);
             if progress.speeds.len() > 20 {
@@ -153,7 +160,8 @@ mod imp {
             progress.last_speed_time = now;
         }
 
-        if now.duration_since(progress.last_msg_update) < msg_min_interval && cycles_remaining != 0 {
+        if now.duration_since(progress.last_msg_update) < msg_min_interval && cycles_remaining != 0
+        {
             return;
         }
 
@@ -249,7 +257,11 @@ mod imp {
 
             if let Some((first, rest)) = eqn_lines.split_first() {
                 let first_eq = first.to_string();
-                out.push_str(&truncate_to_width(&(stats.clone() + &first_eq), terminal_width, render));
+                out.push_str(&truncate_to_width(
+                    &(stats.clone() + &first_eq),
+                    terminal_width,
+                    render,
+                ));
                 out.push('\n');
                 for line in rest {
                     let eq = line.to_string();
@@ -340,7 +352,9 @@ mod imp {
             };
 
             let header_plain = console::strip_ansi_codes(&header);
-            let eq_header_start = header_plain.find("Equation").expect("header should contain Equation");
+            let eq_header_start = header_plain
+                .find("Equation")
+                .expect("header should contain Equation");
 
             let stats = format!("{:<10}  {:<10.3e}  ", 5_u32, 1.234_f64);
             let row = format!("{stats}x0");
@@ -356,15 +370,17 @@ mod imp {
 
 #[cfg(not(feature = "progress"))]
 mod imp {
-    use num_traits::Float;
-
     use crate::hall_of_fame::HallOfFame;
     use crate::options::Options;
+    use num_traits::Float;
 
     pub(crate) struct SearchProgress;
 
     impl SearchProgress {
-        pub(crate) fn new<T: Float, const D: usize>(_options: &Options<T, D>, _total_cycles: usize) -> Self {
+        pub(crate) fn new<T: Float, const D: usize>(
+            _options: &Options<T, D>,
+            _total_cycles: usize,
+        ) -> Self {
             Self
         }
 

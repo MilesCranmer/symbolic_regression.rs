@@ -1,13 +1,11 @@
 // CLI output formatting.
 
+use crate::cli::args::OutputFormat;
+use anyhow::{bail, Context};
+use dynamic_expressions::strings::{string_tree, StringTreeOptions};
+use num_traits::Float;
 use std::io::Write;
 use std::path::Path;
-
-use anyhow::{Context, bail};
-use dynamic_expressions::strings;
-use num_traits::Float;
-
-use crate::cli::args::OutputFormat;
 
 pub struct TargetResult<T: Float, Ops, const D: usize> {
     pub target: String,
@@ -27,9 +25,9 @@ pub fn print_front<T, Ops, const D: usize>(
     println!("target: {target}");
     println!("{:<10} {:<14} equation", "complexity", "loss");
     for m in front {
-        let eq = strings::string_tree(
+        let eq = string_tree(
             &m.expr,
-            strings::StringTreeOptions {
+            StringTreeOptions {
                 variable_names: Some(&dataset.variable_names),
                 pretty,
             },
@@ -73,26 +71,35 @@ fn infer_format(path: &Path) -> anyhow::Result<OutputFormat> {
     }
 }
 
-fn write_csv<T, Ops, const D: usize>(path: &Path, results: &[TargetResult<T, Ops, D>]) -> anyhow::Result<()>
+fn write_csv<T, Ops, const D: usize>(
+    path: &Path,
+    results: &[TargetResult<T, Ops, D>],
+) -> anyhow::Result<()>
 where
     T: Float + std::fmt::Display,
     Ops: dynamic_expressions::strings::OpNames,
 {
-    let mut wtr = csv::Writer::from_path(path).with_context(|| format!("failed to create {}", path.display()))?;
+    let mut wtr = csv::Writer::from_path(path)
+        .with_context(|| format!("failed to create {}", path.display()))?;
     wtr.write_record(["target", "complexity", "loss", "equation"])?;
 
     for r in results {
         for m in &r.front {
-            let eq = strings::string_tree(
+            let eq = string_tree(
                 &m.expr,
-                strings::StringTreeOptions {
+                StringTreeOptions {
                     variable_names: Some(&r.variable_names),
                     pretty: false,
                 },
             );
             let complexity = m.complexity.to_string();
             let loss = m.loss.to_string();
-            wtr.write_record([r.target.as_str(), complexity.as_str(), loss.as_str(), eq.as_str()])?;
+            wtr.write_record([
+                r.target.as_str(),
+                complexity.as_str(),
+                loss.as_str(),
+                eq.as_str(),
+            ])?;
         }
     }
     wtr.flush()?;
@@ -107,7 +114,10 @@ struct JsonRow<'a> {
     equation: String,
 }
 
-fn write_json<T, Ops, const D: usize>(path: &Path, results: &[TargetResult<T, Ops, D>]) -> anyhow::Result<()>
+fn write_json<T, Ops, const D: usize>(
+    path: &Path,
+    results: &[TargetResult<T, Ops, D>],
+) -> anyhow::Result<()>
 where
     T: Float + std::fmt::Display,
     Ops: dynamic_expressions::strings::OpNames,
@@ -115,9 +125,9 @@ where
     let mut rows = Vec::new();
     for r in results {
         for m in &r.front {
-            let eq = strings::string_tree(
+            let eq = string_tree(
                 &m.expr,
-                strings::StringTreeOptions {
+                StringTreeOptions {
                     variable_names: Some(&r.variable_names),
                     pretty: false,
                 },
@@ -131,7 +141,8 @@ where
         }
     }
     let json = serde_json::to_string_pretty(&rows)?;
-    let mut f = std::fs::File::create(path).with_context(|| format!("failed to create {}", path.display()))?;
+    let mut f = std::fs::File::create(path)
+        .with_context(|| format!("failed to create {}", path.display()))?;
     f.write_all(json.as_bytes())?;
     Ok(())
 }

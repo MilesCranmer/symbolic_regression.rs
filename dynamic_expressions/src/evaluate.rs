@@ -1,10 +1,9 @@
-use ndarray::ArrayView2;
-use num_traits::Float;
-
-use crate::compile::EvalPlan;
+use crate::compile::{compile_plan, EvalPlan};
 use crate::expression::PostfixExpr;
 use crate::node::Src;
 use crate::operator_enum::scalar::{EvalKernelCtx, GradRef, OpId, ScalarOpSet, SrcRef};
+use ndarray::ArrayView2;
+use num_traits::Float;
 
 #[derive(Copy, Clone, Debug)]
 pub struct EvalOptions {
@@ -55,7 +54,12 @@ impl<T: Float, const D: usize> EvalContext<T, D> {
     }
 }
 
-fn slot_slice<'a, T>(slot: usize, dst_slot: usize, before: &'a [Vec<T>], after: &'a [Vec<T>]) -> &'a [T] {
+fn slot_slice<'a, T>(
+    slot: usize,
+    dst_slot: usize,
+    before: &'a [Vec<T>],
+    after: &'a [Vec<T>],
+) -> &'a [T] {
     if slot < dst_slot {
         &before[slot]
     } else if slot > dst_slot {
@@ -140,7 +144,10 @@ where
     T: Float,
     Ops: ScalarOpSet<T>,
 {
-    assert!(x.is_standard_layout(), "X must be standard (row-major) layout");
+    assert!(
+        x.is_standard_layout(),
+        "X must be standard (row-major) layout"
+    );
     let n_rows = x.nrows();
     let mut ctx = EvalContext::<T, D>::new(n_rows);
     let mut out = vec![T::zero(); n_rows];
@@ -160,7 +167,10 @@ where
     T: Float,
     Ops: ScalarOpSet<T>,
 {
-    assert!(x.is_standard_layout(), "X must be standard (row-major) layout");
+    assert!(
+        x.is_standard_layout(),
+        "X must be standard (row-major) layout"
+    );
     assert_eq!(out.len(), x.nrows());
     let n_rows = x.nrows();
     let x_data = x.as_slice().expect("X must be contiguous");
@@ -185,7 +195,15 @@ where
 
         let mut args_refs: [SrcRef<'_, T>; D] = core::array::from_fn(|_| SrcRef::Const(T::zero()));
         for (j, dst) in args_refs.iter_mut().take(arity).enumerate() {
-            *dst = resolve_val_src(instr.args[j], x_data, n_features, &expr.consts, dst_slot, before, after);
+            *dst = resolve_val_src(
+                instr.args[j],
+                x_data,
+                n_features,
+                &expr.consts,
+                dst_slot,
+                before,
+                after,
+            );
         }
 
         let ok = Ops::eval(
@@ -247,11 +265,7 @@ where
         || ctx.plan_n_consts != expr.consts.len()
         || ctx.plan_n_features != x.ncols();
     if needs_recompile {
-        ctx.plan = Some(crate::compile::compile_plan::<D>(
-            &expr.nodes,
-            x.ncols(),
-            expr.consts.len(),
-        ));
+        ctx.plan = Some(compile_plan::<D>(&expr.nodes, x.ncols(), expr.consts.len()));
         ctx.plan_nodes_len = expr.nodes.len();
         ctx.plan_n_consts = expr.consts.len();
         ctx.plan_n_features = x.ncols();
@@ -263,10 +277,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use ndarray::Array2;
-
     use super::*;
     use crate::operator_enum::scalar::SrcRef;
+    use ndarray::Array2;
 
     #[test]
     fn slot_slice_panics_if_src_references_dst() {
@@ -291,7 +304,15 @@ mod tests {
         });
         assert!(res.is_err());
 
-        let r = resolve_val_src(Src::Slot(1), x_data, n_features, &consts, dst_slot, &before, &after);
+        let r = resolve_val_src(
+            Src::Slot(1),
+            x_data,
+            n_features,
+            &consts,
+            dst_slot,
+            &before,
+            &after,
+        );
         assert!(matches!(r, SrcRef::Slice(s) if s.len() == 2));
     }
 
@@ -305,7 +326,15 @@ mod tests {
         let after: Vec<Vec<f64>> = vec![vec![3.0, 4.0]];
 
         let dst_slot = 1usize;
-        let r = resolve_val_src(Src::Slot(0), x_data, n_features, &consts, dst_slot, &before, &after);
+        let r = resolve_val_src(
+            Src::Slot(0),
+            x_data,
+            n_features,
+            &consts,
+            dst_slot,
+            &before,
+            &after,
+        );
         assert!(matches!(r, SrcRef::Slice(s) if s.len() == 2 && s[0] == 1.0 && s[1] == 2.0));
     }
 }

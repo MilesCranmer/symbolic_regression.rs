@@ -15,7 +15,11 @@ pub fn count_depth(nodes: &[PNode]) -> usize {
             }
         }
     }
-    assert_eq!(stack.len(), 1, "invalid postfix (did not reduce to one root)");
+    assert_eq!(
+        stack.len(),
+        1,
+        "invalid postfix (did not reduce to one root)"
+    );
     stack[0]
 }
 
@@ -31,7 +35,10 @@ pub fn tree_mapreduce<R>(
             PNode::Var { .. } | PNode::Const { .. } => stack.push(f_leaf(n)),
             PNode::Op { arity, .. } => {
                 let a = arity as usize;
-                let start = stack.len().checked_sub(a).expect("invalid postfix (stack underflow)");
+                let start = stack
+                    .len()
+                    .checked_sub(a)
+                    .expect("invalid postfix (stack underflow)");
                 let parent = f_branch(n);
                 let out = op(parent, &stack[start..]);
                 stack.truncate(start);
@@ -39,7 +46,11 @@ pub fn tree_mapreduce<R>(
             }
         }
     }
-    assert_eq!(stack.len(), 1, "invalid postfix (did not reduce to one root)");
+    assert_eq!(
+        stack.len(),
+        1,
+        "invalid postfix (did not reduce to one root)"
+    );
     stack.pop().expect("non-empty stack")
 }
 
@@ -52,7 +63,10 @@ pub fn has_constants(nodes: &[PNode]) -> bool {
 }
 
 pub fn count_constant_nodes(nodes: &[PNode]) -> usize {
-    nodes.iter().filter(|n| matches!(n, PNode::Const { .. })).count()
+    nodes
+        .iter()
+        .filter(|n| matches!(n, PNode::Const { .. }))
+        .count()
 }
 
 pub fn has_operators(nodes: &[PNode]) -> bool {
@@ -64,11 +78,17 @@ pub fn has_variables(nodes: &[PNode]) -> bool {
 }
 
 pub fn count_variable_nodes(nodes: &[PNode]) -> usize {
-    nodes.iter().filter(|n| matches!(n, PNode::Var { .. })).count()
+    nodes
+        .iter()
+        .filter(|n| matches!(n, PNode::Var { .. }))
+        .count()
 }
 
 pub fn count_operator_nodes(nodes: &[PNode]) -> usize {
-    nodes.iter().filter(|n| matches!(n, PNode::Op { .. })).count()
+    nodes
+        .iter()
+        .filter(|n| matches!(n, PNode::Op { .. }))
+        .count()
 }
 
 pub fn max_arity(nodes: &[PNode]) -> u8 {
@@ -128,7 +148,11 @@ pub fn subtree_sizes(nodes: &[PNode]) -> Vec<usize> {
         }
     }
 
-    assert_eq!(stack.len(), 1, "invalid postfix (did not reduce to one root)");
+    assert_eq!(
+        stack.len(),
+        1,
+        "invalid postfix (did not reduce to one root)"
+    );
     sizes
 }
 

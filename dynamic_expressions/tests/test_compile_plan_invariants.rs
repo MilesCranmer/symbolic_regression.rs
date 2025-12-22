@@ -1,4 +1,4 @@
-use dynamic_expressions::{PNode, compile_plan};
+use dynamic_expressions::{compile_plan, PNode};
 
 #[test]
 #[should_panic(expected = "Var index out of bounds")]

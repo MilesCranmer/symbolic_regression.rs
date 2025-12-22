@@ -117,7 +117,11 @@ pub fn __apply_postfix<T, Ops, const D: usize, const A: usize>(
 }
 
 fn __const_expr<T, Ops, const D: usize>(value: T) -> PostfixExpr<T, Ops, D> {
-    PostfixExpr::new(vec![PNode::Const { idx: 0 }], vec![value], Default::default())
+    PostfixExpr::new(
+        vec![PNode::Const { idx: 0 }],
+        vec![value],
+        Default::default(),
+    )
 }
 
 impl_postfix_binop_self!(Add, add, Add);

@@ -1,12 +1,11 @@
+use super::Table;
+use anyhow::{bail, Context};
+use calamine::{open_workbook_auto, Data, Reader};
 use std::path::Path;
 
-use anyhow::{Context, bail};
-use calamine::Reader;
-
-use super::Table;
-
 pub fn load_xlsx(path: &Path, sheet: Option<&str>, has_header: bool) -> anyhow::Result<Table> {
-    let mut wb = calamine::open_workbook_auto(path).with_context(|| format!("failed to open {}", path.display()))?;
+    let mut wb =
+        open_workbook_auto(path).with_context(|| format!("failed to open {}", path.display()))?;
 
     let sheet_name = match sheet {
         Some(s) => s.to_string(),
@@ -31,23 +30,23 @@ pub fn load_xlsx(path: &Path, sheet: Option<&str>, has_header: bool) -> anyhow::
         bail!("sheet {sheet_name:?} has zero columns");
     }
 
-    let (headers, mut data_rows): (Vec<String>, Vec<Vec<calamine::Data>>) = if has_header {
+    let (headers, mut data_rows): (Vec<String>, Vec<Vec<Data>>) = if has_header {
         let mut headers: Vec<String> = Vec::with_capacity(n_cols);
         for (i, cell) in first.iter().enumerate() {
             let h = match cell {
-                calamine::Data::String(s) if !s.trim().is_empty() => s.trim().to_string(),
-                calamine::Data::Float(f) => f.to_string(),
-                calamine::Data::Int(i) => i.to_string(),
-                calamine::Data::Bool(b) => b.to_string(),
+                Data::String(s) if !s.trim().is_empty() => s.trim().to_string(),
+                Data::Float(f) => f.to_string(),
+                Data::Int(i) => i.to_string(),
+                Data::Bool(b) => b.to_string(),
                 _ => format!("col{i}"),
             };
             headers.push(h);
         }
-        let data_rows: Vec<Vec<calamine::Data>> = rows.map(|r: &[calamine::Data]| r.to_vec()).collect();
+        let data_rows: Vec<Vec<Data>> = rows.map(|r: &[Data]| r.to_vec()).collect();
         (headers, data_rows)
     } else {
-        let data_rows: Vec<Vec<calamine::Data>> = std::iter::once(first.to_vec())
-            .chain(rows.map(|r: &[calamine::Data]| r.to_vec()))
+        let data_rows: Vec<Vec<Data>> = std::iter::once(first.to_vec())
+            .chain(rows.map(|r: &[Data]| r.to_vec()))
             .collect();
         let headers = (0..n_cols).map(|i| format!("col{i}")).collect();
         (headers, data_rows)
@@ -64,8 +63,13 @@ pub fn load_xlsx(path: &Path, sheet: Option<&str>, has_header: bool) -> anyhow::
             );
         }
         for (col_idx, cell) in row.into_iter().enumerate() {
-            let v = cell_to_f64(cell)
-                .with_context(|| format!("failed to parse numeric cell at row {}, col {}", row_idx + 1, col_idx))?;
+            let v = cell_to_f64(cell).with_context(|| {
+                format!(
+                    "failed to parse numeric cell at row {}, col {}",
+                    row_idx + 1,
+                    col_idx
+                )
+            })?;
             columns[col_idx].push(v);
         }
     }
@@ -73,13 +77,16 @@ pub fn load_xlsx(path: &Path, sheet: Option<&str>, has_header: bool) -> anyhow::
     Table::new(headers, columns)
 }
 
-fn cell_to_f64(cell: calamine::Data) -> anyhow::Result<f64> {
+fn cell_to_f64(cell: Data) -> anyhow::Result<f64> {
     match cell {
-        calamine::Data::Float(f) => Ok(f),
-        calamine::Data::Int(i) => Ok(i as f64),
-        calamine::Data::String(s) => s.trim().parse::<f64>().with_context(|| format!("raw={s:?}")),
-        calamine::Data::Bool(b) => Ok(if b { 1.0 } else { 0.0 }),
-        calamine::Data::Empty => bail!("empty cell"),
+        Data::Float(f) => Ok(f),
+        Data::Int(i) => Ok(i as f64),
+        Data::String(s) => s
+            .trim()
+            .parse::<f64>()
+            .with_context(|| format!("raw={s:?}")),
+        Data::Bool(b) => Ok(if b { 1.0 } else { 0.0 }),
+        Data::Empty => bail!("empty cell"),
         other => bail!("unsupported cell type {other:?}"),
     }
 }

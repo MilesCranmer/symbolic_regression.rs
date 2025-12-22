@@ -1,14 +1,15 @@
+use dynamic_expressions::operator_enum::builtin::OpMeta;
+use dynamic_expressions::operator_enum::builtin::{Add, Div, Mul, Sub};
+use dynamic_expressions::operator_enum::scalar::{HasOp, OpId};
+use dynamic_expressions::operator_registry::OpRegistry;
+use rand::Rng;
 use std::collections::HashSet;
 use std::fmt;
 use std::marker::PhantomData;
 
-use dynamic_expressions::operator_enum::{builtin, scalar};
-use dynamic_expressions::operator_registry;
-use rand::Rng;
-
 #[derive(Clone, Debug)]
 pub struct OpSpec {
-    pub op: scalar::OpId,
+    pub op: OpId,
     pub commutative: bool,
     pub associative: bool,
     pub complexity: u16,
@@ -33,7 +34,11 @@ pub trait OperatorRegistryExt: Sized {
 }
 
 pub const fn max_arity(a: usize, b: usize) -> usize {
-    if a > b { a } else { b }
+    if a > b {
+        a
+    } else {
+        b
+    }
 }
 
 #[macro_export]
@@ -170,8 +175,16 @@ __impl_operator_registry_ext_for!(
 #[derive(Debug, Clone)]
 pub enum OperatorSelectError {
     Lookup(dynamic_expressions::operator_registry::LookupError),
-    ArityMismatch { token: String, expected: u8, found: u8 },
-    ArityTooLarge { token: String, arity: u8, max_arity: usize },
+    ArityMismatch {
+        token: String,
+        expected: u8,
+        found: u8,
+    },
+    ArityTooLarge {
+        token: String,
+        arity: u8,
+        max_arity: usize,
+    },
     Duplicate(String),
     Empty,
 }
@@ -180,7 +193,11 @@ impl fmt::Display for OperatorSelectError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             OperatorSelectError::Lookup(e) => write!(f, "{e:?}"),
-            OperatorSelectError::ArityMismatch { token, expected, found } => write!(
+            OperatorSelectError::ArityMismatch {
+                token,
+                expected,
+                found,
+            } => write!(
                 f,
                 "operator token {token:?} has arity={found} but was provided for arity={expected}"
             ),
@@ -221,7 +238,7 @@ impl<const D: usize> Operators<D> {
         (1..=max_arity).map(|a| self.nops(a)).sum()
     }
 
-    pub fn get_op_complexity(&self, op: scalar::OpId) -> Option<u16> {
+    pub fn get_op_complexity(&self, op: OpId) -> Option<u16> {
         let a = op.arity as usize;
         if !(1..=D).contains(&a) {
             return None;
@@ -253,7 +270,7 @@ impl<const D: usize> Operators<D> {
         &v[i]
     }
 
-    pub fn from_names<Ops: operator_registry::OpRegistry>(names: &[&str]) -> Result<Self, OperatorSelectError> {
+    pub fn from_names<Ops: OpRegistry>(names: &[&str]) -> Result<Self, OperatorSelectError> {
         if names.is_empty() {
             return Err(OperatorSelectError::Empty);
         }
@@ -286,7 +303,7 @@ impl<const D: usize> Operators<D> {
         Ok(out)
     }
 
-    pub fn from_names_by_arity<Ops: operator_registry::OpRegistry>(
+    pub fn from_names_by_arity<Ops: OpRegistry>(
         unary: &[&str],
         binary: &[&str],
         ternary: &[&str],
@@ -300,7 +317,8 @@ impl<const D: usize> Operators<D> {
 
         for (expected, toks) in [(1u8, unary), (2u8, binary), (3u8, ternary)] {
             for &tok in toks {
-                let info = Ops::lookup_with_arity(tok, expected).map_err(OperatorSelectError::Lookup)?;
+                let info =
+                    Ops::lookup_with_arity(tok, expected).map_err(OperatorSelectError::Lookup)?;
                 if info.op.arity != expected {
                     return Err(OperatorSelectError::ArityMismatch {
                         token: tok.to_string(),
@@ -378,54 +396,53 @@ impl<Ops, const D: usize> OperatorsBuilder<Ops, D> {
 impl<Ops, const D: usize> OperatorsBuilder<Ops, D> {
     pub fn sr_default_binary(self) -> Self
     where
-        Ops: scalar::HasOp<builtin::Add, 2>
-            + scalar::HasOp<builtin::Sub, 2>
-            + scalar::HasOp<builtin::Mul, 2>
-            + scalar::HasOp<builtin::Div, 2>,
+        Ops: HasOp<Add, 2> + HasOp<Sub, 2> + HasOp<Mul, 2> + HasOp<Div, 2>,
     {
-        self.nary::<2, builtin::Add>()
-            .nary::<2, builtin::Sub>()
-            .nary::<2, builtin::Mul>()
-            .nary::<2, builtin::Div>()
+        self.nary::<2, Add>()
+            .nary::<2, Sub>()
+            .nary::<2, Mul>()
+            .nary::<2, Div>()
     }
 
     pub fn unary<Op>(self) -> Self
     where
-        Ops: scalar::HasOp<Op, 1>,
-        Op: builtin::OpMeta<1>,
+        Ops: HasOp<Op, 1>,
+        Op: OpMeta<1>,
     {
         self.nary::<1, Op>()
     }
 
     pub fn binary<Op>(self) -> Self
     where
-        Ops: scalar::HasOp<Op, 2>,
-        Op: builtin::OpMeta<2>,
+        Ops: HasOp<Op, 2>,
+        Op: OpMeta<2>,
     {
         self.nary::<2, Op>()
     }
 
     pub fn nary<const A: usize, Op>(mut self) -> Self
     where
-        Ops: scalar::HasOp<Op, A>,
-        Op: builtin::OpMeta<A>,
+        Ops: HasOp<Op, A>,
+        Op: OpMeta<A>,
     {
         assert!(A >= 1 && A <= D, "arity {A} not supported for D={D}");
-        let arity_u8: u8 = A.try_into().unwrap_or_else(|_| panic!("arity {A} does not fit in u8"));
+        let arity_u8: u8 = A
+            .try_into()
+            .unwrap_or_else(|_| panic!("arity {A} does not fit in u8"));
 
-        let commutative = <Op as builtin::OpMeta<A>>::COMMUTATIVE;
-        let associative = <Op as builtin::OpMeta<A>>::ASSOCIATIVE;
+        let commutative = <Op as OpMeta<A>>::COMMUTATIVE;
+        let associative = <Op as OpMeta<A>>::ASSOCIATIVE;
 
         self.operators.push(
             A,
             OpSpec {
-                op: scalar::OpId {
+                op: OpId {
                     arity: arity_u8,
-                    id: <Ops as scalar::HasOp<Op, A>>::ID,
+                    id: <Ops as HasOp<Op, A>>::ID,
                 },
                 commutative,
                 associative,
-                complexity: <Op as builtin::OpMeta<A>>::COMPLEXITY,
+                complexity: <Op as OpMeta<A>>::COMPLEXITY,
             },
         );
         self
@@ -434,10 +451,10 @@ impl<Ops, const D: usize> OperatorsBuilder<Ops, D> {
 
 #[cfg(test)]
 mod tests {
-    use dynamic_expressions::operator_enum::builtin;
-    use dynamic_expressions::operator_enum::presets::BuiltinOpsF64;
-
     use super::*;
+    use dynamic_expressions::operator_enum::builtin::{Neg, Sub};
+    use dynamic_expressions::operator_enum::presets::BuiltinOpsF64;
+    use dynamic_expressions::operator_enum::scalar::HasOp;
 
     crate::custom_opset! {
         struct V2Ops<T = f64>;
@@ -454,7 +471,7 @@ mod tests {
         assert_eq!(ops.nops(1), 1);
         assert_eq!(
             ops.ops_by_arity[0][0].op.id,
-            <BuiltinOpsF64 as scalar::HasOp<builtin::Neg, 1>>::ID
+            <BuiltinOpsF64 as HasOp<Neg, 1>>::ID
         );
 
         let binary = ["-"];
@@ -462,7 +479,7 @@ mod tests {
         assert_eq!(ops.nops(2), 1);
         assert_eq!(
             ops.ops_by_arity[1][0].op.id,
-            <BuiltinOpsF64 as scalar::HasOp<builtin::Sub, 2>>::ID
+            <BuiltinOpsF64 as HasOp<Sub, 2>>::ID
         );
     }
 

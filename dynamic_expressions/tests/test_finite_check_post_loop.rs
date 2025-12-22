@@ -1,17 +1,21 @@
-use std::hint::black_box;
-
-use dynamic_expressions::EvalOptions;
 use dynamic_expressions::operator_enum::builtin::Add;
 use dynamic_expressions::operator_enum::scalar::{
-    GradKernelCtx, GradRef, SrcRef, diff_apply, diff_nary, eval_apply, eval_nary, grad_apply, grad_nary,
+    diff_apply, diff_nary, eval_apply, eval_nary, grad_apply, grad_nary, GradKernelCtx, GradRef,
+    SrcRef,
 };
+use dynamic_expressions::EvalOptions;
+use std::hint::black_box;
 
 fn id_eval(args: &[f64; 1]) -> f64 {
     args[0]
 }
 
 fn nan_on_second_row_eval(args: &[f64; 1]) -> f64 {
-    if args[0] == 2.0 { f64::NAN } else { args[0] }
+    if args[0] == 2.0 {
+        f64::NAN
+    } else {
+        args[0]
+    }
 }
 
 fn one_partial(_args: &[f64; 1], idx: usize) -> f64 {
@@ -30,7 +34,12 @@ fn eval_nary_no_checks_returns_true() {
         check_finite: false,
         early_exit: false,
     });
-    assert!(eval_nary::<1, f64>(nan_on_second_row_eval, &mut out, &args, &opts));
+    assert!(eval_nary::<1, f64>(
+        nan_on_second_row_eval,
+        &mut out,
+        &args,
+        &opts
+    ));
 }
 
 #[test]
@@ -42,7 +51,12 @@ fn eval_nary_checks_after_loop_when_no_early_exit() {
         check_finite: true,
         early_exit: false,
     });
-    assert!(!eval_nary::<1, f64>(nan_on_second_row_eval, &mut out, &args, &opts));
+    assert!(!eval_nary::<1, f64>(
+        nan_on_second_row_eval,
+        &mut out,
+        &args,
+        &opts
+    ));
     assert!(out[1].is_nan());
 }
 

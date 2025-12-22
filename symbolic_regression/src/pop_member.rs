@@ -1,11 +1,13 @@
-use dynamic_expressions::expression::PostfixExpr;
-use dynamic_expressions::{EvalOptions, EvalPlan};
-use num_traits::Float;
-
 use crate::complexity::compute_complexity;
 use crate::dataset::TaggedDataset;
 use crate::loss_functions::loss_to_cost;
 use crate::options::Options;
+use dynamic_expressions::compile_plan;
+use dynamic_expressions::eval_plan_array_into;
+use dynamic_expressions::expression::PostfixExpr;
+use dynamic_expressions::operator_enum::scalar::ScalarOpSet;
+use dynamic_expressions::{EvalOptions, EvalPlan};
+use num_traits::Float;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct MemberId(pub u64);
@@ -69,7 +71,7 @@ impl<T: Float, const D: usize> Evaluator<T, D> {
 
 impl<T: Float, Ops, const D: usize> PopMember<T, Ops, D>
 where
-    Ops: dynamic_expressions::operator_enum::scalar::ScalarOpSet<T>,
+    Ops: ScalarOpSet<T>,
 {
     pub fn from_expr(
         id: MemberId,
@@ -78,7 +80,7 @@ where
         expr: PostfixExpr<T, Ops, D>,
         n_features: usize,
     ) -> Self {
-        let plan = dynamic_expressions::compile_plan(&expr.nodes, n_features, expr.consts.len());
+        let plan = compile_plan(&expr.nodes, n_features, expr.consts.len());
         Self {
             id,
             parent,
@@ -92,7 +94,7 @@ where
     }
 
     pub fn rebuild_plan(&mut self, n_features: usize) {
-        self.plan = dynamic_expressions::compile_plan(&self.expr.nodes, n_features, self.expr.consts.len());
+        self.plan = compile_plan(&self.expr.nodes, n_features, self.expr.consts.len());
     }
 
     pub fn evaluate(
@@ -102,7 +104,7 @@ where
         evaluator: &mut Evaluator<T, D>,
     ) -> bool {
         let x = dataset.x.view();
-        let ok = dynamic_expressions::eval_plan_array_into(
+        let ok = eval_plan_array_into(
             &mut evaluator.yhat,
             &self.plan,
             &self.expr,

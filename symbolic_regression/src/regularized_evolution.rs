@@ -1,6 +1,3 @@
-use num_traits::{Float, FromPrimitive, ToPrimitive};
-use rand::Rng;
-
 use crate::adaptive_parsimony::RunningSearchStatistics;
 use crate::dataset::TaggedDataset;
 use crate::mutate::{self, CrossoverCtx, NextGenerationCtx};
@@ -8,6 +5,10 @@ use crate::options::Options;
 use crate::pop_member::Evaluator;
 use crate::population::Population;
 use crate::selection::best_of_sample;
+use dynamic_expressions::operator_enum::scalar::ScalarOpSet;
+use dynamic_expressions::operator_registry::OpRegistry;
+use num_traits::{Float, FromPrimitive, ToPrimitive};
+use rand::Rng;
 
 pub struct RegEvolCtx<'a, T: Float, Ops, const D: usize, R: Rng> {
     pub rng: &'a mut R,
@@ -28,11 +29,11 @@ pub fn reg_evol_cycle<T, Ops, const D: usize, R: Rng>(
 ) -> f64
 where
     T: Float + FromPrimitive + ToPrimitive,
-    Ops:
-        dynamic_expressions::operator_enum::scalar::ScalarOpSet<T> + dynamic_expressions::operator_registry::OpRegistry,
+    Ops: ScalarOpSet<T> + OpRegistry,
 {
     let mut num_evals = 0.0;
-    let n_evol_cycles = ((pop.len() as f64) / (ctx.options.tournament_selection_n as f64)).ceil() as usize;
+    let n_evol_cycles =
+        ((pop.len() as f64) / (ctx.options.tournament_selection_n as f64)).ceil() as usize;
 
     for _ in 0..n_evol_cycles {
         if ctx.rng.random::<f64>() > ctx.options.crossover_probability {

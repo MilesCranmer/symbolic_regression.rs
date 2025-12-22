@@ -1,13 +1,14 @@
-use dynamic_expressions::operator_enum::scalar;
-use dynamic_expressions::{EvalOptions, GradContext};
+use crate::dataset::Dataset;
+use crate::dataset::TaggedDataset;
+use crate::optim::{bfgs_minimize, newton_1d_minimize, BackTracking, Objective, OptimOptions};
+use crate::options::Options;
+use crate::pop_member::{Evaluator, PopMember};
+use dynamic_expressions::operator_enum::scalar::ScalarOpSet;
+use dynamic_expressions::{eval_grad_tree_array, eval_plan_array_into, EvalOptions, GradContext};
 use num_traits::{Float, FromPrimitive, ToPrimitive};
 use rand::Rng;
 use rand_distr::Distribution;
-
-use crate::dataset::{Dataset, TaggedDataset};
-use crate::optim::{BackTracking, Objective, OptimOptions, bfgs_minimize, newton_1d_minimize};
-use crate::options::Options;
-use crate::pop_member::{Evaluator, PopMember};
+use rand_distr::StandardNormal;
 
 fn eval_loss_and_grad<T: Float, Ops, const D: usize>(
     expr: &dynamic_expressions::expression::PostfixExpr<T, Ops, D>,
@@ -19,7 +20,7 @@ fn eval_loss_and_grad<T: Float, Ops, const D: usize>(
     grad_out: &mut [f64],
 ) -> Option<f64>
 where
-    Ops: scalar::ScalarOpSet<T>,
+    Ops: ScalarOpSet<T>,
 {
     let n_params = expr.consts.len();
     let n_rows = dataset.n_rows;
@@ -27,7 +28,7 @@ where
     debug_assert_eq!(dloss_dyhat.len(), n_rows);
 
     let x = dataset.x.view();
-    let (yhat, dy_dc, ok) = dynamic_expressions::eval_grad_tree_array(expr, x, false, grad_ctx, eval_opts);
+    let (yhat, dy_dc, ok) = eval_grad_tree_array(expr, x, false, grad_ctx, eval_opts);
     if !ok {
         return None;
     }
@@ -76,9 +77,9 @@ fn eval_loss_only<T: Float, Ops, const D: usize>(
     eval_opts: &EvalOptions,
 ) -> Option<f64>
 where
-    Ops: scalar::ScalarOpSet<T>,
+    Ops: ScalarOpSet<T>,
 {
-    let ok = dynamic_expressions::eval_plan_array_into(
+    let ok = eval_plan_array_into(
         &mut evaluator.yhat,
         plan,
         expr,
@@ -103,7 +104,7 @@ where
 
 struct ConstObjective<'a, T: Float, Ops, const D: usize>
 where
-    Ops: scalar::ScalarOpSet<T>,
+    Ops: ScalarOpSet<T>,
 {
     plan: &'a dynamic_expressions::EvalPlan<D>,
     expr: &'a mut dynamic_expressions::expression::PostfixExpr<T, Ops, D>,
@@ -115,9 +116,10 @@ where
     dloss_dyhat: &'a mut [T],
 }
 
-impl<'a, T: Float + FromPrimitive + ToPrimitive, Ops, const D: usize> Objective for ConstObjective<'a, T, Ops, D>
+impl<'a, T: Float + FromPrimitive + ToPrimitive, Ops, const D: usize> Objective
+    for ConstObjective<'a, T, Ops, D>
 where
-    Ops: scalar::ScalarOpSet<T>,
+    Ops: ScalarOpSet<T>,
 {
     fn f_only(&mut self, x: &[f64], budget: &mut crate::optim::EvalBudget) -> Option<f64> {
         budget.f_calls += 1;
@@ -134,7 +136,12 @@ where
         )
     }
 
-    fn fg(&mut self, x: &[f64], g_out: &mut [f64], budget: &mut crate::optim::EvalBudget) -> Option<f64> {
+    fn fg(
+        &mut self,
+        x: &[f64],
+        g_out: &mut [f64],
+        budget: &mut crate::optim::EvalBudget,
+    ) -> Option<f64> {
         budget.f_calls += 1;
         for (dst, &src) in self.expr.consts.iter_mut().zip(x.iter()) {
             *dst = T::from_f64(src)?;
@@ -157,7 +164,7 @@ pub fn optimize_constants<T: Float + FromPrimitive + ToPrimitive, Ops, const D: 
     ctx: OptimizeConstantsCtx<'_, '_, T, D>,
 ) -> (bool, f64)
 where
-    Ops: scalar::ScalarOpSet<T>,
+    Ops: ScalarOpSet<T>,
 {
     let OptimizeConstantsCtx {
         dataset,
@@ -192,12 +199,24 @@ where
 
     let mut dloss_dyhat = vec![T::zero(); dataset_ref.n_rows];
 
-    let baseline = match eval_loss_only(&member.plan, &member.expr, dataset_ref, options, evaluator, &eval_opts) {
+    let baseline = match eval_loss_only(
+        &member.plan,
+        &member.expr,
+        dataset_ref,
+        options,
+        evaluator,
+        &eval_opts,
+    ) {
         Some(v) => v,
         None => return (false, 0.0),
     };
 
-    let x0: Vec<f64> = member.expr.consts.iter().map(|v| v.to_f64().unwrap_or(0.0)).collect();
+    let x0: Vec<f64> = member
+        .expr
+        .consts
+        .iter()
+        .map(|v| v.to_f64().unwrap_or(0.0))
+        .collect();
 
     let mut best_x = x0.clone();
     let mut best_f = baseline;
@@ -245,7 +264,7 @@ where
     for _ in 0..options.optimizer_nrestarts {
         let mut xt = x0.clone();
         for v in &mut xt {
-            let eps: f64 = rand_distr::StandardNormal.sample(rng);
+            let eps: f64 = StandardNormal.sample(rng);
             *v *= 1.0 + 0.5 * eps;
         }
 

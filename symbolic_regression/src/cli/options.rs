@@ -1,10 +1,9 @@
 // CLI entrypoint + option wiring.
 
+use crate::cli::args::Cli;
+use crate::cli::output::{print_front, write_results, TargetResult};
 use anyhow::Context;
 use clap::Parser;
-
-use crate::cli::args::Cli;
-use crate::cli::output::{TargetResult, print_front, write_results};
 
 type T = f64;
 const D: usize = 3;

@@ -1,11 +1,11 @@
 mod common;
 
 use common::{Op1, TestOps};
-use dynamic_expressions::EvalOptions;
 use dynamic_expressions::operator_enum::scalar::{
     DiffKernelCtx, EvalKernelCtx, GradKernelCtx, GradRef, OpId, ScalarOpSet, SrcRef,
 };
 use dynamic_expressions::strings::OpNames;
+use dynamic_expressions::EvalOptions;
 
 #[test]
 fn opset_op_names_none_infix_branch_is_exercised() {

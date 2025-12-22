@@ -1,10 +1,12 @@
+use num_traits::Float;
 use std::sync::Arc;
 
-use dynamic_expressions::EvalOptions;
-use dynamic_expressions::operator_enum::scalar;
-use num_traits::Float;
-
 use crate::dataset::Dataset;
+use dynamic_expressions::compile_plan;
+use dynamic_expressions::eval_plan_array_into;
+use dynamic_expressions::expression::PostfixExpr;
+use dynamic_expressions::operator_enum::scalar::ScalarOpSet;
+use dynamic_expressions::EvalOptions;
 
 pub trait LossFn<T: Float>: Send + Sync {
     fn loss(&self, yhat: &[T], y: &[T], w: Option<&[T]>) -> T;
@@ -16,11 +18,10 @@ pub fn baseline_loss_from_zero_expression<T: Float, Ops, const D: usize>(
     loss: &dyn LossFn<T>,
 ) -> Option<T>
 where
-    Ops: scalar::ScalarOpSet<T>,
+    Ops: ScalarOpSet<T>,
 {
-    let expr: dynamic_expressions::expression::PostfixExpr<T, Ops, D> =
-        dynamic_expressions::expression::PostfixExpr::zero();
-    let plan = dynamic_expressions::compile_plan(&expr.nodes, dataset.n_features, expr.consts.len());
+    let expr: PostfixExpr<T, Ops, D> = PostfixExpr::zero();
+    let plan = compile_plan(&expr.nodes, dataset.n_features, expr.consts.len());
 
     let mut yhat = vec![T::zero(); dataset.n_rows];
     let mut scratch: Vec<Vec<T>> = Vec::new();
@@ -29,8 +30,14 @@ where
         check_finite: true,
         early_exit: true,
     };
-    let ok =
-        dynamic_expressions::eval_plan_array_into(&mut yhat, &plan, &expr, dataset.x.view(), &mut scratch, &eval_opts);
+    let ok = eval_plan_array_into(
+        &mut yhat,
+        &plan,
+        &expr,
+        dataset.x.view(),
+        &mut scratch,
+        &eval_opts,
+    );
     if !ok {
         return None;
     }
@@ -85,9 +92,10 @@ impl LossKind {
             "logcosh" => Some(Self::LogCosh),
             "lp" => Some(Self::Lp { p: 2.0 }),
             "quantile" => Some(Self::Quantile { tau: 0.5 }),
-            "epsilon-insensitive" | "epsilon_insensitive" | "eps-insensitive" | "eps_insensitive" => {
-                Some(Self::EpsilonInsensitive { eps: 0.1 })
-            }
+            "epsilon-insensitive"
+            | "epsilon_insensitive"
+            | "eps-insensitive"
+            | "eps_insensitive" => Some(Self::EpsilonInsensitive { eps: 0.1 }),
             _ => None,
         }
     }
@@ -169,7 +177,8 @@ impl<T: Float, L: PointwiseLoss<T> + Send + Sync> LossFn<T> for MeanLoss<L> {
                     return;
                 }
                 let inv = sum_w.recip();
-                for (((o, a), b), wi) in out.iter_mut().zip(yhat.iter()).zip(y.iter()).zip(w.iter()) {
+                for (((o, a), b), wi) in out.iter_mut().zip(yhat.iter()).zip(y.iter()).zip(w.iter())
+                {
                     *o = (*wi) * inv * self.0.point_dloss_dyhat(*a, *b);
                 }
             }
@@ -316,7 +325,11 @@ pub struct EpsilonInsensitiveLoss<T: Float> {
 impl<T: Float> PointwiseLoss<T> for EpsilonInsensitiveLoss<T> {
     fn point_loss(&self, yhat: T, y: T) -> T {
         let r = (yhat - y).abs() - self.eps;
-        if r > T::zero() { r } else { T::zero() }
+        if r > T::zero() {
+            r
+        } else {
+            T::zero()
+        }
     }
 
     fn point_dloss_dyhat(&self, yhat: T, y: T) -> T {
@@ -371,7 +384,8 @@ impl<T: Float> LossFn<T> for Rmse {
                     return;
                 }
                 let scale = sum_w.recip() / rmse;
-                for (((o, a), b), wi) in out.iter_mut().zip(yhat.iter()).zip(y.iter()).zip(w.iter()) {
+                for (((o, a), b), wi) in out.iter_mut().zip(yhat.iter()).zip(y.iter()).zip(w.iter())
+                {
                     *o = scale * (*wi) * (*a - *b);
                 }
             }

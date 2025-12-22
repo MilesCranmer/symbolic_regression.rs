@@ -1,19 +1,22 @@
-use dynamic_expressions::expression::{Metadata, PostfixExpr};
-use dynamic_expressions::node::PNode;
-use num_traits::One;
-use rand::SeedableRng;
-use rand::rngs::StdRng;
-
-use super::common::{D, T, TestOps};
-use crate::Options;
+use super::common::{TestOps, D, T};
 use crate::adaptive_parsimony::RunningSearchStatistics;
 use crate::operator_library::OperatorLibrary;
 use crate::pop_member::{MemberId, PopMember};
 use crate::population::Population;
 use crate::selection::best_of_sample;
+use crate::Options;
+use dynamic_expressions::expression::{Metadata, PostfixExpr};
+use dynamic_expressions::node::PNode;
+use num_traits::One;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 
 fn leaf_expr() -> PostfixExpr<T, TestOps, D> {
-    PostfixExpr::new(vec![PNode::Var { feature: 0 }], Vec::new(), Metadata::default())
+    PostfixExpr::new(
+        vec![PNode::Var { feature: 0 }],
+        Vec::new(),
+        Metadata::default(),
+    )
 }
 
 #[test]

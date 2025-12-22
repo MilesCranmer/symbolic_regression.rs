@@ -1,11 +1,12 @@
-use ndarray::ArrayView2;
-use num_traits::Float;
-
-use crate::compile::{EvalPlan, compile_plan};
-use crate::evaluate::{EvalOptions, resolve_der_src, resolve_grad_src, resolve_val_src};
+use crate::compile::{compile_plan, EvalPlan};
+use crate::evaluate::{resolve_der_src, resolve_grad_src, resolve_val_src, EvalOptions};
 use crate::expression::PostfixExpr;
 use crate::node::Src;
-use crate::operator_enum::scalar::{DiffKernelCtx, GradKernelCtx, GradRef, OpId, ScalarOpSet, SrcRef};
+use crate::operator_enum::scalar::{
+    DiffKernelCtx, GradKernelCtx, GradRef, OpId, ScalarOpSet, SrcRef,
+};
+use ndarray::ArrayView2;
+use num_traits::Float;
 
 #[derive(Debug)]
 pub struct DiffContext<T: Float, const D: usize> {
@@ -126,7 +127,10 @@ where
     T: Float,
     Ops: ScalarOpSet<T>,
 {
-    assert!(x.is_standard_layout(), "X must be standard (row-major) layout");
+    assert!(
+        x.is_standard_layout(),
+        "X must be standard (row-major) layout"
+    );
     assert!(direction < x.ncols());
     assert_eq!(ctx.n_rows, x.nrows());
     let n_rows = x.nrows();
@@ -199,7 +203,9 @@ where
 
     match plan.root {
         Src::Var(f) => {
-            let eval = (0..n_rows).map(|row| x_data[row * n_features + (f as usize)]).collect();
+            let eval = (0..n_rows)
+                .map(|row| x_data[row * n_features + (f as usize)])
+                .collect();
             let der = if f as usize == direction {
                 vec![T::one(); n_rows]
             } else {
@@ -236,12 +242,19 @@ where
     T: Float,
     Ops: ScalarOpSet<T>,
 {
-    assert!(x.is_standard_layout(), "X must be standard (row-major) layout");
+    assert!(
+        x.is_standard_layout(),
+        "X must be standard (row-major) layout"
+    );
     assert_eq!(ctx.n_rows, x.nrows());
     let n_rows = x.nrows();
     let x_data = x.as_slice().expect("X must be contiguous");
     let n_features = x.ncols();
-    let n_dir = if variable { x.ncols() } else { expr.consts.len() };
+    let n_dir = if variable {
+        x.ncols()
+    } else {
+        expr.consts.len()
+    };
 
     let needs_recompile = ctx.plan.is_none()
         || ctx.plan_nodes_len != expr.nodes.len()
@@ -313,7 +326,9 @@ where
 
     match plan.root {
         Src::Var(f) => {
-            let eval: Vec<T> = (0..n_rows).map(|row| x_data[row * n_features + (f as usize)]).collect();
+            let eval: Vec<T> = (0..n_rows)
+                .map(|row| x_data[row * n_features + (f as usize)])
+                .collect();
             let mut grad = vec![T::zero(); n_dir * n_rows];
             if variable {
                 let dir = f as usize;

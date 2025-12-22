@@ -3,11 +3,11 @@ mod csv;
 mod table;
 mod xlsx;
 
-use anyhow::{Context, bail};
+use crate::cli::args::Cli;
+use anyhow::{bail, Context};
+use columns::{ColumnSelector, ColumnSelectorParseOpts};
 use ndarray::{Array1, Array2};
 pub use table::Table;
-
-use crate::cli::args::Cli;
 
 pub fn load_table(cli: &Cli) -> anyhow::Result<Table> {
     let path = cli
@@ -28,15 +28,18 @@ pub fn load_table(cli: &Cli) -> anyhow::Result<Table> {
     }
 }
 
-pub fn build_datasets(table: &Table, cli: &Cli) -> anyhow::Result<Vec<(String, crate::Dataset<f64>)>> {
-    let parse_opts = columns::ColumnSelectorParseOpts {
+pub fn build_datasets(
+    table: &Table,
+    cli: &Cli,
+) -> anyhow::Result<Vec<(String, crate::Dataset<f64>)>> {
+    let parse_opts = ColumnSelectorParseOpts {
         one_indexed: cli.one_indexed,
     };
 
     let y_selectors = cli
         .y
         .iter()
-        .map(|s| columns::ColumnSelector::parse(s, parse_opts))
+        .map(|s| ColumnSelector::parse(s, parse_opts))
         .collect::<anyhow::Result<Vec<_>>>()
         .context("failed to parse --y selectors")?;
 
@@ -49,8 +52,12 @@ pub fn build_datasets(table: &Table, cli: &Cli) -> anyhow::Result<Vec<(String, c
     let weights_index = match &cli.weights {
         None => None,
         Some(w) => {
-            let sel = columns::ColumnSelector::parse(w, parse_opts).context("failed to parse --weights")?;
-            Some(table.column_index(&sel).context("failed to resolve --weights")?)
+            let sel = ColumnSelector::parse(w, parse_opts).context("failed to parse --weights")?;
+            Some(
+                table
+                    .column_index(&sel)
+                    .context("failed to resolve --weights")?,
+            )
         }
     };
 
@@ -58,7 +65,7 @@ pub fn build_datasets(table: &Table, cli: &Cli) -> anyhow::Result<Vec<(String, c
         Some(xs) => {
             let selectors = xs
                 .iter()
-                .map(|s| columns::ColumnSelector::parse(s, parse_opts))
+                .map(|s| ColumnSelector::parse(s, parse_opts))
                 .collect::<anyhow::Result<Vec<_>>>()
                 .context("failed to parse --x selectors")?;
             selectors
@@ -110,7 +117,10 @@ pub fn build_datasets(table: &Table, cli: &Cli) -> anyhow::Result<Vec<(String, c
         }
     };
 
-    let variable_names: Vec<String> = x_indices.iter().map(|&i| table.headers[i].clone()).collect();
+    let variable_names: Vec<String> = x_indices
+        .iter()
+        .map(|&i| table.headers[i].clone())
+        .collect();
 
     let mut out = Vec::new();
     for &yi in &y_indices {
@@ -118,7 +128,12 @@ pub fn build_datasets(table: &Table, cli: &Cli) -> anyhow::Result<Vec<(String, c
         let y = Array1::from_iter(ycol.iter().copied());
         let target_name = table.headers[yi].clone();
 
-        let ds = crate::Dataset::with_weights_and_names(x.clone(), y, weights.clone(), variable_names.clone());
+        let ds = crate::Dataset::with_weights_and_names(
+            x.clone(),
+            y,
+            weights.clone(),
+            variable_names.clone(),
+        );
         out.push((target_name, ds));
     }
 

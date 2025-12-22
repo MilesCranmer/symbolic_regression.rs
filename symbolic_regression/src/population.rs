@@ -1,6 +1,5 @@
-use num_traits::Float;
-
 use crate::pop_member::PopMember;
+use num_traits::Float;
 
 pub struct Population<T: Float, Ops, const D: usize> {
     pub members: Vec<PopMember<T, Ops, D>>,

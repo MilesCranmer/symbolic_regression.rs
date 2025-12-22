@@ -1,14 +1,15 @@
-use num_traits::{Float, FromPrimitive, ToPrimitive};
-use rand::Rng;
-
 use crate::adaptive_parsimony::RunningSearchStatistics;
-use crate::constant_optimization::{OptimizeConstantsCtx, optimize_constants};
+use crate::constant_optimization::{optimize_constants, OptimizeConstantsCtx};
 use crate::dataset::TaggedDataset;
 use crate::hall_of_fame::HallOfFame;
 use crate::options::Options;
 use crate::pop_member::Evaluator;
 use crate::population::Population;
-use crate::regularized_evolution::{RegEvolCtx, reg_evol_cycle};
+use crate::regularized_evolution::{reg_evol_cycle, RegEvolCtx};
+use dynamic_expressions::operator_enum::scalar::ScalarOpSet;
+use dynamic_expressions::operator_registry::OpRegistry;
+use num_traits::{Float, FromPrimitive, ToPrimitive};
+use rand::Rng;
 
 pub struct IterationCtx<'a, T: Float, Ops, const D: usize, R: Rng> {
     pub rng: &'a mut R,
@@ -30,8 +31,7 @@ pub fn s_r_cycle<T, Ops, const D: usize, R: Rng>(
 ) -> (f64, HallOfFame<T, Ops, D>)
 where
     T: Float + FromPrimitive + ToPrimitive,
-    Ops:
-        dynamic_expressions::operator_enum::scalar::ScalarOpSet<T> + dynamic_expressions::operator_registry::OpRegistry,
+    Ops: ScalarOpSet<T> + OpRegistry,
 {
     let max_temp = 1.0;
     let min_temp = if ctx.options.annealing { 0.0 } else { 1.0 };
@@ -74,14 +74,14 @@ pub fn optimize_and_simplify_population<T, Ops, const D: usize, R: Rng>(
 ) -> f64
 where
     T: Float + FromPrimitive + ToPrimitive,
-    Ops:
-        dynamic_expressions::operator_enum::scalar::ScalarOpSet<T> + dynamic_expressions::operator_registry::OpRegistry,
+    Ops: ScalarOpSet<T> + OpRegistry,
 {
     let mut num_evals = 0.0;
 
     if ctx.options.should_simplify {
         for m in &mut pop.members {
-            let changed = dynamic_expressions::simplify_in_place(&mut m.expr, &ctx.evaluator.eval_opts);
+            let changed =
+                dynamic_expressions::simplify_in_place(&mut m.expr, &ctx.evaluator.eval_opts);
             if changed {
                 m.rebuild_plan(ctx.full_dataset.n_features);
             }

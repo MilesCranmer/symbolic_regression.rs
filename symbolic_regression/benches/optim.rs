@@ -1,16 +1,18 @@
 use core::marker::PhantomData;
 
-use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
+use dynamic_expressions::operator_enum::builtin::{Add, Cos, Div, Sin, Sub};
 use dynamic_expressions::operator_enum::presets::BuiltinOpsF32;
-use dynamic_expressions::operator_enum::{builtin, scalar};
+use dynamic_expressions::operator_enum::scalar::{HasOp, OpId};
 use ndarray::{Array1, Array2};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rand_distr::StandardNormal;
 use symbolic_regression::{
-    Dataset, Evaluator, MemberId, NextGenerationCtx, Operators, OptimizeConstantsCtx, Options, PopMember, Population,
-    RunningSearchStatistics, TaggedDataset, best_of_sample, check_constraints, equation_search,
-    insert_random_op_in_place, next_generation, optimize_constants, random_expr, rotate_tree_in_place,
+    best_of_sample, check_constraints, equation_search, insert_random_op_in_place, next_generation,
+    optimize_constants, random_expr, rotate_tree_in_place, Dataset, Evaluator, MemberId,
+    NextGenerationCtx, Operators, OptimizeConstantsCtx, Options, PopMember, Population,
+    RunningSearchStatistics, TaggedDataset,
 };
 
 type T = f32;
@@ -19,11 +21,13 @@ type Ops = BuiltinOpsF32;
 const POP_SIZE: usize = 100;
 
 fn make_ops_search() -> Operators<D> {
-    Operators::<D>::from_names_by_arity::<Ops>(&["exp", "abs"], &["+", "-", "*", "/"], &[]).expect("search operators")
+    Operators::<D>::from_names_by_arity::<Ops>(&["exp", "abs"], &["+", "-", "*", "/"], &[])
+        .expect("search operators")
 }
 
 fn make_ops_utils() -> Operators<D> {
-    Operators::<D>::from_names_by_arity::<Ops>(&["sin", "cos"], &["+", "-", "*", "/"], &[]).expect("utils operators")
+    Operators::<D>::from_names_by_arity::<Ops>(&["sin", "cos"], &["+", "-", "*", "/"], &[])
+        .expect("utils operators")
 }
 
 fn make_search_options(seed: u64) -> Options<T, D> {
@@ -106,8 +110,14 @@ fn make_population(
 
     let mut members = Vec::with_capacity(pop_size);
     for i in 0..pop_size {
-        let expr = random_expr::<T, Ops, D, _>(&mut rng, &options.operators, dataset.n_features, tree_size);
-        let mut member = PopMember::from_expr(MemberId(i as u64), None, i as u64, expr, dataset.n_features);
+        let expr = random_expr::<T, Ops, D, _>(
+            &mut rng,
+            &options.operators,
+            dataset.n_features,
+            tree_size,
+        );
+        let mut member =
+            PopMember::from_expr(MemberId(i as u64), None, i as u64, expr, dataset.n_features);
         let _ = member.evaluate(&tagged, options, &mut evaluator);
         members.push(member);
     }
@@ -121,8 +131,14 @@ fn make_population(
 
 fn bench_search(c: &mut Criterion) {
     let seeds = [1u64, 2, 3];
-    let datasets: Vec<_> = seeds.iter().map(|&seed| make_dataset(seed, 1_000, 5)).collect();
-    let options: Vec<_> = seeds.iter().map(|&seed| make_search_options(seed)).collect();
+    let datasets: Vec<_> = seeds
+        .iter()
+        .map(|&seed| make_dataset(seed, 1_000, 5))
+        .collect();
+    let options: Vec<_> = seeds
+        .iter()
+        .map(|&seed| make_search_options(seed))
+        .collect();
 
     let mut group = c.benchmark_group("search");
     group.sample_size(10);
@@ -212,8 +228,10 @@ fn bench_utils(c: &mut Criterion) {
         let mut rng = StdRng::seed_from_u64(42);
         let mut members = Vec::with_capacity(10);
         for i in 0..10 {
-            let expr = random_expr::<T, Ops, D, _>(&mut rng, &options.operators, dataset.n_features, 20);
-            let member = PopMember::from_expr(MemberId(i as u64), None, i as u64, expr, dataset.n_features);
+            let expr =
+                random_expr::<T, Ops, D, _>(&mut rng, &options.operators, dataset.n_features, 20);
+            let member =
+                PopMember::from_expr(MemberId(i as u64), None, i as u64, expr, dataset.n_features);
             members.push(member);
         }
 
@@ -305,25 +323,25 @@ fn bench_utils(c: &mut Criterion) {
         options.maxsize = 30;
         options.maxdepth = 20;
 
-        let add = scalar::OpId {
+        let add = OpId {
             arity: 2,
-            id: <Ops as scalar::HasOp<builtin::Add, 2>>::ID,
+            id: <Ops as HasOp<Add, 2>>::ID,
         };
-        let sub = scalar::OpId {
+        let sub = OpId {
             arity: 2,
-            id: <Ops as scalar::HasOp<builtin::Sub, 2>>::ID,
+            id: <Ops as HasOp<Sub, 2>>::ID,
         };
-        let div = scalar::OpId {
+        let div = OpId {
             arity: 2,
-            id: <Ops as scalar::HasOp<builtin::Div, 2>>::ID,
+            id: <Ops as HasOp<Div, 2>>::ID,
         };
-        let sin = scalar::OpId {
+        let sin = OpId {
             arity: 1,
-            id: <Ops as scalar::HasOp<builtin::Sin, 1>>::ID,
+            id: <Ops as HasOp<Sin, 1>>::ID,
         };
-        let cos = scalar::OpId {
+        let cos = OpId {
             arity: 1,
-            id: <Ops as scalar::HasOp<builtin::Cos, 1>>::ID,
+            id: <Ops as HasOp<Cos, 1>>::ID,
         };
 
         options.op_constraints.set_op_arg_constraint(add, 1, 10);
@@ -332,14 +350,30 @@ fn bench_utils(c: &mut Criterion) {
         options.op_constraints.set_op_arg_constraint(sin, 0, 12);
         options.op_constraints.set_op_arg_constraint(cos, 0, 5);
 
-        options.nested_constraints.add_nested_constraint(add, div, 1);
-        options.nested_constraints.add_nested_constraint(add, add, 2);
-        options.nested_constraints.add_nested_constraint(sin, sin, 0);
-        options.nested_constraints.add_nested_constraint(sin, cos, 2);
-        options.nested_constraints.add_nested_constraint(cos, sin, 0);
-        options.nested_constraints.add_nested_constraint(cos, cos, 0);
-        options.nested_constraints.add_nested_constraint(cos, add, 1);
-        options.nested_constraints.add_nested_constraint(cos, sub, 1);
+        options
+            .nested_constraints
+            .add_nested_constraint(add, div, 1);
+        options
+            .nested_constraints
+            .add_nested_constraint(add, add, 2);
+        options
+            .nested_constraints
+            .add_nested_constraint(sin, sin, 0);
+        options
+            .nested_constraints
+            .add_nested_constraint(sin, cos, 2);
+        options
+            .nested_constraints
+            .add_nested_constraint(cos, sin, 0);
+        options
+            .nested_constraints
+            .add_nested_constraint(cos, cos, 0);
+        options
+            .nested_constraints
+            .add_nested_constraint(cos, add, 1);
+        options
+            .nested_constraints
+            .add_nested_constraint(cos, sub, 1);
 
         let mut rng = StdRng::seed_from_u64(13);
         let trees: Vec<_> = (0..10)

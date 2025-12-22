@@ -1,13 +1,15 @@
-use std::collections::HashMap;
-
 use crate::expression::PostfixExpr;
+use crate::node::PNode;
+use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 pub struct ConstRef {
     pub const_indices: Vec<usize>,
 }
 
-pub fn get_scalar_constants<T: Copy, Ops, const D: usize>(expr: &PostfixExpr<T, Ops, D>) -> (Vec<T>, ConstRef) {
+pub fn get_scalar_constants<T: Copy, Ops, const D: usize>(
+    expr: &PostfixExpr<T, Ops, D>,
+) -> (Vec<T>, ConstRef) {
     let cref = ConstRef {
         const_indices: (0..expr.consts.len()).collect(),
     };
@@ -27,12 +29,14 @@ pub fn set_scalar_constants<T, Ops, const D: usize>(
     }
 }
 
-pub fn compress_constants<T: Clone, Ops, const D: usize>(expr: &mut PostfixExpr<T, Ops, D>) -> bool {
+pub fn compress_constants<T: Clone, Ops, const D: usize>(
+    expr: &mut PostfixExpr<T, Ops, D>,
+) -> bool {
     let mut remap: HashMap<u16, u16> = HashMap::new();
     let mut new_consts: Vec<T> = Vec::new();
     let mut changed = false;
     for node in &mut expr.nodes {
-        let crate::node::PNode::Const { idx } = node else {
+        let PNode::Const { idx } = node else {
             continue;
         };
 

@@ -1,7 +1,7 @@
 mod common;
 
 use common::*;
-use dynamic_expressions::{EvalOptions, eval_tree_array};
+use dynamic_expressions::{eval_tree_array, EvalContext, EvalOptions};
 use rstest::rstest;
 
 #[rstest]
@@ -19,8 +19,14 @@ fn eval_readme_like_matches_manual(#[case] check_finite: bool, #[case] early_exi
     let n_rows = x.nrows();
     let n_features = x.ncols();
     let mut out = vec![0.0f64; n_rows];
-    let mut ctx = dynamic_expressions::EvalContext::<f64, 3>::new(n_rows);
-    let ok = dynamic_expressions::eval_tree_array_into::<f64, TestOps, 3>(&mut out, &expr, x.view(), &mut ctx, &opts);
+    let mut ctx = EvalContext::<f64, 3>::new(n_rows);
+    let ok = dynamic_expressions::eval_tree_array_into::<f64, TestOps, 3>(
+        &mut out,
+        &expr,
+        x.view(),
+        &mut ctx,
+        &opts,
+    );
 
     // manual
     let mut manual = vec![0.0f64; n_rows];

@@ -1,23 +1,24 @@
-use std::collections::HashSet;
-
+use crate::check_constraints::check_constraints;
+use crate::check_constraints::{NestedConstraints, OpConstraints};
+use crate::dataset::Dataset;
+use crate::{compute_complexity, Options};
 use dynamic_expressions::expression::PostfixExpr;
 use dynamic_expressions::node::PNode;
+use dynamic_expressions::operator_enum::builtin::{Add, Cos, Sin};
 use dynamic_expressions::operator_enum::presets::BuiltinOpsF64;
-use dynamic_expressions::operator_enum::{builtin, scalar};
+use dynamic_expressions::operator_enum::scalar::{HasOp, OpId};
 use ndarray::{Array1, Array2};
-use rand::SeedableRng;
 use rand::rngs::StdRng;
-
-use crate::check_constraints::{NestedConstraints, OpConstraints, check_constraints};
-use crate::dataset::Dataset;
-use crate::{Options, compute_complexity};
+use rand::SeedableRng;
+use std::collections::HashSet;
 
 #[test]
 fn batch_resample_copies_rows_and_weights() {
     let x = Array2::from_shape_vec((4, 2), vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]).unwrap();
     let y = Array1::from_vec(vec![10.0, 11.0, 12.0, 13.0]);
     let w = Array1::from_vec(vec![1.0, 2.0, 3.0, 4.0]);
-    let full_dataset = Dataset::with_weights_and_names(x, y, Some(w), vec!["x0".into(), "x1".into()]);
+    let full_dataset =
+        Dataset::with_weights_and_names(x, y, Some(w), vec!["x0".into(), "x1".into()]);
 
     let mut batch = Dataset::make_batch_buffer(&full_dataset, 3);
     let mut rng = StdRng::seed_from_u64(123);
@@ -83,13 +84,13 @@ fn constraints_op_arg_and_nested_constraints_work() {
     type Ops = BuiltinOpsF64;
     const D: usize = 3;
 
-    let add = scalar::OpId {
+    let add = OpId {
         arity: 2,
-        id: <Ops as scalar::HasOp<builtin::Add, 2>>::ID,
+        id: <Ops as HasOp<Add, 2>>::ID,
     };
-    let cos = scalar::OpId {
+    let cos = OpId {
         arity: 1,
-        id: <Ops as scalar::HasOp<builtin::Cos, 1>>::ID,
+        id: <Ops as HasOp<Cos, 1>>::ID,
     };
 
     // expr = (x0 + x1) + x2
@@ -97,9 +98,15 @@ fn constraints_op_arg_and_nested_constraints_work() {
         vec![
             PNode::Var { feature: 0u16 },
             PNode::Var { feature: 1u16 },
-            PNode::Op { arity: 2, op: add.id },
+            PNode::Op {
+                arity: 2,
+                op: add.id,
+            },
             PNode::Var { feature: 2u16 },
-            PNode::Op { arity: 2, op: add.id },
+            PNode::Op {
+                arity: 2,
+                op: add.id,
+            },
         ],
         vec![],
         Default::default(),
@@ -123,8 +130,14 @@ fn constraints_op_arg_and_nested_constraints_work() {
     let expr_cos = PostfixExpr::<f64, Ops, D>::new(
         vec![
             PNode::Var { feature: 0u16 },
-            PNode::Op { arity: 1, op: cos.id },
-            PNode::Op { arity: 1, op: cos.id },
+            PNode::Op {
+                arity: 1,
+                op: cos.id,
+            },
+            PNode::Op {
+                arity: 1,
+                op: cos.id,
+            },
         ],
         vec![],
         Default::default(),
@@ -143,22 +156,28 @@ fn compute_complexity_respects_custom_weights_and_rounding() {
     type Ops = BuiltinOpsF64;
     const D: usize = 3;
 
-    let add = scalar::OpId {
+    let add = OpId {
         arity: 2,
-        id: <Ops as scalar::HasOp<builtin::Add, 2>>::ID,
+        id: <Ops as HasOp<Add, 2>>::ID,
     };
-    let sin = scalar::OpId {
+    let sin = OpId {
         arity: 1,
-        id: <Ops as scalar::HasOp<builtin::Sin, 1>>::ID,
+        id: <Ops as HasOp<Sin, 1>>::ID,
     };
 
     // expr = sin(x0) + c0
     let expr = PostfixExpr::<f64, Ops, D>::new(
         vec![
             PNode::Var { feature: 0u16 },
-            PNode::Op { arity: 1, op: sin.id },
+            PNode::Op {
+                arity: 1,
+                op: sin.id,
+            },
             PNode::Const { idx: 0 },
-            PNode::Op { arity: 2, op: add.id },
+            PNode::Op {
+                arity: 2,
+                op: add.id,
+            },
         ],
         vec![1.23],
         Default::default(),

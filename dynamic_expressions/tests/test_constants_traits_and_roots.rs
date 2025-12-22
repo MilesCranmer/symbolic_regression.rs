@@ -2,8 +2,9 @@ mod common;
 
 use common::*;
 use dynamic_expressions::{
-    DiffContext, EvalContext, EvalOptions, GradContext, PNode, PostfixExpression, eval_diff_tree_array,
-    eval_grad_tree_array, eval_tree_array,
+    compile_plan, count_depth, eval_diff_tree_array, eval_grad_tree_array, eval_tree_array,
+    get_scalar_constants, set_scalar_constants, ConstRef, DiffContext, EvalContext, EvalOptions,
+    GradContext, PNode, PostfixExpression,
 };
 use ndarray::Array2;
 
@@ -20,10 +21,10 @@ fn constants_get_set_roundtrip_changes_eval() {
     let (out0, ok0) = eval_tree_array::<f64, TestOps, 3>(&expr, x_view, &opts);
     assert!(ok0);
 
-    let (mut cvals, cref): (Vec<f64>, dynamic_expressions::ConstRef) = dynamic_expressions::get_scalar_constants(&expr);
+    let (mut cvals, cref): (Vec<f64>, ConstRef) = get_scalar_constants(&expr);
     assert_eq!(cvals.len(), 1);
     cvals[0] = 1.0; // change from 3.2 to 1.0
-    dynamic_expressions::set_scalar_constants(&mut expr, &cvals, &cref);
+    set_scalar_constants(&mut expr, &cvals, &cref);
 
     let (out1, ok1) = eval_tree_array::<f64, TestOps, 3>(&expr, x_view, &opts);
     assert!(ok1);
@@ -33,7 +34,7 @@ fn constants_get_set_roundtrip_changes_eval() {
 #[test]
 fn postfix_expression_trait_is_usable() {
     fn depth_via_trait<E: PostfixExpression<3>>(e: &E) -> usize {
-        dynamic_expressions::count_depth(e.nodes())
+        count_depth(e.nodes())
     }
 
     let mut expr = expr_readme_like();
@@ -42,7 +43,11 @@ fn postfix_expression_trait_is_usable() {
     assert_eq!(expr.meta.variable_names.len(), 2);
 
     fn read_all<E: PostfixExpression<3, Scalar = f64>>(e: &E) -> (usize, usize, usize) {
-        (e.nodes().len(), e.consts().len(), e.meta().variable_names.len())
+        (
+            e.nodes().len(),
+            e.consts().len(),
+            e.meta().variable_names.len(),
+        )
     }
     let (n_nodes, n_consts, n_names) = read_all(&expr);
     assert_eq!(n_nodes, expr.nodes.len());
@@ -53,7 +58,7 @@ fn postfix_expression_trait_is_usable() {
 #[test]
 fn compile_plan_leaf_only_has_no_instrs() {
     let nodes = vec![PNode::Var { feature: 0 }];
-    let plan = dynamic_expressions::compile_plan::<3>(&nodes, 1, 0);
+    let plan = compile_plan::<3>(&nodes, 1, 0);
     assert_eq!(plan.instrs.len(), 0);
     assert_eq!(plan.n_slots, 0);
 }
@@ -89,6 +94,8 @@ fn const_only_operator_fast_path_is_exercised() {
         check_finite: true,
         early_exit: true,
     };
+    use dynamic_expressions::math::{cos, fma};
+
     // Add(c0, c1)
     let expr_add = c(1.0) + c(2.0);
     let (out, ok) = eval_tree_array::<f64, TestOps, 3>(&expr_add, x_view, &opts);
@@ -96,13 +103,13 @@ fn const_only_operator_fast_path_is_exercised() {
     assert!(out.iter().all(|&v| v == 3.0));
 
     // Cos(c0)
-    let expr_cos = dynamic_expressions::operators::cos(c(0.0));
+    let expr_cos = cos(c(0.0));
     let (out, ok) = eval_tree_array::<f64, TestOps, 3>(&expr_cos, x_view, &opts);
     assert!(ok);
     assert!(out.iter().all(|&v| v == 1.0));
 
     // Fma(c0, c1, c2) = c0*c1 + c2
-    let expr_t3 = dynamic_expressions::operators::fma(c(2.0), c(4.0), c(3.0));
+    let expr_t3 = fma(c(2.0), c(4.0), c(3.0));
     let (out, ok) = eval_tree_array::<f64, TestOps, 3>(&expr_t3, x_view, &opts);
     assert!(ok);
     assert!(out.iter().all(|&v| v == 11.0));
@@ -123,13 +130,15 @@ fn early_exit_paths_return_nans_for_diff_and_grad() {
     };
 
     let mut dctx = DiffContext::<f64, 3>::new(n_rows);
-    let (eval, der, ok) = eval_diff_tree_array::<f64, TestOps, 3>(&expr, x_view, 0, &mut dctx, &opts);
+    let (eval, der, ok) =
+        eval_diff_tree_array::<f64, TestOps, 3>(&expr, x_view, 0, &mut dctx, &opts);
     assert!(!ok);
     assert!(eval.iter().all(|v| v.is_nan()));
     assert!(der.iter().all(|v| v.is_nan()));
 
     let mut gctx = GradContext::<f64, 3>::new(n_rows);
-    let (eval, grad, ok) = eval_grad_tree_array::<f64, TestOps, 3>(&expr, x_view, true, &mut gctx, &opts);
+    let (eval, grad, ok) =
+        eval_grad_tree_array::<f64, TestOps, 3>(&expr, x_view, true, &mut gctx, &opts);
     assert!(!ok);
     assert!(eval.iter().all(|v| v.is_nan()));
     assert!(grad.data.iter().all(|v| v.is_nan()));
@@ -167,22 +176,30 @@ fn reuse_contexts_hits_cached_plan_paths() {
     let mut ectx = EvalContext::<f64, 3>::new(x_view.nrows());
     let mut out0 = vec![0.0f64; x_view.nrows()];
     let mut out1 = vec![0.0f64; x_view.nrows()];
-    let ok0 = dynamic_expressions::eval_tree_array_into::<f64, TestOps, 3>(&mut out0, &expr, x_view, &mut ectx, &opts);
-    let ok1 = dynamic_expressions::eval_tree_array_into::<f64, TestOps, 3>(&mut out1, &expr, x_view, &mut ectx, &opts);
+    let ok0 = dynamic_expressions::eval_tree_array_into::<f64, TestOps, 3>(
+        &mut out0, &expr, x_view, &mut ectx, &opts,
+    );
+    let ok1 = dynamic_expressions::eval_tree_array_into::<f64, TestOps, 3>(
+        &mut out1, &expr, x_view, &mut ectx, &opts,
+    );
     assert!(ok0 && ok1);
     assert_eq!(out0, out1);
 
     // Diff: reuse DiffContext.
     let mut dctx = DiffContext::<f64, 3>::new(x_view.nrows());
-    let (_e0, d0, ok0) = eval_diff_tree_array::<f64, TestOps, 3>(&expr, x_view, 0, &mut dctx, &opts);
-    let (_e1, d1, ok1) = eval_diff_tree_array::<f64, TestOps, 3>(&expr, x_view, 0, &mut dctx, &opts);
+    let (_e0, d0, ok0) =
+        eval_diff_tree_array::<f64, TestOps, 3>(&expr, x_view, 0, &mut dctx, &opts);
+    let (_e1, d1, ok1) =
+        eval_diff_tree_array::<f64, TestOps, 3>(&expr, x_view, 0, &mut dctx, &opts);
     assert!(ok0 && ok1);
     assert_eq!(d0, d1);
 
     // Grad: reuse GradContext.
     let mut gctx = GradContext::<f64, 3>::new(x_view.nrows());
-    let (_e0, g0, ok0) = eval_grad_tree_array::<f64, TestOps, 3>(&expr, x_view, true, &mut gctx, &opts);
-    let (_e1, g1, ok1) = eval_grad_tree_array::<f64, TestOps, 3>(&expr, x_view, true, &mut gctx, &opts);
+    let (_e0, g0, ok0) =
+        eval_grad_tree_array::<f64, TestOps, 3>(&expr, x_view, true, &mut gctx, &opts);
+    let (_e1, g1, ok1) =
+        eval_grad_tree_array::<f64, TestOps, 3>(&expr, x_view, true, &mut gctx, &opts);
     assert!(ok0 && ok1);
     assert_eq!(g0.data, g1.data);
 }
@@ -210,7 +227,9 @@ fn nonfinite_root_const_branches_eval_and_diff() {
     };
     let mut out = vec![123.0f64; x_view.nrows()];
     let mut ectx = EvalContext::<f64, 3>::new(x_view.nrows());
-    let ok = dynamic_expressions::eval_tree_array_into::<f64, TestOps, 3>(&mut out, &expr, x_view, &mut ectx, &opts);
+    let ok = dynamic_expressions::eval_tree_array_into::<f64, TestOps, 3>(
+        &mut out, &expr, x_view, &mut ectx, &opts,
+    );
     assert!(!ok);
     assert!(out.iter().all(|&v| v == 123.0));
 

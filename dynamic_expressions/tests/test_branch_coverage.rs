@@ -1,7 +1,10 @@
 mod common;
 
 use common::*;
-use dynamic_expressions::{DiffContext, EvalOptions, GradContext, PNode, eval_diff_tree_array, eval_grad_tree_array};
+use dynamic_expressions::{
+    eval_diff_tree_array, eval_grad_tree_array, DiffContext, EvalOptions, GradContext, PNode,
+    PostfixExpressionMut,
+};
 use ndarray::Array2;
 
 #[test]
@@ -24,7 +27,7 @@ fn pnode_constructors_cover_postfix_rs() {
 
 #[test]
 fn postfix_expression_mut_trait_is_usable() {
-    fn bump_first_const<E: dynamic_expressions::PostfixExpressionMut<3, Scalar = f64>>(e: &mut E) {
+    fn bump_first_const<E: PostfixExpressionMut<3, Scalar = f64>>(e: &mut E) {
         if let Some(c0) = e.consts_mut().first_mut() {
             *c0 += 1.0;
         }
@@ -53,17 +56,20 @@ fn diff_root_var_and_const_branches() {
 
     let expr_var = var(0);
     let mut dctx0 = DiffContext::<f64, 3>::new(n_rows);
-    let (_e, d0, ok0) = eval_diff_tree_array::<f64, TestOps, 3>(&expr_var, x.view(), 0, &mut dctx0, &opts);
+    let (_e, d0, ok0) =
+        eval_diff_tree_array::<f64, TestOps, 3>(&expr_var, x.view(), 0, &mut dctx0, &opts);
     assert!(ok0);
     assert!(d0.iter().all(|&v| v == 1.0));
     let mut dctx1 = DiffContext::<f64, 3>::new(n_rows);
-    let (_e, d1, ok1) = eval_diff_tree_array::<f64, TestOps, 3>(&expr_var, x.view(), 1, &mut dctx1, &opts);
+    let (_e, d1, ok1) =
+        eval_diff_tree_array::<f64, TestOps, 3>(&expr_var, x.view(), 1, &mut dctx1, &opts);
     assert!(ok1);
     assert!(d1.iter().all(|&v| v == 0.0));
 
     let expr_const = c(1.25);
     let mut dctxc = DiffContext::<f64, 3>::new(n_rows);
-    let (_e, d, ok) = eval_diff_tree_array::<f64, TestOps, 3>(&expr_const, x.view(), 0, &mut dctxc, &opts);
+    let (_e, d, ok) =
+        eval_diff_tree_array::<f64, TestOps, 3>(&expr_const, x.view(), 0, &mut dctxc, &opts);
     assert!(ok);
     assert!(d.iter().all(|&v| v == 0.0));
 }
@@ -99,7 +105,8 @@ fn grad_root_var_and_const_branches() {
     // Root Var: variable=true should have one-hot; variable=false has zero directions (no consts).
     let expr_var = var(1);
     let mut gctx0 = GradContext::<f64, 3>::new(n_rows);
-    let (_e, g, ok) = eval_grad_tree_array::<f64, TestOps, 3>(&expr_var, x.view(), true, &mut gctx0, &opts);
+    let (_e, g, ok) =
+        eval_grad_tree_array::<f64, TestOps, 3>(&expr_var, x.view(), true, &mut gctx0, &opts);
     assert!(ok);
     assert_eq!(g.n_dir, 2);
     assert_eq!(g.data.len(), 2 * n_rows);
@@ -107,7 +114,8 @@ fn grad_root_var_and_const_branches() {
     assert!(g.data[n_rows..2 * n_rows].iter().all(|&v| v == 1.0));
 
     let mut gctx1 = GradContext::<f64, 3>::new(n_rows);
-    let (_e, g, ok) = eval_grad_tree_array::<f64, TestOps, 3>(&expr_var, x.view(), false, &mut gctx1, &opts);
+    let (_e, g, ok) =
+        eval_grad_tree_array::<f64, TestOps, 3>(&expr_var, x.view(), false, &mut gctx1, &opts);
     assert!(ok);
     assert_eq!(g.n_dir, 0);
     assert_eq!(g.data.len(), 0);
@@ -115,13 +123,15 @@ fn grad_root_var_and_const_branches() {
     // Root Const: variable=false should have ones; variable=true should have zeros.
     let expr_const = c(2.0);
     let mut gctx2 = GradContext::<f64, 3>::new(n_rows);
-    let (_e, g, ok) = eval_grad_tree_array::<f64, TestOps, 3>(&expr_const, x.view(), false, &mut gctx2, &opts);
+    let (_e, g, ok) =
+        eval_grad_tree_array::<f64, TestOps, 3>(&expr_const, x.view(), false, &mut gctx2, &opts);
     assert!(ok);
     assert_eq!(g.n_dir, 1);
     assert!(g.data.iter().all(|&v| v == 1.0));
 
     let mut gctx3 = GradContext::<f64, 3>::new(n_rows);
-    let (_e, g, ok) = eval_grad_tree_array::<f64, TestOps, 3>(&expr_const, x.view(), true, &mut gctx3, &opts);
+    let (_e, g, ok) =
+        eval_grad_tree_array::<f64, TestOps, 3>(&expr_const, x.view(), true, &mut gctx3, &opts);
     assert!(ok);
     assert_eq!(g.n_dir, 2);
     assert!(g.data.iter().all(|&v| v == 0.0));
@@ -139,7 +149,8 @@ fn grad_root_const_nonfinite_branches() {
         early_exit: false,
     };
     let mut gctx = GradContext::<f64, 3>::new(n_rows);
-    let (e, g, ok) = eval_grad_tree_array::<f64, TestOps, 3>(&expr, x.view(), false, &mut gctx, &opts);
+    let (e, g, ok) =
+        eval_grad_tree_array::<f64, TestOps, 3>(&expr, x.view(), false, &mut gctx, &opts);
     assert!(!ok);
     assert!(e.iter().all(|v| v.is_nan()));
     assert!(g.data.iter().all(|&v| v == 1.0));
@@ -149,7 +160,8 @@ fn grad_root_const_nonfinite_branches() {
         check_finite: true,
         early_exit: true,
     };
-    let (e, g, ok) = eval_grad_tree_array::<f64, TestOps, 3>(&expr, x.view(), false, &mut gctx, &opts);
+    let (e, g, ok) =
+        eval_grad_tree_array::<f64, TestOps, 3>(&expr, x.view(), false, &mut gctx, &opts);
     assert!(!ok);
     assert!(e.iter().all(|v| v.is_nan()));
     assert!(g.data.iter().all(|v| v.is_nan()));
@@ -166,7 +178,8 @@ fn grad_nonfinite_no_early_exit_runs_to_completion() {
         early_exit: false,
     };
     let mut gctx = GradContext::<f64, 3>::new(n_rows);
-    let (e, g, ok) = eval_grad_tree_array::<f64, TestOps, 3>(&expr, x.view(), true, &mut gctx, &opts);
+    let (e, g, ok) =
+        eval_grad_tree_array::<f64, TestOps, 3>(&expr, x.view(), true, &mut gctx, &opts);
     assert!(!ok);
     assert!(e.iter().any(|v| !v.is_finite()));
     assert!(g.data.iter().any(|v| !v.is_finite()));
@@ -187,7 +200,13 @@ fn div_finite_covers_more_scalar_grad_and_diff_branches() {
                 early_exit,
             };
             let mut gctx = GradContext::<f64, 3>::new(n_rows);
-            let (_e, _g, ok) = eval_grad_tree_array::<f64, TestOps, 3>(&expr, x.view(), variable, &mut gctx, &opts);
+            let (_e, _g, ok) = eval_grad_tree_array::<f64, TestOps, 3>(
+                &expr,
+                x.view(),
+                variable,
+                &mut gctx,
+                &opts,
+            );
             assert!(ok);
         }
     }
@@ -199,7 +218,8 @@ fn div_finite_covers_more_scalar_grad_and_diff_branches() {
             early_exit,
         };
         let mut dctx = DiffContext::<f64, 3>::new(n_rows);
-        let (_e, _d, ok) = eval_diff_tree_array::<f64, TestOps, 3>(&expr, x.view(), 0, &mut dctx, &opts);
+        let (_e, _d, ok) =
+            eval_diff_tree_array::<f64, TestOps, 3>(&expr, x.view(), 0, &mut dctx, &opts);
         assert!(ok);
     }
 }

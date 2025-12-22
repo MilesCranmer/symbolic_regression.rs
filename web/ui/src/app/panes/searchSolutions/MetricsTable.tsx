@@ -54,3 +54,4 @@ export function MetricsTable({ m }: { m: WasmEvalResult["metrics"] }): React.Rea
     </div>
   );
 }
+

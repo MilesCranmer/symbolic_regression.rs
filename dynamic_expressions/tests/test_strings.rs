@@ -1,7 +1,7 @@
 mod common;
 
 use common::expr_readme_like;
-use dynamic_expressions::strings::{StringTreeOptions, string_tree};
+use dynamic_expressions::strings::{string_tree, StringTreeOptions};
 
 #[test]
 fn string_tree_matches_expected() {

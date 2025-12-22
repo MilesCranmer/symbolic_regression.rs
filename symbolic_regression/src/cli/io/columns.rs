@@ -1,4 +1,4 @@
-use anyhow::{Context, bail};
+use anyhow::{bail, Context};
 
 #[derive(Copy, Clone, Debug)]
 pub struct ColumnSelectorParseOpts {
@@ -35,7 +35,8 @@ mod tests {
 
     #[test]
     fn parses_index_0_based() {
-        let sel = ColumnSelector::parse("2", ColumnSelectorParseOpts { one_indexed: false }).unwrap();
+        let sel =
+            ColumnSelector::parse("2", ColumnSelectorParseOpts { one_indexed: false }).unwrap();
         match sel {
             ColumnSelector::Index(i) => assert_eq!(i, 2),
             _ => panic!("expected index selector"),
@@ -44,7 +45,8 @@ mod tests {
 
     #[test]
     fn parses_index_1_based() {
-        let sel = ColumnSelector::parse("3", ColumnSelectorParseOpts { one_indexed: true }).unwrap();
+        let sel =
+            ColumnSelector::parse("3", ColumnSelectorParseOpts { one_indexed: true }).unwrap();
         match sel {
             ColumnSelector::Index(i) => assert_eq!(i, 2),
             _ => panic!("expected index selector"),

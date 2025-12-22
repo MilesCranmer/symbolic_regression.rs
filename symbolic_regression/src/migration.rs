@@ -1,12 +1,10 @@
-use std::cmp::Ordering;
-
-use num_traits::Float;
-use rand::Rng;
-use rand::seq::IndexedRandom;
-use rand_distr::{self, Distribution};
-
 use crate::pop_member::{MemberId, PopMember};
 use crate::population::Population;
+use num_traits::Float;
+use rand::seq::IndexedRandom;
+use rand::Rng;
+use rand_distr::{Distribution, Poisson};
+use std::cmp::Ordering;
 
 pub fn best_sub_pop<T: Float, Ops, const D: usize>(
     pop: &Population<T, Ops, D>,
@@ -27,7 +25,7 @@ fn poisson_sample<R: Rng + ?Sized>(rng: &mut R, mean: f64) -> usize {
     if !mean.is_finite() || mean <= 0.0 {
         return 0;
     }
-    let dist = rand_distr::Poisson::new(mean).expect("invalid poisson mean");
+    let dist = Poisson::new(mean).expect("invalid poisson mean");
     dist.sample(rng) as usize
 }
 

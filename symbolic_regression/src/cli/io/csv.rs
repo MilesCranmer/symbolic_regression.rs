@@ -1,8 +1,6 @@
-use std::path::Path;
-
-use anyhow::{Context, bail};
-
 use super::Table;
+use anyhow::{bail, Context};
+use std::path::Path;
 
 pub fn load_csv(path: &Path, has_header: bool) -> anyhow::Result<Table> {
     let mut rdr = csv::ReaderBuilder::new()
@@ -68,5 +66,6 @@ pub fn load_csv(path: &Path, has_header: bool) -> anyhow::Result<Table> {
         (0..n_cols).map(|i| format!("col{i}")).collect()
     };
 
-    Table::new(headers, columns).with_context(|| format!("failed to build table from {}", path.display()))
+    Table::new(headers, columns)
+        .with_context(|| format!("failed to build table from {}", path.display()))
 }

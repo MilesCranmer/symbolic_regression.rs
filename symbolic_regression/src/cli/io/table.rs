@@ -1,4 +1,4 @@
-use anyhow::{Context, bail};
+use anyhow::{bail, Context};
 
 pub struct Table {
     pub headers: Vec<String>,
@@ -21,7 +21,12 @@ impl Table {
         for (i, c) in columns.iter().enumerate() {
             if c.len() != n_rows {
                 let col_name = headers.get(i).cloned().unwrap_or_else(|| format!("col{i}"));
-                bail!("column {} has {} rows but expected {}", col_name, c.len(), n_rows);
+                bail!(
+                    "column {} has {} rows but expected {}",
+                    col_name,
+                    c.len(),
+                    n_rows
+                );
             }
         }
         Ok(Self {

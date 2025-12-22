@@ -1,10 +1,14 @@
-use criterion::{criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use dynamic_expressions::evaluate::EvalOptions;
+use dynamic_expressions::evaluate_derivative::GradContext;
 use dynamic_expressions::expression::PostfixExpr;
 use dynamic_expressions::node::PNode;
+use dynamic_expressions::node_utils::{count_constant_nodes, count_depth, count_nodes};
+use dynamic_expressions::operator_enum::presets::{BuiltinOpsF32, BuiltinOpsF64};
 use dynamic_expressions::operator_enum::scalar::ScalarOpSet;
 use dynamic_expressions::operator_registry::OpRegistry;
 use dynamic_expressions::opset;
+use dynamic_expressions::{combine_operators_in_place, eval_grad_tree_array, eval_tree_array_into};
 use ndarray::Array2;
 use num_traits::Float;
 use rand::rngs::StdRng;
@@ -113,7 +117,7 @@ fn make_data<T: Float>() -> Array2<T> {
     Array2::from_shape_vec((N_ROWS, N_FEATURES), data).unwrap()
 }
 
-fn bench_eval_group<T, Ops, const D: usize>(c: &mut criterion::Criterion, type_name: &str)
+fn bench_eval_group<T, Ops, const D: usize>(c: &mut Criterion, type_name: &str)
 where
     T: Float + Send + Sync,
     Ops: OpRegistry + ScalarOpSet<T> + Send + Sync,
@@ -130,22 +134,22 @@ where
     };
 
     let mut group = c.benchmark_group(format!("evaluation/{type_name}"));
-    group.bench_function(criterion::BenchmarkId::from_parameter("eval"), |b| {
+    group.bench_function(BenchmarkId::from_parameter("eval"), |b| {
         let mut out = vec![T::zero(); N_ROWS];
         let mut ctx = dynamic_expressions::EvalContext::<T, D>::new(N_ROWS);
         b.iter(|| {
             for tree in &trees {
-                let _ = dynamic_expressions::eval_tree_array_into(&mut out, tree, x_view, &mut ctx, &opts);
+                let _ = eval_tree_array_into(&mut out, tree, x_view, &mut ctx, &opts);
             }
         })
     });
 
     if T::from(0.0f32).unwrap().is_finite() {
-        group.bench_function(criterion::BenchmarkId::from_parameter("derivative"), |b| {
-            let mut gctx = dynamic_expressions::GradContext::<T, D>::new(N_ROWS);
+        group.bench_function(BenchmarkId::from_parameter("derivative"), |b| {
+            let mut gctx = GradContext::<T, D>::new(N_ROWS);
             b.iter(|| {
                 for tree in &trees {
-                    let _ = dynamic_expressions::eval_grad_tree_array(tree, x_view, true, &mut gctx, &opts);
+                    let _ = eval_grad_tree_array(tree, x_view, true, &mut gctx, &opts);
                 }
             })
         });
@@ -153,7 +157,7 @@ where
     group.finish();
 }
 
-fn bench_utilities<T, Ops, const D: usize>(c: &mut criterion::Criterion, type_name: &str)
+fn bench_utilities<T, Ops, const D: usize>(c: &mut Criterion, type_name: &str)
 where
     T: Float + Send + Sync,
     Ops: OpRegistry + ScalarOpSet<T> + Send + Sync,
@@ -168,11 +172,11 @@ where
     };
 
     let mut group = c.benchmark_group(format!("utilities/{type_name}"));
-    group.bench_function(criterion::BenchmarkId::from_parameter("clone"), |b| {
+    group.bench_function(BenchmarkId::from_parameter("clone"), |b| {
         b.iter(|| trees.to_vec())
     });
 
-    group.bench_function(criterion::BenchmarkId::from_parameter("simplify"), |b| {
+    group.bench_function(BenchmarkId::from_parameter("simplify"), |b| {
         b.iter(|| {
             for tree in &mut trees {
                 let _ = dynamic_expressions::simplify_in_place(tree, &eval_opts);
@@ -180,20 +184,20 @@ where
         })
     });
 
-    group.bench_function(criterion::BenchmarkId::from_parameter("combine_operators"), |b| {
+    group.bench_function(BenchmarkId::from_parameter("combine_operators"), |b| {
         b.iter(|| {
             for tree in &mut trees {
-                let _ = dynamic_expressions::combine_operators_in_place(tree);
+                let _ = combine_operators_in_place(tree);
             }
         })
     });
 
-    group.bench_function(criterion::BenchmarkId::from_parameter("counting"), |b| {
+    group.bench_function(BenchmarkId::from_parameter("counting"), |b| {
         b.iter(|| {
             for tree in &trees {
-                let _ = dynamic_expressions::node_utils::count_nodes(&tree.nodes);
-                let _ = dynamic_expressions::node_utils::count_depth(&tree.nodes);
-                let _ = dynamic_expressions::node_utils::count_constant_nodes(&tree.nodes);
+                let _ = count_nodes(&tree.nodes);
+                let _ = count_depth(&tree.nodes);
+                let _ = count_constant_nodes(&tree.nodes);
             }
         })
     });
@@ -201,7 +205,7 @@ where
     group.finish();
 }
 
-fn criterion_benchmark(c: &mut criterion::Criterion) {
+fn criterion_benchmark(c: &mut Criterion) {
     bench_eval_group::<f32, BenchOpsF32, 2>(c, "Float32");
     bench_eval_group::<f64, BenchOpsF64, 2>(c, "Float64");
 
@@ -209,8 +213,8 @@ fn criterion_benchmark(c: &mut criterion::Criterion) {
     bench_utilities::<f64, BenchOpsF64, 2>(c, "Float64");
 
     // Builtin opsets include ternary operators; benchmark them as well.
-    bench_eval_group::<f32, dynamic_expressions::operator_enum::presets::BuiltinOpsF32, 3>(c, "BuiltinF32");
-    bench_eval_group::<f64, dynamic_expressions::operator_enum::presets::BuiltinOpsF64, 3>(c, "BuiltinF64");
+    bench_eval_group::<f32, BuiltinOpsF32, 3>(c, "BuiltinF32");
+    bench_eval_group::<f64, BuiltinOpsF64, 3>(c, "BuiltinF64");
 }
 
 criterion_group!(benches, criterion_benchmark);
