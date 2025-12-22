@@ -124,7 +124,6 @@ struct PopPools<T: Float + std::ops::AddAssign, Ops, const D: usize> {
     total_evals: u64,
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 struct EquationSearchState<'a, T: Float + std::ops::AddAssign, Ops, const D: usize> {
     full_dataset: TaggedDataset<'a, T>,
     options: &'a Options<T, D>,

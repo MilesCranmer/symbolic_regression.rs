@@ -184,7 +184,8 @@ where
         );
         complete &= ok;
         if opts.early_exit && !ok {
-            return (Vec::new(), Vec::new(), false);
+            let nan = T::nan();
+            return (vec![nan; n_rows], vec![nan; n_rows], false);
         }
     }
 
@@ -204,7 +205,8 @@ where
             if opts.check_finite && !v.is_finite() {
                 complete = false;
                 if opts.early_exit {
-                    return (Vec::new(), Vec::new(), false);
+                    let nan = T::nan();
+                    return (vec![nan; n_rows], vec![nan; n_rows], false);
                 }
             }
             out.fill(v);
