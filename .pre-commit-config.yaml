@@ -1,0 +1,44 @@
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+
+ci:
+  autofix_prs: true
+  autoupdate_schedule: monthly
+  skip: [cargo-fmt, cargo-check, cargo-clippy, cargo-test]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-yaml
+
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo +nightly-2025-12-19 fmt --all
+        language: system
+        pass_filenames: false
+
+      - id: cargo-check
+        name: cargo check
+        entry: cargo +nightly-2025-12-19 check --workspace --all-targets
+        language: system
+        pass_filenames: false
+
+      - id: cargo-clippy
+        name: cargo clippy (deny warnings)
+        entry: cargo +nightly-2025-12-19 clippy --workspace --all-targets --all-features -- -D warnings
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: cargo-test
+        name: cargo test
+        entry: cargo +nightly-2025-12-19 test --workspace
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

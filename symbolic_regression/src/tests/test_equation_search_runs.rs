@@ -1,7 +1,8 @@
-use super::common::{TestOps, D, T};
-use crate::operator_library::OperatorLibrary;
-use crate::{equation_search, Options};
 use ndarray::{Array1, Array2};
+
+use super::common::{D, T, TestOps};
+use crate::operator_library::OperatorLibrary;
+use crate::{Options, equation_search};
 
 #[test]
 fn equation_search_runs() {

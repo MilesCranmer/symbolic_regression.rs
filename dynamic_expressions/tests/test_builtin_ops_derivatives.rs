@@ -10,13 +10,7 @@ fn fd_unary<Op: BuiltinOp<f64, 1>>(x: f64) -> f64 {
 fn check_unary<Op: BuiltinOp<f64, 1>>(x: f64, tol: f64) {
     let d = <Op as BuiltinOp<f64, 1>>::partial(&[x], 0);
     let fd = fd_unary::<Op>(x);
-    assert!(
-        (d - fd).abs() <= tol.max(tol * fd.abs()),
-        "d={} fd={} (x={})",
-        d,
-        fd,
-        x
-    );
+    assert!((d - fd).abs() <= tol.max(tol * fd.abs()), "d={} fd={} (x={})", d, fd, x);
 }
 
 fn fd_binary_x<Op: BuiltinOp<f64, 2>>(x: f64, y: f64) -> f64 {

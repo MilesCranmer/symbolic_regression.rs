@@ -10,10 +10,7 @@ pub struct TaggedDataset<'a, T: Float> {
 
 impl<'a, T: Float> TaggedDataset<'a, T> {
     pub fn new(data: &'a Dataset<T>, baseline_loss: Option<T>) -> Self {
-        Self {
-            data,
-            baseline_loss,
-        }
+        Self { data, baseline_loss }
     }
 }
 
@@ -70,10 +67,7 @@ impl<T: Float> Dataset<T> {
             assert_eq!(w.len(), n_rows);
         }
 
-        let avg_y = Self::compute_avg_y(
-            y.as_slice().unwrap(),
-            weights.as_ref().and_then(|w| w.as_slice()),
-        );
+        let avg_y = Self::compute_avg_y(y.as_slice().unwrap(), weights.as_ref().and_then(|w| w.as_slice()));
 
         Self {
             x,
@@ -122,10 +116,7 @@ impl<T: Float> Dataset<T> {
         let batch_size = batch_size.max(1);
         let x = Array2::<T>::zeros((batch_size, full.n_features));
         let y = Array1::<T>::zeros(batch_size);
-        let weights = full
-            .weights
-            .as_ref()
-            .map(|_| Array1::<T>::zeros(batch_size));
+        let weights = full.weights.as_ref().map(|_| Array1::<T>::zeros(batch_size));
         Dataset {
             x,
             y,

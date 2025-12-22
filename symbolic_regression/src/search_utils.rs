@@ -1,3 +1,9 @@
+use num_traits::Float;
+use progress_bars::SearchProgress;
+use rand::SeedableRng;
+use rand::rngs::StdRng;
+use rand::seq::SliceRandom;
+
 use crate::adaptive_parsimony::RunningSearchStatistics;
 use crate::check_constraints::check_constraints;
 use crate::dataset::{Dataset, TaggedDataset};
@@ -7,14 +13,6 @@ use crate::options::Options;
 use crate::pop_member::{Evaluator, MemberId, PopMember};
 use crate::population::Population;
 use crate::{migration, progress_bars, single_iteration, warmup};
-use dynamic_expressions::operator_enum::scalar::ScalarOpSet;
-use dynamic_expressions::operator_registry::OpRegistry;
-use dynamic_expressions::strings::OpNames;
-use num_traits::Float;
-use progress_bars::SearchProgress;
-use rand::rngs::StdRng;
-use rand::seq::SliceRandom;
-use rand::SeedableRng;
 
 pub struct SearchResult<T: Float, Ops, const D: usize> {
     pub hall_of_fame: HallOfFame<T, Ops, D>,
@@ -138,18 +136,14 @@ struct EquationSearchState<'a, T: Float, Ops, const D: usize> {
     order_rng: StdRng,
 }
 
-pub fn equation_search<T, Ops, const D: usize>(
-    dataset: &Dataset<T>,
-    options: &Options<T, D>,
-) -> SearchResult<T, Ops, D>
+pub fn equation_search<T, Ops, const D: usize>(dataset: &Dataset<T>, options: &Options<T, D>) -> SearchResult<T, Ops, D>
 where
-    T: Float
-        + num_traits::FromPrimitive
-        + num_traits::ToPrimitive
-        + std::fmt::Display
+    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + std::fmt::Display + Send + Sync,
+    Ops: dynamic_expressions::operator_enum::scalar::ScalarOpSet<T>
+        + dynamic_expressions::strings::OpNames
+        + dynamic_expressions::operator_registry::OpRegistry
         + Send
         + Sync,
-    Ops: ScalarOpSet<T> + OpNames + OpRegistry + Send + Sync,
 {
     equation_search_parallel(dataset, options)
 }
@@ -159,13 +153,12 @@ pub fn equation_search_parallel<T, Ops, const D: usize>(
     options: &Options<T, D>,
 ) -> SearchResult<T, Ops, D>
 where
-    T: Float
-        + num_traits::FromPrimitive
-        + num_traits::ToPrimitive
-        + std::fmt::Display
+    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + std::fmt::Display + Send + Sync,
+    Ops: dynamic_expressions::operator_enum::scalar::ScalarOpSet<T>
+        + dynamic_expressions::strings::OpNames
+        + dynamic_expressions::operator_registry::OpRegistry
         + Send
         + Sync,
-    Ops: ScalarOpSet<T> + OpNames + OpRegistry + Send + Sync,
 {
     let baseline_loss = if options.use_baseline {
         baseline_loss_from_zero_expression::<T, Ops, D>(dataset, options.loss.as_ref())
@@ -249,7 +242,9 @@ pub struct SearchEngine<T: Float, Ops, const D: usize> {
 impl<T, Ops, const D: usize> SearchEngine<T, Ops, D>
 where
     T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + std::fmt::Display,
-    Ops: ScalarOpSet<T> + OpNames + OpRegistry,
+    Ops: dynamic_expressions::operator_enum::scalar::ScalarOpSet<T>
+        + dynamic_expressions::strings::OpNames
+        + dynamic_expressions::operator_registry::OpRegistry,
 {
     pub fn new(dataset: Dataset<T>, options: Options<T, D>) -> Self {
         let baseline_loss = if options.use_baseline {
@@ -369,11 +364,7 @@ where
         };
 
         let cycles_remaining_start = self.counters.cycles_remaining_start_for_next_dispatch();
-        let curmaxsize = warmup::get_cur_maxsize(
-            &self.options,
-            self.counters.total_cycles,
-            cycles_remaining_start,
-        );
+        let curmaxsize = warmup::get_cur_maxsize(&self.options, self.counters.total_cycles, cycles_remaining_start);
 
         let mut stats_snapshot = self.stats.clone();
         stats_snapshot.normalize();
@@ -430,25 +421,17 @@ fn execute_task<T, Ops, const D: usize>(
 ) -> SearchTaskResult<T, Ops, D>
 where
     T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive,
-    Ops: ScalarOpSet<T> + OpRegistry,
+    Ops:
+        dynamic_expressions::operator_enum::scalar::ScalarOpSet<T> + dynamic_expressions::operator_registry::OpRegistry,
 {
-    let (evals1, best_seen) = pop_state.run_iteration_phase(
-        full_dataset,
-        options,
-        curmaxsize,
-        &stats,
-        |pop, ctx, eval_dataset| single_iteration::s_r_cycle(pop, ctx, eval_dataset),
-    );
+    let (evals1, best_seen) =
+        pop_state.run_iteration_phase(full_dataset, options, curmaxsize, &stats, |pop, ctx, eval_dataset| {
+            single_iteration::s_r_cycle(pop, ctx, eval_dataset)
+        });
 
-    let evals2 = pop_state.run_iteration_phase(
-        full_dataset,
-        options,
-        curmaxsize,
-        &stats,
-        |pop, ctx, opt_dataset| {
-            single_iteration::optimize_and_simplify_population(pop, ctx, opt_dataset)
-        },
-    );
+    let evals2 = pop_state.run_iteration_phase(full_dataset, options, curmaxsize, &stats, |pop, ctx, opt_dataset| {
+        single_iteration::optimize_and_simplify_population(pop, ctx, opt_dataset)
+    });
     let evals = (evals1.max(0.0) + evals2.max(0.0)) as u64;
 
     let best_sub_pop = migration::best_sub_pop(&pop_state.pop, options.topn);
@@ -473,7 +456,7 @@ fn apply_task_result<T, Ops, const D: usize>(
     res: SearchTaskResult<T, Ops, D>,
 ) where
     T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + std::fmt::Display,
-    Ops: ScalarOpSet<T> + OpNames,
+    Ops: dynamic_expressions::operator_enum::scalar::ScalarOpSet<T> + dynamic_expressions::strings::OpNames,
 {
     pools.total_evals = pools.total_evals.saturating_add(res.evals);
 
@@ -535,13 +518,13 @@ fn run_scoped_search<'scope, 'env, T, Ops, const D: usize>(
     state: &mut EquationSearchState<'env, T, Ops, D>,
 ) where
     'env: 'scope,
-    T: Float
-        + num_traits::FromPrimitive
-        + num_traits::ToPrimitive
-        + std::fmt::Display
+    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + std::fmt::Display + Send + Sync + 'scope,
+    Ops: dynamic_expressions::operator_enum::scalar::ScalarOpSet<T>
+        + dynamic_expressions::strings::OpNames
+        + dynamic_expressions::operator_registry::OpRegistry
         + Send
-        + Sync,
-    Ops: ScalarOpSet<T> + OpNames + OpRegistry + Send + Sync + 'scope,
+        + Sync
+        + 'scope,
 {
     let full_dataset = state.full_dataset;
     let options = state.options;
@@ -564,34 +547,20 @@ fn run_scoped_search<'scope, 'env, T, Ops, const D: usize>(
                     continue;
                 };
 
-                let cycles_remaining_start =
-                    state.counters.cycles_remaining_start_for_next_dispatch();
-                let curmaxsize = warmup::get_cur_maxsize(
-                    options,
-                    state.counters.total_cycles,
-                    cycles_remaining_start,
-                );
+                let cycles_remaining_start = state.counters.cycles_remaining_start_for_next_dispatch();
+                let curmaxsize = warmup::get_cur_maxsize(options, state.counters.total_cycles, cycles_remaining_start);
                 let mut stats_snapshot = state.stats.clone();
                 stats_snapshot.normalize();
 
                 let result_tx = result_tx.clone();
                 scope.spawn(move |_| {
-                    let res = execute_task(
-                        full_dataset,
-                        options,
-                        pop_idx,
-                        curmaxsize,
-                        stats_snapshot,
-                        st,
-                    );
+                    let res = execute_task(full_dataset, options, pop_idx, curmaxsize, stats_snapshot, st);
                     let _ = result_tx.send(res);
                 });
                 in_flight += 1;
             }
 
-            let res = result_rx
-                .recv()
-                .expect("worker result channel closed early");
+            let res = result_rx.recv().expect("worker result channel closed early");
             in_flight -= 1;
             apply_task_result(
                 options,
@@ -613,7 +582,7 @@ fn init_populations<T, Ops, const D: usize>(
 ) -> PopPools<T, Ops, D>
 where
     T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive,
-    Ops: ScalarOpSet<T>,
+    Ops: dynamic_expressions::operator_enum::scalar::ScalarOpSet<T>,
 {
     let dataset = full_dataset.data;
     let mut total_evals: u64 = 0;
@@ -637,13 +606,7 @@ where
                 nlength,
                 options.maxsize,
             );
-            let mut m = PopMember::from_expr(
-                MemberId(next_id),
-                None,
-                next_birth,
-                expr,
-                dataset.n_features,
-            );
+            let mut m = PopMember::from_expr(MemberId(next_id), None, next_birth, expr, dataset.n_features);
             next_id += 1;
             next_birth += 1;
             let _ = m.evaluate(&full_dataset, options, &mut evaluator);

@@ -1,15 +1,13 @@
-use dynamic_expressions::operator_enum::scalar::{
-    diff_nary, eval_nary, grad_nary, DiffKernelCtx, EvalKernelCtx, GradKernelCtx, OpId, ScalarOpSet,
-};
+use dynamic_expressions::operator_enum::scalar;
 use dynamic_expressions::operator_registry::{OpInfo, OpRegistry};
 use dynamic_expressions::strings::OpNames;
 use ndarray::{Array1, Array2};
-use symbolic_regression::{equation_search, Dataset, MutationWeights, Operators, Options};
+use symbolic_regression::{Dataset, MutationWeights, Operators, Options, equation_search};
 
 #[derive(Copy, Clone, Debug, Default)]
 struct CustomOps;
 
-const SQUARE: OpId = OpId { arity: 1, id: 0 };
+const SQUARE: scalar::OpId = scalar::OpId { arity: 1, id: 0 };
 
 const CUSTOM_REGISTRY: [OpInfo; 1] = [OpInfo {
     op: SQUARE,
@@ -32,17 +30,17 @@ fn square_partial(args: &[f64; 1], idx: usize) -> f64 {
     }
 }
 
-impl ScalarOpSet<f64> for CustomOps {
-    fn eval(op: OpId, ctx: EvalKernelCtx<'_, '_, f64>) -> bool {
+impl scalar::ScalarOpSet<f64> for CustomOps {
+    fn eval(op: scalar::OpId, ctx: scalar::EvalKernelCtx<'_, '_, f64>) -> bool {
         match (op.arity, op.id) {
-            (1, 0) => eval_nary::<1, f64>(square_eval, ctx.out, ctx.args, ctx.opts),
+            (1, 0) => scalar::eval_nary::<1, f64>(square_eval, ctx.out, ctx.args, ctx.opts),
             _ => panic!("unknown op id {} for arity {}", op.id, op.arity),
         }
     }
 
-    fn diff(op: OpId, ctx: DiffKernelCtx<'_, '_, f64>) -> bool {
+    fn diff(op: scalar::OpId, ctx: scalar::DiffKernelCtx<'_, '_, f64>) -> bool {
         match (op.arity, op.id) {
-            (1, 0) => diff_nary::<1, f64>(
+            (1, 0) => scalar::diff_nary::<1, f64>(
                 square_eval,
                 square_partial,
                 ctx.out_val,
@@ -55,9 +53,9 @@ impl ScalarOpSet<f64> for CustomOps {
         }
     }
 
-    fn grad(op: OpId, ctx: GradKernelCtx<'_, '_, f64>) -> bool {
+    fn grad(op: scalar::OpId, ctx: scalar::GradKernelCtx<'_, '_, f64>) -> bool {
         match (op.arity, op.id) {
-            (1, 0) => grad_nary::<1, f64>(square_eval, square_partial, ctx),
+            (1, 0) => scalar::grad_nary::<1, f64>(square_eval, square_partial, ctx),
             _ => panic!("unknown op id {} for arity {}", op.id, op.arity),
         }
     }
@@ -70,7 +68,7 @@ impl OpRegistry for CustomOps {
 }
 
 impl OpNames for CustomOps {
-    fn op_name(op: OpId) -> &'static str {
+    fn op_name(op: scalar::OpId) -> &'static str {
         match (op.arity, op.id) {
             (1, 0) => "square",
             _ => "unknown_op",
@@ -125,9 +123,5 @@ fn custom_operator_is_used_in_end_to_end_search() {
 
     let eqn = dynamic_expressions::string_tree(&result.best.expr, Default::default());
     assert_eq!(eqn, "square(x0)");
-    assert!(
-        result.best.loss <= 1e-12,
-        "best loss was {}",
-        result.best.loss
-    );
+    assert!(result.best.loss <= 1e-12, "best loss was {}", result.best.loss);
 }

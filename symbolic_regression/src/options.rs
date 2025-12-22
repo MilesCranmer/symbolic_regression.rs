@@ -1,6 +1,7 @@
-use crate::loss_functions::{mse, LossObject};
-use crate::operators::Operators;
 use num_traits::Float;
+
+use crate::loss_functions::{LossObject, mse};
+use crate::operators::Operators;
 
 #[rustfmt::skip]
 macro_rules! sr_mutation_weights_spec {
@@ -63,7 +64,7 @@ macro_rules! sr_options_spec {
                     (usize, 30, "maxsize"),
                 maxdepth:
                     (usize, 30, "maxdepth"),
-                warmup_maxsize_by: 
+                warmup_maxsize_by:
                     (f32, 0.0, "warmup-maxsize-by"),
                 parsimony:
                     (f64, 0.0, "parsimony"),
@@ -217,9 +218,10 @@ impl<T: Float, const D: usize> Options<T, D> {
 
 #[cfg(feature = "cli")]
 pub(crate) mod cli_args {
-    use super::{MutationWeights, Options, OutputStyle};
     use clap::{Args, ValueEnum};
     use num_traits::Float;
+
+    use super::{MutationWeights, Options, OutputStyle};
 
     #[derive(Copy, Clone, Debug, ValueEnum)]
     pub enum OutputStyleCli {
@@ -313,8 +315,8 @@ pub(crate) mod cli_args {
 
 #[cfg(all(test, feature = "cli"))]
 mod cli_args_tests {
-    use super::cli_args::OptionsArgs;
     use super::Options;
+    use super::cli_args::OptionsArgs;
 
     #[test]
     fn cli_options_patch_applies() {

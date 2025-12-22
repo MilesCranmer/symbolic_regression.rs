@@ -1,22 +1,18 @@
-use super::common::{TestOps, D, T};
-use crate::constant_optimization::{optimize_constants, OptimizeConstantsCtx};
-use crate::dataset::TaggedDataset;
-use crate::loss_functions::baseline_loss_from_zero_expression;
-use crate::operator_library::OperatorLibrary;
-use crate::pop_member::{Evaluator, MemberId, PopMember};
-use crate::Options;
 use dynamic_expressions::expression::{Metadata, PostfixExpr};
 use dynamic_expressions::node::PNode;
 use ndarray::{Array1, Array2};
-use rand::rngs::StdRng;
 use rand::SeedableRng;
+use rand::rngs::StdRng;
+
+use super::common::{D, T, TestOps};
+use crate::Options;
+use crate::constant_optimization::{OptimizeConstantsCtx, optimize_constants};
+use crate::dataset::TaggedDataset;
+use crate::operator_library::OperatorLibrary;
+use crate::pop_member::{Evaluator, MemberId, PopMember};
 
 fn var(feature: u16) -> PostfixExpr<T, TestOps, D> {
-    PostfixExpr::new(
-        vec![PNode::Var { feature }],
-        Vec::new(),
-        Metadata::default(),
-    )
+    PostfixExpr::new(vec![PNode::Var { feature }], Vec::new(), Metadata::default())
 }
 
 #[test]
@@ -49,7 +45,7 @@ fn optimize_constants_resets_birth_on_improvement() {
     let mut evaluator = Evaluator::<T, D>::new(dataset.n_rows);
     let mut grad_ctx = dynamic_expressions::GradContext::<T, D>::new(dataset.n_rows);
     let baseline_loss = if options.use_baseline {
-        baseline_loss_from_zero_expression::<T, TestOps, D>(&dataset, options.loss.as_ref())
+        crate::loss_functions::baseline_loss_from_zero_expression::<T, TestOps, D>(&dataset, options.loss.as_ref())
     } else {
         None
     };

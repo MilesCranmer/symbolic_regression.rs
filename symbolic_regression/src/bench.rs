@@ -1,16 +1,17 @@
-use crate::constant_optimization::{optimize_constants, OptimizeConstantsCtx};
-use crate::dataset::TaggedDataset;
-use crate::loss_functions::baseline_loss_from_zero_expression;
-use crate::optim::{bfgs_minimize, BackTracking, EvalBudget, Objective, OptimOptions};
-use crate::pop_member::Evaluator;
-use crate::{Dataset, MemberId, OperatorLibrary, Options, PopMember};
 use dynamic_expressions::expression::{Metadata, PostfixExpr};
 use dynamic_expressions::node::PNode;
 use dynamic_expressions::operator_enum::presets::BuiltinOpsF64;
 use dynamic_expressions::operator_registry::OpRegistry;
 use ndarray::{Array1, Array2};
-use rand::rngs::StdRng;
 use rand::SeedableRng;
+use rand::rngs::StdRng;
+
+use crate::constant_optimization::{OptimizeConstantsCtx, optimize_constants};
+use crate::dataset::TaggedDataset;
+use crate::loss_functions::baseline_loss_from_zero_expression;
+use crate::optim::{BackTracking, EvalBudget, Objective, OptimOptions, bfgs_minimize};
+use crate::pop_member::Evaluator;
+use crate::{Dataset, MemberId, OperatorLibrary, Options, PopMember};
 
 const D: usize = 3;
 type T = f64;

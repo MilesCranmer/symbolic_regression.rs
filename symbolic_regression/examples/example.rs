@@ -26,9 +26,7 @@ fn main() {
 
     let dataset = Dataset::new(x, y);
 
-    let operators =
-        BuiltinOpsF32::from_names_by_arity(&["cos", "exp", "sin"], &["+", "-", "*", "/"], &[])
-            .unwrap();
+    let operators = BuiltinOpsF32::from_names_by_arity(&["cos", "exp", "sin"], &["+", "-", "*", "/"], &[]).unwrap();
 
     let options = Options::<f32, D> {
         operators,
@@ -45,16 +43,14 @@ fn main() {
         println!("{}\t{}\t{}", member.complexity, member.loss, member.expr);
     }
     // To evaluate the expression, use:
-    /*
-        let tree = dominating
-            .last()
-            .unwrap()
-            .expr
-            .clone();
-        let _ = eval_tree_array::<f32, BuiltinOpsF32, 2>(
-            &tree,
-            dataset.x.view(),
-            &EvalOptions::default(),
-        );
-    */
+    // let tree = dominating
+    // .last()
+    // .unwrap()
+    // .expr
+    // .clone();
+    // let _ = eval_tree_array::<f32, BuiltinOpsF32, 2>(
+    // &tree,
+    // dataset.x.view(),
+    // &EvalOptions::default(),
+    // );
 }

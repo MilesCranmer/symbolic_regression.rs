@@ -1,5 +1,6 @@
-use crate::node::PNode;
 use core::marker::PhantomData;
+
+use crate::node::PNode;
 
 #[derive(Clone, Debug, Default)]
 pub struct Metadata {
@@ -40,11 +41,7 @@ impl<T, Ops, const D: usize> PostfixExpr<T, Ops, D> {
     where
         T: num_traits::Zero,
     {
-        Self::new(
-            vec![PNode::Const { idx: 0 }],
-            vec![T::zero()],
-            Metadata::default(),
-        )
+        Self::new(vec![PNode::Const { idx: 0 }], vec![T::zero()], Metadata::default())
     }
 }
 

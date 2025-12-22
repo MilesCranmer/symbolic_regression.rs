@@ -1,8 +1,7 @@
-use crate::expression::PostfixExpr;
-use crate::node::PNode;
-use crate::operator_enum::scalar::OpId;
 use core::fmt;
 
+use crate::expression::PostfixExpr;
+use crate::node::PNode;
 pub use crate::operator_enum::names::OpNames;
 
 #[derive(Clone, Debug, Default)]
@@ -89,10 +88,7 @@ fn combine(opname: &str, args: &[String]) -> String {
     out
 }
 
-pub fn string_tree<T, Ops, const D: usize>(
-    expr: &PostfixExpr<T, Ops, D>,
-    opts: StringTreeOptions<'_>,
-) -> String
+pub fn string_tree<T, Ops, const D: usize>(expr: &PostfixExpr<T, Ops, D>, opts: StringTreeOptions<'_>) -> String
 where
     T: fmt::Display,
     Ops: OpNames,
@@ -117,7 +113,7 @@ where
             PNode::Op { arity, op } => {
                 let a = arity as usize;
                 let start = stack.len() - a;
-                let op = OpId { arity, id: op };
+                let op = crate::operator_enum::scalar::OpId { arity, id: op };
                 let opname = if opts.pretty {
                     Ops::op_pretty_name(op)
                 } else {

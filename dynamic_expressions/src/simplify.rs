@@ -1,10 +1,10 @@
+use num_traits::Float;
+
 use crate::evaluate::EvalOptions;
 use crate::expression::PostfixExpr;
 use crate::node::PNode;
 use crate::operator_enum::scalar::{EvalKernelCtx, OpId, ScalarOpSet, SrcRef};
 use crate::operator_registry::OpRegistry;
-use crate::utils::compress_constants;
-use num_traits::Float;
 
 #[derive(Clone, Copy)]
 struct Frame<T> {
@@ -22,11 +22,7 @@ struct ArenaNode<const D: usize> {
 enum ArenaNodeKind<const D: usize> {
     Var(u16),
     Const(u16),
-    Op {
-        arity: u8,
-        op: u16,
-        children: [usize; D],
-    },
+    Op { arity: u8, op: u16, children: [usize; D] },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -50,17 +46,9 @@ fn is_const<const D: usize>(arena: &[ArenaNode<D>], id: usize) -> Option<u16> {
     }
 }
 
-fn is_op<const D: usize>(
-    arena: &[ArenaNode<D>],
-    id: usize,
-    op_id: u16,
-) -> Option<(u8, [usize; D])> {
+fn is_op<const D: usize>(arena: &[ArenaNode<D>], id: usize, op_id: u16) -> Option<(u8, [usize; D])> {
     match arena[id].kind {
-        ArenaNodeKind::Op {
-            arity,
-            op,
-            children,
-        } if op == op_id => Some((arity, children)),
+        ArenaNodeKind::Op { arity, op, children } if op == op_id => Some((arity, children)),
         _ => None,
     }
 }
@@ -96,11 +84,7 @@ fn combine_node<T: Float, const D: usize>(
     for cid in children.iter_mut().take(arity as usize) {
         *cid = combine_node(*cid, arena, consts, cfg, changed);
     }
-    arena[id].kind = ArenaNodeKind::Op {
-        arity,
-        op,
-        children,
-    };
+    arena[id].kind = ArenaNodeKind::Op { arity, op, children };
 
     if arity != 2 {
         return id;
@@ -166,11 +150,7 @@ fn combine_node<T: Float, const D: usize>(
                     return id;
                 }
 
-                let new_v = if op_is_add {
-                    below_v + top_v
-                } else {
-                    below_v * top_v
-                };
+                let new_v = if op_is_add { below_v + top_v } else { below_v * top_v };
                 let Some(new_idx) = append_const(consts, new_v) else {
                     let mut new_children = children;
                     new_children[0] = left;
@@ -315,11 +295,7 @@ fn emit_postfix<const D: usize>(id: usize, arena: &[ArenaNode<D>], out: &mut Vec
     match arena[id].kind {
         ArenaNodeKind::Var(f) => out.push(PNode::Var { feature: f }),
         ArenaNodeKind::Const(idx) => out.push(PNode::Const { idx }),
-        ArenaNodeKind::Op {
-            arity,
-            op,
-            children,
-        } => {
+        ArenaNodeKind::Op { arity, op, children } => {
             for &cid in children.iter().take(arity as usize) {
                 emit_postfix(cid, arena, out);
             }
@@ -328,9 +304,7 @@ fn emit_postfix<const D: usize>(id: usize, arena: &[ArenaNode<D>], out: &mut Vec
     }
 }
 
-fn parse_postfix_to_arena<T, Ops, const D: usize>(
-    expr: &PostfixExpr<T, Ops, D>,
-) -> Option<(Vec<ArenaNode<D>>, usize)>
+fn parse_postfix_to_arena<T, Ops, const D: usize>(expr: &PostfixExpr<T, Ops, D>) -> Option<(Vec<ArenaNode<D>>, usize)>
 where
     T: Float,
 {
@@ -363,11 +337,7 @@ where
                 }
                 let id = arena.len();
                 arena.push(ArenaNode {
-                    kind: ArenaNodeKind::Op {
-                        arity,
-                        op,
-                        children,
-                    },
+                    kind: ArenaNodeKind::Op { arity, op, children },
                 });
                 st.push(id);
             }
@@ -476,8 +446,7 @@ where
                 }
 
                 let mut out = [T::zero()];
-                let mut args: [SrcRef<'_, T>; D] =
-                    core::array::from_fn(|_| SrcRef::Const(T::zero()));
+                let mut args: [SrcRef<'_, T>; D] = core::array::from_fn(|_| SrcRef::Const(T::zero()));
                 for j in 0..a {
                     args[j] = SrcRef::Const(vals[j]);
                 }
@@ -534,16 +503,13 @@ where
     combine_operators_in_place_with_cfg(expr, cfg)
 }
 
-pub fn simplify_in_place<T, Ops, const D: usize>(
-    expr: &mut PostfixExpr<T, Ops, D>,
-    eval_opts: &EvalOptions,
-) -> bool
+pub fn simplify_in_place<T, Ops, const D: usize>(expr: &mut PostfixExpr<T, Ops, D>, eval_opts: &EvalOptions) -> bool
 where
     T: Float,
     Ops: ScalarOpSet<T> + OpRegistry,
 {
     let c1 = simplify_tree_in_place(expr, eval_opts);
     let c2 = combine_operators_in_place(expr);
-    let c3 = compress_constants(expr);
+    let c3 = crate::utils::compress_constants(expr);
     c1 || c2 || c3
 }

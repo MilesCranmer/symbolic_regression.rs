@@ -15,11 +15,7 @@ pub struct Instr<const D: usize> {
     pub dst: u16,
 }
 
-pub fn compile_plan<const D: usize>(
-    nodes: &[PNode],
-    n_features: usize,
-    n_consts: usize,
-) -> EvalPlan<D> {
+pub fn compile_plan<const D: usize>(nodes: &[PNode], n_features: usize, n_consts: usize) -> EvalPlan<D> {
     assert!(
         n_features <= (u16::MAX as usize),
         "n_features={} exceeds u16::MAX",
@@ -63,12 +59,7 @@ pub fn compile_plan<const D: usize>(
             PNode::Op { arity, op } => {
                 let arity_u8 = arity;
                 let arity = arity as usize;
-                assert!(
-                    arity >= 1 && arity <= D,
-                    "Unsupported arity {} (D={})",
-                    arity,
-                    D
-                );
+                assert!(arity >= 1 && arity <= D, "Unsupported arity {} (D={})", arity, D);
 
                 let mut args: [Src; D] = core::array::from_fn(|_| Src::Const(0));
                 for j in (0..arity).rev() {
@@ -97,9 +88,5 @@ pub fn compile_plan<const D: usize>(
     assert_eq!(stack.len(), 1, "Postfix did not reduce to a single root");
     let root = stack.pop().unwrap();
     let n_slots = max_slot as usize;
-    EvalPlan {
-        instrs,
-        n_slots,
-        root,
-    }
+    EvalPlan { instrs, n_slots, root }
 }

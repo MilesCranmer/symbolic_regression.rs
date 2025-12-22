@@ -1,11 +1,10 @@
 mod common;
 
 use approx::assert_relative_eq;
-use common::{make_x, TestOps};
-use dynamic_expressions::math::{cos, div, exp, fma, log, neg, sin};
+use common::{TestOps, make_x};
 use dynamic_expressions::operator_enum::scalar::OpId;
-use dynamic_expressions::strings::{string_tree, OpNames, StringTreeOptions};
-use dynamic_expressions::{eval_tree_array, lit, EvalOptions};
+use dynamic_expressions::strings::{OpNames, StringTreeOptions, string_tree};
+use dynamic_expressions::{EvalOptions, eval_tree_array, lit, operators};
 
 #[test]
 fn algebra_overloads_and_string_paths_are_exercised() {
@@ -34,13 +33,13 @@ fn algebra_overloads_and_string_paths_are_exercised() {
         lit(2.0) - b.clone(),
         lit(2.0) * b.clone(),
         lit(2.0) / b.clone(),
-        div(a.clone(), b.clone()),
-        neg(a.clone()),
-        cos(a.clone()),
-        sin(a.clone()),
-        exp(a.clone()),
-        log(a.clone()),
-        fma(a.clone(), b.clone(), common::c(0.7)),
+        operators::div(a.clone(), b.clone()),
+        operators::neg(a.clone()),
+        operators::cos(a.clone()),
+        operators::sin(a.clone()),
+        operators::exp(a.clone()),
+        operators::log(a.clone()),
+        operators::fma(a.clone(), b.clone(), common::c(0.7)),
     ];
 
     assert_eq!(exprs[0].meta.variable_names, vec!["a", "b"]);
@@ -53,17 +52,17 @@ fn algebra_overloads_and_string_paths_are_exercised() {
     let s = string_tree(&(-(a.clone() + b.clone())), StringTreeOptions::default());
     assert_eq!(s, "-(a + b)");
 
-    let s = string_tree(&cos(a.clone() + b.clone()), StringTreeOptions::default());
+    let s = string_tree(&operators::cos(a.clone() + b.clone()), StringTreeOptions::default());
     assert_eq!(s, "cos(a + b)");
 
     let s = string_tree(
-        &fma(a.clone(), b.clone(), common::c(0.7)),
+        &operators::fma(a.clone(), b.clone(), common::c(0.7)),
         StringTreeOptions::default(),
     );
     assert_eq!(s, "fma(a, b, 0.7)");
 
     let s_pretty = string_tree(
-        &fma(a.clone(), b.clone(), common::c(0.7)),
+        &operators::fma(a.clone(), b.clone(), common::c(0.7)),
         StringTreeOptions {
             pretty: true,
             ..StringTreeOptions::default()
@@ -74,14 +73,8 @@ fn algebra_overloads_and_string_paths_are_exercised() {
     let display = format!("{}", a.clone() + b.clone());
     assert_eq!(display, "a + b");
 
-    assert_eq!(
-        <TestOps as OpNames>::op_name(OpId { arity: 9, id: 0 }),
-        "unknown_op"
-    );
-    assert_eq!(
-        <TestOps as OpNames>::op_name(OpId { arity: 1, id: 999 }),
-        "unknown_op"
-    );
+    assert_eq!(<TestOps as OpNames>::op_name(OpId { arity: 9, id: 0 }), "unknown_op");
+    assert_eq!(<TestOps as OpNames>::op_name(OpId { arity: 1, id: 999 }), "unknown_op");
 
     // Sanity check unary "-" does not add parentheses for a leaf.
     let s = string_tree(&(-a.clone()), StringTreeOptions::default());

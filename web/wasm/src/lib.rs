@@ -3,12 +3,12 @@ use std::io::Cursor;
 use csv::ReaderBuilder;
 use dynamic_expressions::operator_enum::presets::BuiltinOpsF64;
 use dynamic_expressions::operator_registry::OpRegistry;
-use dynamic_expressions::strings::{string_tree, StringTreeOptions};
-use dynamic_expressions::{eval_plan_array_into, EvalOptions};
+use dynamic_expressions::strings::{StringTreeOptions, string_tree};
+use dynamic_expressions::{EvalOptions, eval_plan_array_into};
 use ndarray::{Array1, Array2};
+use rand::SeedableRng;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
-use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 use serde_wasm_bindgen::{from_value, to_value};
 use symbolic_regression::{Dataset, LossKind, MutationWeights, Operators, Options, SearchEngine};
@@ -316,9 +316,7 @@ impl WasmSearch {
         ternary_tokens: JsValue,
     ) -> Result<WasmSearch, JsValue> {
         let opts: WasmSearchOptions = from_value(opts)
-            .or_else(|_| {
-                Ok::<WasmSearchOptions, serde_wasm_bindgen::Error>(WasmSearchOptions::default())
-            })
+            .or_else(|_| Ok::<WasmSearchOptions, serde_wasm_bindgen::Error>(WasmSearchOptions::default()))
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
         let unary: Vec<String> = from_value(unary_tokens).unwrap_or_default();
@@ -328,23 +326,17 @@ impl WasmSearch {
         let binary_refs: Vec<&str> = binary.iter().map(|s| s.as_str()).collect();
         let ternary_refs: Vec<&str> = ternary.iter().map(|s| s.as_str()).collect();
 
-        let operators = Operators::<3>::from_names_by_arity::<BuiltinOpsF64>(
-            &unary_refs,
-            &binary_refs,
-            &ternary_refs,
-        )
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let operators = Operators::<3>::from_names_by_arity::<BuiltinOpsF64>(&unary_refs, &binary_refs, &ternary_refs)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
-        let (headers, rows) =
-            parse_csv_to_rows(&csv_text, opts.has_headers).map_err(|e| JsValue::from_str(&e))?;
+        let (headers, rows) = parse_csv_to_rows(&csv_text, opts.has_headers).map_err(|e| JsValue::from_str(&e))?;
 
         let (dataset_all, variable_names, weights_all) =
             build_full_dataset(&headers, &rows, &opts).map_err(|e| JsValue::from_str(&e))?;
 
         let split = make_split_indices(dataset_all.n_rows, opts.validation_fraction, opts.seed);
-        let (train, val) =
-            split_train_val(&dataset_all, weights_all.as_ref(), &variable_names, &split)
-                .map_err(|e| JsValue::from_str(&e))?;
+        let (train, val) = split_train_val(&dataset_all, weights_all.as_ref(), &variable_names, &split)
+            .map_err(|e| JsValue::from_str(&e))?;
 
         let options = options_from_wasm(&opts, operators)?;
 
@@ -401,8 +393,7 @@ impl WasmSearch {
             _ => return Err(JsValue::from_str("which must be \"train\" or \"val\"")),
         };
 
-        let m = find_member_by_id(&self.engine, member_id)
-            .ok_or_else(|| JsValue::from_str("member not found"))?;
+        let m = find_member_by_id(&self.engine, member_id).ok_or_else(|| JsValue::from_str("member not found"))?;
 
         let yhat = eval_member_on_dataset(dataset, &m)?;
         let metrics = compute_metrics(&yhat, dataset);
@@ -411,10 +402,7 @@ impl WasmSearch {
     }
 }
 
-fn options_from_wasm(
-    opts: &WasmSearchOptions,
-    operators: Operators<3>,
-) -> Result<Options<f64, 3>, JsValue> {
+fn options_from_wasm(opts: &WasmSearchOptions, operators: Operators<3>) -> Result<Options<f64, 3>, JsValue> {
     let loss_kind = match opts.loss_kind.trim().to_ascii_lowercase().as_str() {
         "mse" => LossKind::Mse,
         "mae" => LossKind::Mae,
@@ -424,9 +412,7 @@ fn options_from_wasm(
         },
         "logcosh" => LossKind::LogCosh,
         "lp" => LossKind::Lp { p: opts.lp_p },
-        "quantile" => LossKind::Quantile {
-            tau: opts.quantile_tau,
-        },
+        "quantile" => LossKind::Quantile { tau: opts.quantile_tau },
         "epsilon-insensitive" | "epsilon_insensitive" | "eps-insensitive" | "eps_insensitive" => {
             LossKind::EpsilonInsensitive {
                 eps: opts.epsilon_insensitive_eps,
@@ -435,7 +421,7 @@ fn options_from_wasm(
         other => {
             return Err(JsValue::from_str(&format!(
                 "unknown loss_kind {other:?} (expected \"mse\", \"mae\", \"rmse\", \"huber\", \"logcosh\", \"lp\", \"quantile\", or \"epsilon-insensitive\")"
-            )))
+            )));
         }
     };
 
@@ -661,11 +647,7 @@ fn r2_and_corr(yhat: &[f64], y: &[f64], w: Option<&[f64]>) -> (f64, f64) {
             if sum_w == 0.0 {
                 0.0
             } else {
-                y.iter()
-                    .zip(w.iter())
-                    .map(|(&yi, &wi)| yi * wi)
-                    .sum::<f64>()
-                    / sum_w
+                y.iter().zip(w.iter()).map(|(&yi, &wi)| yi * wi).sum::<f64>() / sum_w
             }
         }
     };
@@ -713,10 +695,7 @@ fn r2_and_corr(yhat: &[f64], y: &[f64], w: Option<&[f64]>) -> (f64, f64) {
     (r2, corr)
 }
 
-fn parse_csv_to_rows(
-    csv_text: &str,
-    has_headers: bool,
-) -> Result<(Vec<String>, Vec<Vec<f64>>), String> {
+fn parse_csv_to_rows(csv_text: &str, has_headers: bool) -> Result<(Vec<String>, Vec<Vec<f64>>), String> {
     let mut rdr = ReaderBuilder::new()
         .trim(csv::Trim::All)
         .has_headers(has_headers)
@@ -777,9 +756,7 @@ fn build_full_dataset(
     let w_col = opts.weights_column;
     if let Some(wc) = w_col {
         if wc >= n_cols {
-            return Err(format!(
-                "weights_column out of range: {wc} (n_cols={n_cols})"
-            ));
+            return Err(format!("weights_column out of range: {wc} (n_cols={n_cols})"));
         }
         if wc == y_col {
             return Err("weights_column must be different from y_column".to_string());
@@ -788,9 +765,7 @@ fn build_full_dataset(
 
     let mut x_cols = match &opts.x_columns {
         Some(v) => v.clone(),
-        None => (0..n_cols)
-            .filter(|&c| c != y_col && Some(c) != w_col)
-            .collect(),
+        None => (0..n_cols).filter(|&c| c != y_col && Some(c) != w_col).collect(),
     };
     x_cols.sort_unstable();
     x_cols.dedup();
@@ -868,15 +843,13 @@ fn split_train_val(
     variable_names: &[String],
     split: &WasmSplitIndices,
 ) -> Result<(Dataset<f64>, Option<Dataset<f64>>), String> {
-    let (x_train, y_train, w_train) =
-        select_rows(&dataset_all.x, &dataset_all.y, weights_all, &split.train)?;
+    let (x_train, y_train, w_train) = select_rows(&dataset_all.x, &dataset_all.y, weights_all, &split.train)?;
     let train = Dataset::with_weights_and_names(x_train, y_train, w_train, variable_names.to_vec());
 
     if split.val.is_empty() {
         return Ok((train, None));
     }
-    let (x_val, y_val, w_val) =
-        select_rows(&dataset_all.x, &dataset_all.y, weights_all, &split.val)?;
+    let (x_val, y_val, w_val) = select_rows(&dataset_all.x, &dataset_all.y, weights_all, &split.val)?;
     let val = Dataset::with_weights_and_names(x_val, y_val, w_val, variable_names.to_vec());
     Ok((train, Some(val)))
 }
@@ -890,9 +863,7 @@ fn select_rows(
     let (n_rows, n_features) = x.dim();
     for &i in indices {
         if i >= n_rows {
-            return Err(format!(
-                "index out of range while splitting: {i} (n_rows={n_rows})"
-            ));
+            return Err(format!("index out of range while splitting: {i} (n_rows={n_rows})"));
         }
     }
 
