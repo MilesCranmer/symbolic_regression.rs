@@ -103,11 +103,11 @@ proptest! {
     ) {
         let expr = PostfixExpr::<T, Ops, D>::new(nodes, consts, Metadata::default());
         let plan = compile_plan::<D>(&expr.nodes, N_FEATURES, expr.consts.len());
-        let x = Array2::from_shape_vec((N_ROWS, N_FEATURES), x_data).expect("shape");
+        let x = Array2::from_shape_vec((N_FEATURES, N_ROWS), x_data).expect("shape");
 
         let mut out_regular = vec![0.0; N_ROWS];
         let mut out_cached = vec![0.0; N_ROWS];
-        let mut scratch = Vec::new();
+        let mut scratch = Array2::<T>::zeros((0, 0));
         let opts = EvalOptions {
             check_finite: true,
             early_exit: false,

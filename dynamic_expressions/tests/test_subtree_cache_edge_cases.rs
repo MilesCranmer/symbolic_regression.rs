@@ -37,10 +37,11 @@ fn make_x(n_rows: usize) -> Array2<T> {
     let n_features = 2usize;
     let mut data = vec![0.0; n_rows * n_features];
     for row in 0..n_rows {
-        data[row * n_features] = row as f64 * 0.25;
-        data[row * n_features + 1] = 1.0 + row as f64 * 0.1;
+        let base = row * n_features;
+        data[base] = row as f64 * 0.25;
+        data[base + 1] = 1.0 + row as f64 * 0.1;
     }
-    Array2::from_shape_vec((n_rows, n_features), data).unwrap()
+    Array2::from_shape_vec((n_features, n_rows), data).unwrap()
 }
 
 #[test]
@@ -53,9 +54,9 @@ fn subtree_cache_disabled_matches_uncached() {
         early_exit: false,
     };
 
-    let mut out_uncached = vec![0.0; x.nrows()];
-    let mut out_cached = vec![0.0; x.nrows()];
-    let mut scratch = Vec::new();
+    let mut out_uncached = vec![0.0; x.ncols()];
+    let mut out_cached = vec![0.0; x.ncols()];
+    let mut scratch = Array2::<T>::zeros((0, 0));
 
     let ok_uncached = eval_plan_array_into(
         &mut out_uncached,
@@ -66,7 +67,7 @@ fn subtree_cache_disabled_matches_uncached() {
         &opts,
     );
 
-    let mut cache = SubtreeCache::new(x.nrows(), 0);
+    let mut cache = SubtreeCache::new(x.ncols(), 0);
     let ok_cached = eval_plan_array_into_cached(
         &mut out_cached,
         &plan,
@@ -92,14 +93,14 @@ fn subtree_cache_reuse_with_const_updates_matches_uncached() {
         early_exit: false,
     };
 
-    let mut scratch = Vec::new();
-    let mut cache = SubtreeCache::new(x.nrows(), 1 << 20);
+    let mut scratch = Array2::<T>::zeros((0, 0));
+    let mut cache = SubtreeCache::new(x.ncols(), 1 << 20);
 
     for tick in 0..5u64 {
         expr.consts[0] = (tick as f64 * 0.3).sin();
 
-        let mut out_uncached = vec![0.0; x.nrows()];
-        let mut out_cached = vec![0.0; x.nrows()];
+        let mut out_uncached = vec![0.0; x.ncols()];
+        let mut out_cached = vec![0.0; x.ncols()];
 
         let ok_uncached = eval_plan_array_into(
             &mut out_uncached,
@@ -136,11 +137,11 @@ fn subtree_cache_handles_row_count_change() {
     };
 
     let mut cache = SubtreeCache::new(4, 1 << 20);
-    let mut scratch = Vec::new();
+    let mut scratch = Array2::<T>::zeros((0, 0));
 
     let x1 = make_x(4);
-    let mut out1_uncached = vec![0.0; x1.nrows()];
-    let mut out1_cached = vec![0.0; x1.nrows()];
+    let mut out1_uncached = vec![0.0; x1.ncols()];
+    let mut out1_cached = vec![0.0; x1.ncols()];
     let ok1_uncached = eval_plan_array_into(
         &mut out1_uncached,
         &plan,
@@ -163,8 +164,8 @@ fn subtree_cache_handles_row_count_change() {
     assert_eq!(out1_uncached, out1_cached);
 
     let x2 = make_x(3);
-    let mut out2_uncached = vec![0.0; x2.nrows()];
-    let mut out2_cached = vec![0.0; x2.nrows()];
+    let mut out2_uncached = vec![0.0; x2.ncols()];
+    let mut out2_cached = vec![0.0; x2.ncols()];
     let ok2_uncached = eval_plan_array_into(
         &mut out2_uncached,
         &plan,
