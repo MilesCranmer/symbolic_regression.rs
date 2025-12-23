@@ -13,6 +13,7 @@ use crate::optim::{BackTracking, Objective, OptimOptions, bfgs_minimize, newton_
 use crate::options::Options;
 use crate::pop_member::{Evaluator, PopMember};
 
+#[allow(clippy::too_many_arguments)]
 fn eval_loss_and_grad<T: Float + AddAssign, Ops, const D: usize>(
     plan: &dynamic_expressions::EvalPlan<D>,
     expr: &dynamic_expressions::expression::PostfixExpr<T, Ops, D>,
@@ -90,6 +91,7 @@ where
     Some(loss.to_f64().unwrap_or(f64::INFINITY))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn eval_loss_only<T: Float, Ops, const D: usize>(
     plan: &dynamic_expressions::EvalPlan<D>,
     expr: &dynamic_expressions::expression::PostfixExpr<T, Ops, D>,

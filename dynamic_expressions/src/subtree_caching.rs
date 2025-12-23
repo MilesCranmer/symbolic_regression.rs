@@ -182,7 +182,7 @@ fn expr_nodes_signature(nodes: &[PNode]) -> u64 {
     h = h.wrapping_mul(PRIME);
     for n in nodes.iter().copied() {
         let v: u64 = match n {
-            PNode::Var { feature } => (0u64 << 48) | (feature as u64),
+            PNode::Var { feature } => /* (0u64 << 48) | */ feature as u64,
             PNode::Const { idx } => (1u64 << 48) | (idx as u64),
             PNode::Op { arity, op } => (2u64 << 48) | ((arity as u64) << 32) | (op as u64),
         };

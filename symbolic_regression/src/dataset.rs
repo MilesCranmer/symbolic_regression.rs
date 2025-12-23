@@ -43,7 +43,7 @@ pub struct Dataset<T: Float> {
 
 impl<T: Float> Dataset<T> {
     fn hash_slice(hasher: &mut DefaultHasher, slice: &[T]) {
-        let len_bytes = slice.len() * mem::size_of::<T>();
+        let len_bytes = slice.len() * mem::size_of_val(slice);
         // SAFETY: The slice is contiguous and we only hash raw bytes.
         let bytes = unsafe { std::slice::from_raw_parts(slice.as_ptr() as *const u8, len_bytes) };
         hasher.write(bytes);

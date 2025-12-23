@@ -293,6 +293,7 @@ where
 /// `dataset_key` must uniquely identify the dataset contents. If the dataset
 /// changes, pass a different key (e.g. a version counter) to automatically
 /// invalidate the cache.
+#[allow(clippy::too_many_arguments)]
 pub fn eval_plan_array_into_cached<T, Ops, const D: usize>(
     out: &mut [T],
     plan: &EvalPlan<D>,

@@ -389,6 +389,7 @@ fn fill_nan<T: Float>(buf: &mut [T]) {
 ///
 /// `out_val` must have length `n_rows`, and `out_grad` must have length `n_dir * n_rows`,
 /// where `n_dir = if variable { n_features } else { n_consts }`.
+#[allow(clippy::too_many_arguments)]
 pub fn eval_grad_plan_array_into<T, Ops, const D: usize>(
     out_val: &mut [T],
     out_grad: &mut [T],
@@ -542,6 +543,7 @@ where
 /// expensive operator kernels for those subtrees.
 ///
 /// `dataset_key` must identify the dataset contents; changing it invalidates the cache.
+#[allow(clippy::too_many_arguments)]
 pub fn eval_grad_plan_array_into_cached<T, Ops, const D: usize>(
     out_val: &mut [T],
     out_grad: &mut [T],
