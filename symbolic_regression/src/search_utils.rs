@@ -1,3 +1,6 @@
+use std::fmt::Display;
+use std::ops::AddAssign;
+
 use num_traits::Float;
 use progress_bars::SearchProgress;
 use rand::SeedableRng;
@@ -14,7 +17,7 @@ use crate::pop_member::{Evaluator, MemberId, PopMember};
 use crate::population::Population;
 use crate::{migration, progress_bars, single_iteration, warmup};
 
-pub struct SearchResult<T: Float, Ops, const D: usize> {
+pub struct SearchResult<T: Float + AddAssign, Ops, const D: usize> {
     pub hall_of_fame: HallOfFame<T, Ops, D>,
     pub best: PopMember<T, Ops, D>,
 }
@@ -42,7 +45,7 @@ impl SearchCounters {
     }
 }
 
-struct SearchTaskResult<T: Float, Ops, const D: usize> {
+struct SearchTaskResult<T: Float + AddAssign, Ops, const D: usize> {
     pop_idx: usize,
     curmaxsize: usize,
     evals: u64,
@@ -51,7 +54,7 @@ struct SearchTaskResult<T: Float, Ops, const D: usize> {
     pop_state: PopState<T, Ops, D>,
 }
 
-pub(crate) struct PopState<T: Float, Ops, const D: usize> {
+pub(crate) struct PopState<T: Float + AddAssign, Ops, const D: usize> {
     pub(crate) pop: Population<T, Ops, D>,
     pub(crate) evaluator: Evaluator<T, D>,
     pub(crate) grad_ctx: dynamic_expressions::GradContext<T, D>,
@@ -61,7 +64,7 @@ pub(crate) struct PopState<T: Float, Ops, const D: usize> {
     pub(crate) next_birth: u64,
 }
 
-impl<T: Float, Ops, const D: usize> PopState<T, Ops, D> {
+impl<T: Float + AddAssign, Ops, const D: usize> PopState<T, Ops, D> {
     fn run_iteration_phase<'a, F, Ret>(
         &'a mut self,
         full_dataset: TaggedDataset<'a, T>,
@@ -117,14 +120,14 @@ impl<T: Float, Ops, const D: usize> PopState<T, Ops, D> {
     }
 }
 
-struct PopPools<T: Float, Ops, const D: usize> {
+struct PopPools<T: Float + AddAssign, Ops, const D: usize> {
     pops: Vec<Option<PopState<T, Ops, D>>>,
     best_sub_pops: Vec<Vec<PopMember<T, Ops, D>>>,
     best: PopMember<T, Ops, D>,
     total_evals: u64,
 }
 
-struct EquationSearchState<'a, T: Float, Ops, const D: usize> {
+struct EquationSearchState<'a, T: Float + AddAssign, Ops, const D: usize> {
     full_dataset: TaggedDataset<'a, T>,
     options: &'a Options<T, D>,
     n_workers: usize,
@@ -138,7 +141,7 @@ struct EquationSearchState<'a, T: Float, Ops, const D: usize> {
 
 pub fn equation_search<T, Ops, const D: usize>(dataset: &Dataset<T>, options: &Options<T, D>) -> SearchResult<T, Ops, D>
 where
-    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + std::fmt::Display + Send + Sync,
+    T: Float + AddAssign + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + Send + Sync,
     Ops: dynamic_expressions::operator_enum::scalar::ScalarOpSet<T>
         + dynamic_expressions::strings::OpNames
         + dynamic_expressions::operator_registry::OpRegistry
@@ -153,7 +156,7 @@ pub fn equation_search_parallel<T, Ops, const D: usize>(
     options: &Options<T, D>,
 ) -> SearchResult<T, Ops, D>
 where
-    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + std::fmt::Display + Send + Sync,
+    T: Float + AddAssign + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + Send + Sync,
     Ops: dynamic_expressions::operator_enum::scalar::ScalarOpSet<T>
         + dynamic_expressions::strings::OpNames
         + dynamic_expressions::operator_registry::OpRegistry
@@ -223,7 +226,7 @@ where
     }
 }
 
-pub struct SearchEngine<T: Float, Ops, const D: usize> {
+pub struct SearchEngine<T: Float + AddAssign, Ops, const D: usize> {
     dataset: Dataset<T>,
     baseline_loss: Option<T>,
     options: Options<T, D>,
@@ -241,7 +244,7 @@ pub struct SearchEngine<T: Float, Ops, const D: usize> {
 
 impl<T, Ops, const D: usize> SearchEngine<T, Ops, D>
 where
-    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + std::fmt::Display,
+    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + AddAssign,
     Ops: dynamic_expressions::operator_enum::scalar::ScalarOpSet<T>
         + dynamic_expressions::strings::OpNames
         + dynamic_expressions::operator_registry::OpRegistry,
@@ -420,7 +423,7 @@ fn execute_task<T, Ops, const D: usize>(
     mut pop_state: PopState<T, Ops, D>,
 ) -> SearchTaskResult<T, Ops, D>
 where
-    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive,
+    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + AddAssign,
     Ops:
         dynamic_expressions::operator_enum::scalar::ScalarOpSet<T> + dynamic_expressions::operator_registry::OpRegistry,
 {
@@ -455,7 +458,7 @@ fn apply_task_result<T, Ops, const D: usize>(
     pools: &mut PopPools<T, Ops, D>,
     res: SearchTaskResult<T, Ops, D>,
 ) where
-    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + std::fmt::Display,
+    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + AddAssign,
     Ops: dynamic_expressions::operator_enum::scalar::ScalarOpSet<T> + dynamic_expressions::strings::OpNames,
 {
     pools.total_evals = pools.total_evals.saturating_add(res.evals);
@@ -518,7 +521,7 @@ fn run_scoped_search<'scope, 'env, T, Ops, const D: usize>(
     state: &mut EquationSearchState<'env, T, Ops, D>,
 ) where
     'env: 'scope,
-    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + std::fmt::Display + Send + Sync + 'scope,
+    T: Float + AddAssign + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + Send + Sync + 'scope,
     Ops: dynamic_expressions::operator_enum::scalar::ScalarOpSet<T>
         + dynamic_expressions::strings::OpNames
         + dynamic_expressions::operator_registry::OpRegistry
@@ -581,7 +584,7 @@ fn init_populations<T, Ops, const D: usize>(
     hall: &mut HallOfFame<T, Ops, D>,
 ) -> PopPools<T, Ops, D>
 where
-    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive,
+    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + AddAssign,
     Ops: dynamic_expressions::operator_enum::scalar::ScalarOpSet<T>,
 {
     let dataset = full_dataset.data;

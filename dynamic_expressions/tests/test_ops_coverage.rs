@@ -13,8 +13,8 @@ fn make_small_x() -> (Vec<f64>, Array2<f64>) {
 #[test]
 fn covers_all_ops_in_eval_diff_and_grad() {
     let (x_data, x) = make_small_x();
-    let n_rows = x.nrows();
-    let n_features = x.ncols();
+    let n_rows = x.ncols();
+    let n_features = x.nrows();
     let opts = EvalOptions {
         check_finite: true,
         early_exit: true,
@@ -28,7 +28,7 @@ fn covers_all_ops_in_eval_diff_and_grad() {
     assert!(ok);
     let manual: Vec<f64> = (0..n_rows)
         .map(|row| {
-            let v = x_data[row * n_features];
+            let v = x_data[row];
             -((v.ln()).exp().sin())
         })
         .collect();
@@ -50,8 +50,8 @@ fn covers_all_ops_in_eval_diff_and_grad() {
     assert!(ok);
     let manual: Vec<f64> = (0..n_rows)
         .map(|row| {
-            let a = x_data[row * n_features];
-            let b = x_data[row * n_features + 1];
+            let a = x_data[row];
+            let b = x_data[n_rows + row];
             ((a + b) * (a - b)) / (b + 1.0)
         })
         .collect();
@@ -70,8 +70,8 @@ fn covers_all_ops_in_eval_diff_and_grad() {
     let c0 = expr_t3.consts[0];
     let manual: Vec<f64> = (0..n_rows)
         .map(|row| {
-            let a = x_data[row * n_features];
-            let b = x_data[row * n_features + 1];
+            let a = x_data[row];
+            let b = x_data[n_rows + row];
             a * b + c0
         })
         .collect();

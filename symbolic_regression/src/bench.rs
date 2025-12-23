@@ -104,7 +104,7 @@ pub fn constant_opt_linear_env() -> ConstantOptLinearEnv {
     let x: Vec<f64> = (0..n_rows).map(|i| (i as f64) / (n_rows as f64)).collect();
     let y: Vec<f64> = x.iter().map(|&xi| 2.0 * xi + 3.0).collect();
     let dataset = Dataset::new(
-        Array2::from_shape_vec((n_rows, n_features), x).unwrap(),
+        Array2::from_shape_vec((n_features, n_rows), x).unwrap(),
         Array1::from_vec(y),
     );
 

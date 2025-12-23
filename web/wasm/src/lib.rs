@@ -546,7 +546,7 @@ fn eval_member_on_dataset(
     m: &symbolic_regression::PopMember<f64, BuiltinOpsF64, 3>,
 ) -> Result<Vec<f64>, JsValue> {
     let mut yhat = vec![0.0_f64; dataset.n_rows];
-    let mut scratch: Vec<Vec<f64>> = Vec::new();
+    let mut scratch = ndarray::Array2::<f64>::zeros((0, 0));
     let eval_opts = EvalOptions {
         check_finite: true,
         early_exit: false,
@@ -786,13 +786,13 @@ fn build_full_dataset(
 
     let n_features = x_cols.len();
 
-    let mut x = Array2::<f64>::zeros((n_rows, n_features));
+    let mut x = Array2::<f64>::zeros((n_features, n_rows));
     let mut y = Array1::<f64>::zeros(n_rows);
     let mut w = w_col.map(|_| Array1::<f64>::zeros(n_rows));
 
     for (i, row) in rows.iter().enumerate() {
         for (j, &c) in x_cols.iter().enumerate() {
-            x[(i, j)] = row[c];
+            x[(j, i)] = row[c];
         }
         y[i] = row[y_col];
         if let (Some(wc), Some(w_arr)) = (w_col, w.as_mut()) {
@@ -860,20 +860,20 @@ fn select_rows(
     w: Option<&Array1<f64>>,
     indices: &[usize],
 ) -> Result<SelectedRows, String> {
-    let (n_rows, n_features) = x.dim();
+    let (n_features, n_rows) = x.dim();
     for &i in indices {
         if i >= n_rows {
             return Err(format!("index out of range while splitting: {i} (n_rows={n_rows})"));
         }
     }
 
-    let mut xo = Array2::<f64>::zeros((indices.len(), n_features));
+    let mut xo = Array2::<f64>::zeros((n_features, indices.len()));
     let mut yo = Array1::<f64>::zeros(indices.len());
     let mut wo = w.map(|_| Array1::<f64>::zeros(indices.len()));
 
     for (i_new, &i_old) in indices.iter().enumerate() {
         for j in 0..n_features {
-            xo[(i_new, j)] = x[(i_old, j)];
+            xo[(j, i_new)] = x[(j, i_old)];
         }
         yo[i_new] = y[i_old];
         if let (Some(w_in), Some(w_out)) = (w, wo.as_mut()) {

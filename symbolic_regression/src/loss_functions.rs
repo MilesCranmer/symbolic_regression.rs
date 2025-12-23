@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use dynamic_expressions::EvalOptions;
 use dynamic_expressions::operator_enum::scalar;
+use ndarray::Array2;
 use num_traits::Float;
 
 use crate::dataset::Dataset;
@@ -23,7 +24,7 @@ where
     let plan = dynamic_expressions::compile_plan(&expr.nodes, dataset.n_features, expr.consts.len());
 
     let mut yhat = vec![T::zero(); dataset.n_rows];
-    let mut scratch: Vec<Vec<T>> = Vec::new();
+    let mut scratch = Array2::<T>::zeros((0, 0));
 
     let eval_opts = EvalOptions {
         check_finite: true,

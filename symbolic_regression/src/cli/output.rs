@@ -1,5 +1,6 @@
 // CLI output formatting.
 
+use std::fmt::Display;
 use std::io::Write;
 use std::path::Path;
 
@@ -21,7 +22,7 @@ pub fn print_front<T, Ops, const D: usize>(
     front: &[crate::PopMember<T, Ops, D>],
     pretty: bool,
 ) where
-    T: Float + std::fmt::Display,
+    T: Float + Display,
     Ops: dynamic_expressions::strings::OpNames,
 {
     println!("target: {target}");
@@ -45,7 +46,7 @@ pub fn write_results<T, Ops, const D: usize>(
     results: &[TargetResult<T, Ops, D>],
 ) -> anyhow::Result<()>
 where
-    T: Float + std::fmt::Display,
+    T: Float + Display,
     Ops: dynamic_expressions::strings::OpNames,
 {
     let fmt = match format {
@@ -75,7 +76,7 @@ fn infer_format(path: &Path) -> anyhow::Result<OutputFormat> {
 
 fn write_csv<T, Ops, const D: usize>(path: &Path, results: &[TargetResult<T, Ops, D>]) -> anyhow::Result<()>
 where
-    T: Float + std::fmt::Display,
+    T: Float + Display,
     Ops: dynamic_expressions::strings::OpNames,
 {
     let mut wtr = csv::Writer::from_path(path).with_context(|| format!("failed to create {}", path.display()))?;
@@ -109,7 +110,7 @@ struct JsonRow<'a> {
 
 fn write_json<T, Ops, const D: usize>(path: &Path, results: &[TargetResult<T, Ops, D>]) -> anyhow::Result<()>
 where
-    T: Float + std::fmt::Display,
+    T: Float + Display,
     Ops: dynamic_expressions::strings::OpNames,
 {
     let mut rows = Vec::new();

@@ -1,3 +1,5 @@
+use std::ops::AddAssign;
+
 use num_traits::{Float, FromPrimitive, ToPrimitive};
 use rand::Rng;
 
@@ -9,7 +11,7 @@ use crate::pop_member::Evaluator;
 use crate::population::Population;
 use crate::selection::best_of_sample;
 
-pub struct RegEvolCtx<'a, T: Float, Ops, const D: usize, R: Rng> {
+pub struct RegEvolCtx<'a, T: Float + AddAssign, Ops, const D: usize, R: Rng> {
     pub rng: &'a mut R,
     pub dataset: TaggedDataset<'a, T>,
     pub temperature: f64,
@@ -27,7 +29,7 @@ pub fn reg_evol_cycle<T, Ops, const D: usize, R: Rng>(
     ctx: RegEvolCtx<'_, T, Ops, D, R>,
 ) -> f64
 where
-    T: Float + FromPrimitive + ToPrimitive,
+    T: Float + FromPrimitive + ToPrimitive + AddAssign,
     Ops:
         dynamic_expressions::operator_enum::scalar::ScalarOpSet<T> + dynamic_expressions::operator_registry::OpRegistry,
 {

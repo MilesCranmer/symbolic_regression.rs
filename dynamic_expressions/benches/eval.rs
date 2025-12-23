@@ -103,19 +103,20 @@ fn gen_random_tree_fixed_size<T: Float, Ops: OpRegistry, const D: usize, R: Rng>
 }
 
 fn make_data<T: Float>() -> Array2<T> {
+    // Column-major layout for evaluation: shape = (n_features, n_rows).
     let mut data: Vec<T> = Vec::with_capacity(N_FEATURES * N_ROWS);
-    for row in 0..N_ROWS {
-        for feature in 0..N_FEATURES {
+    for feature in 0..N_FEATURES {
+        for row in 0..N_ROWS {
             let v = (row as f64 * 0.01) + (feature as f64 * 0.1);
             data.push(T::from(v).unwrap());
         }
     }
-    Array2::from_shape_vec((N_ROWS, N_FEATURES), data).unwrap()
+    Array2::from_shape_vec((N_FEATURES, N_ROWS), data).unwrap()
 }
 
 fn bench_eval_group<T, Ops, const D: usize>(c: &mut criterion::Criterion, type_name: &str)
 where
-    T: Float + Send + Sync,
+    T: Float + core::ops::AddAssign + Send + Sync,
     Ops: OpRegistry + ScalarOpSet<T> + Send + Sync,
 {
     let mut rng = StdRng::seed_from_u64(0);

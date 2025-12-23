@@ -14,7 +14,13 @@ use crate::{Options, compute_complexity};
 
 #[test]
 fn batch_resample_copies_rows_and_weights() {
-    let x = Array2::from_shape_vec((4, 2), vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]).unwrap();
+    let n_rows = 4;
+    let n_features = 2;
+    let mut x = Array2::zeros((n_features, n_rows));
+    for row in 0..n_rows {
+        x[(0, row)] = (row * 2) as f64;
+        x[(1, row)] = (row * 2 + 1) as f64;
+    }
     let y = Array1::from_vec(vec![10.0, 11.0, 12.0, 13.0]);
     let w = Array1::from_vec(vec![1.0, 2.0, 3.0, 4.0]);
     let full_dataset = Dataset::with_weights_and_names(x, y, Some(w), vec!["x0".into(), "x1".into()]);
@@ -28,13 +34,13 @@ fn batch_resample_copies_rows_and_weights() {
     assert!(batch.weights.is_some());
 
     for i in 0..batch.n_rows {
-        let row = batch.x.row(i).to_owned();
+        let row = batch.x.column(i).to_owned();
         let yi = batch.y[i];
         let wi = batch.weights.as_ref().unwrap()[i];
 
         let mut found = false;
         for j in 0..full_dataset.n_rows {
-            if row == full_dataset.x.row(j).to_owned()
+            if row == full_dataset.x.column(j).to_owned()
                 && yi == full_dataset.y[j]
                 && wi == full_dataset.weights.as_ref().unwrap()[j]
             {
@@ -51,14 +57,18 @@ fn batch_size_can_exceed_full_rows_with_replacement() {
     let n_rows = 10usize;
     let n_features = 2usize;
 
-    let mut x = Vec::with_capacity(n_rows * n_features);
+    let mut x_data = Vec::with_capacity(n_rows * n_features);
     let mut y = Vec::with_capacity(n_rows);
     for i in 0..n_rows {
-        x.push(i as f64);
-        x.push((i as f64) + 1000.0);
+        x_data.push(i as f64);
+        x_data.push((i as f64) + 1000.0);
         y.push((i as f64) + 10.0);
     }
-    let x = Array2::from_shape_vec((n_rows, n_features), x).unwrap();
+    let mut x = Array2::zeros((n_features, n_rows));
+    for row in 0..n_rows {
+        x[(0, row)] = x_data[row * n_features];
+        x[(1, row)] = x_data[row * n_features + 1];
+    }
     let y = Array1::from_vec(y);
     let full_dataset = Dataset::with_weights_and_names(x, y, None, vec!["x0".into(), "x1".into()]);
 
@@ -70,8 +80,8 @@ fn batch_size_can_exceed_full_rows_with_replacement() {
 
     let mut uniq: HashSet<(u64, u64, u64)> = HashSet::new();
     for i in 0..batch.n_rows {
-        let a = batch.x[(i, 0)].to_bits();
-        let b = batch.x[(i, 1)].to_bits();
+        let a = batch.x[(0, i)].to_bits();
+        let b = batch.x[(1, i)].to_bits();
         let c = batch.y[i].to_bits();
         uniq.insert((a, b, c));
     }

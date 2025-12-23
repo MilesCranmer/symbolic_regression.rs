@@ -16,8 +16,7 @@ fn eval_readme_like_matches_manual(#[case] check_finite: bool, #[case] early_exi
         early_exit,
     };
 
-    let n_rows = x.nrows();
-    let n_features = x.ncols();
+    let n_rows = x.ncols();
     let mut out = vec![0.0f64; n_rows];
     let mut ctx = dynamic_expressions::EvalContext::<f64, 3>::new(n_rows);
     let ok = dynamic_expressions::eval_tree_array_into::<f64, TestOps, 3>(&mut out, &expr, x.view(), &mut ctx, &opts);
@@ -25,8 +24,8 @@ fn eval_readme_like_matches_manual(#[case] check_finite: bool, #[case] early_exi
     // manual
     let mut manual = vec![0.0f64; n_rows];
     for row in 0..n_rows {
-        let x1 = x_data[row * n_features];
-        let x2 = x_data[row * n_features + 1];
+        let x1 = x_data[row];
+        let x2 = x_data[n_rows + row];
         manual[row] = x1 * (x2 - 3.2).cos();
     }
     if check_finite {

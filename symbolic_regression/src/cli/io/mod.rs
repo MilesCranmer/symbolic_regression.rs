@@ -94,11 +94,11 @@ pub fn build_datasets(table: &Table, cli: &Cli) -> anyhow::Result<Vec<(String, c
 
     let n_rows = table.n_rows;
     let n_features = x_indices.len();
-    let mut x = Array2::<f64>::zeros((n_rows, n_features));
+    let mut x = Array2::<f64>::zeros((n_features, n_rows));
     for (j, &col_idx) in x_indices.iter().enumerate() {
         let col = table.column_by_index(col_idx)?;
         for (i, &v) in col.iter().enumerate() {
-            x[(i, j)] = v;
+            x[(j, i)] = v;
         }
     }
 

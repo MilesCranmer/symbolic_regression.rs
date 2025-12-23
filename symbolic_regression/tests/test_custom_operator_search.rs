@@ -82,7 +82,7 @@ fn custom_operator_is_used_in_end_to_end_search() {
     let x: Vec<f64> = (0..n_rows).map(|i| (i as f64) * 0.1 - 3.0).collect();
     let y: Vec<f64> = x.iter().map(|&v| v * v).collect();
 
-    let x = Array2::from_shape_vec((n_rows, 1), x).unwrap();
+    let x = Array2::from_shape_vec((1, n_rows), x).unwrap();
     let y = Array1::from_vec(y);
     let dataset = Dataset::new(x, y);
 

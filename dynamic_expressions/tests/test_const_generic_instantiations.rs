@@ -13,12 +13,12 @@ fn var<const D: usize>(feature: u16) -> PostfixExpr<f64, TestOps, D> {
 
 fn make_x_static(n_features: usize, n_rows: usize) -> Array2<f64> {
     let mut data = vec![0.0f64; n_features * n_rows];
-    for row in 0..n_rows {
-        for feature in 0..n_features {
-            data[row * n_features + feature] = (row as f64 + 1.0) * (feature as f64 + 1.0) * 0.01;
+    for feature in 0..n_features {
+        for row in 0..n_rows {
+            data[feature * n_rows + row] = (row as f64 + 1.0) * (feature as f64 + 1.0) * 0.01;
         }
     }
-    Array2::from_shape_vec((n_rows, n_features), data).unwrap()
+    Array2::from_shape_vec((n_features, n_rows), data).unwrap()
 }
 
 #[test]
@@ -34,15 +34,15 @@ fn eval_diff_grad_work_for_d2() {
     let (_eval, ok) = eval_tree_array::<f64, TestOps, 2>(&expr, x.view(), &opts);
     assert!(ok);
 
-    let mut dctx = DiffContext::<f64, 2>::new(x.nrows());
+    let mut dctx = DiffContext::<f64, 2>::new(x.ncols());
     let (_e, _d, okd) = eval_diff_tree_array::<f64, TestOps, 2>(&expr, x.view(), 0, &mut dctx, &opts);
     assert!(okd);
 
-    let mut gctx = GradContext::<f64, 2>::new(x.nrows());
+    let mut gctx = GradContext::<f64, 2>::new(x.ncols());
     let (_e, g, okg) = eval_grad_tree_array::<f64, TestOps, 2>(&expr, x.view(), true, &mut gctx, &opts);
     assert!(okg);
-    assert_eq!(g.n_dir, x.ncols());
-    assert_eq!(g.n_rows, x.nrows());
+    assert_eq!(g.n_dir, x.nrows());
+    assert_eq!(g.n_rows, x.ncols());
 }
 
 #[test]
@@ -58,15 +58,15 @@ fn eval_diff_grad_work_for_d1_unary_only() {
     let (_eval, ok) = eval_tree_array::<f64, TestOps, 1>(&expr, x.view(), &opts);
     assert!(ok);
 
-    let mut dctx = DiffContext::<f64, 1>::new(x.nrows());
+    let mut dctx = DiffContext::<f64, 1>::new(x.ncols());
     let (_e, _d, okd) = eval_diff_tree_array::<f64, TestOps, 1>(&expr, x.view(), 0, &mut dctx, &opts);
     assert!(okd);
 
-    let mut gctx = GradContext::<f64, 1>::new(x.nrows());
+    let mut gctx = GradContext::<f64, 1>::new(x.ncols());
     let (_e, g, okg) = eval_grad_tree_array::<f64, TestOps, 1>(&expr, x.view(), true, &mut gctx, &opts);
     assert!(okg);
-    assert_eq!(g.n_dir, x.ncols());
-    assert_eq!(g.n_rows, x.nrows());
+    assert_eq!(g.n_dir, x.nrows());
+    assert_eq!(g.n_rows, x.ncols());
 }
 
 #[test]

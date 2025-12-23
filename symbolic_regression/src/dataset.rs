@@ -23,7 +23,7 @@ impl<'a, T: Float> std::ops::Deref for TaggedDataset<'a, T> {
 
 #[derive(Clone, Debug)]
 pub struct Dataset<T: Float> {
-    /// Row-major contiguous data with shape `(n_rows, n_features)` (ndarray default).
+    /// Column-major contiguous data with shape `(n_features, n_rows)` for vectorization over rows.
     pub x: Array2<T>,
     /// Target vector with length `n_rows`.
     pub y: Array1<T>,
@@ -38,7 +38,7 @@ pub struct Dataset<T: Float> {
 impl<T: Float> Dataset<T> {
     pub fn new(x: Array2<T>, y: Array1<T>) -> Self {
         let x = x.as_standard_layout().to_owned();
-        let (n_rows, n_features) = x.dim();
+        let (n_features, n_rows) = x.dim();
         assert_eq!(y.len(), n_rows);
 
         let avg_y = Self::compute_avg_y(y.as_slice().unwrap(), None);
@@ -61,7 +61,7 @@ impl<T: Float> Dataset<T> {
         variable_names: Vec<String>,
     ) -> Self {
         let x = x.as_standard_layout().to_owned();
-        let (n_rows, n_features) = x.dim();
+        let (n_features, n_rows) = x.dim();
         assert_eq!(y.len(), n_rows);
         if let Some(w) = &weights {
             assert_eq!(w.len(), n_rows);
@@ -114,7 +114,7 @@ impl<T: Float> Dataset<T> {
             panic!("Cannot batch from an empty dataset (n_rows = 0).");
         }
         let batch_size = batch_size.max(1);
-        let x = Array2::<T>::zeros((batch_size, full.n_features));
+        let x = Array2::<T>::zeros((full.n_features, batch_size));
         let y = Array1::<T>::zeros(batch_size);
         let weights = full.weights.as_ref().map(|_| Array1::<T>::zeros(batch_size));
         Dataset {
@@ -133,8 +133,8 @@ impl<T: Float> Dataset<T> {
             panic!("Cannot batch from an empty dataset (n_rows = 0).");
         }
         assert_eq!(self.n_features, full.n_features);
-        assert_eq!(self.x.dim().0, self.n_rows);
-        assert_eq!(self.x.dim().1, self.n_features);
+        assert_eq!(self.x.dim().0, self.n_features);
+        assert_eq!(self.x.dim().1, self.n_rows);
         assert_eq!(self.y.len(), self.n_rows);
         if let Some(w) = &self.weights {
             assert_eq!(w.len(), self.n_rows);
@@ -145,7 +145,9 @@ impl<T: Float> Dataset<T> {
 
         for i in 0..self.n_rows {
             let idx = rng.random_range(0..full.n_rows);
-            self.x.row_mut(i).assign(&full.x.row(idx));
+            for f in 0..self.n_features {
+                self.x[(f, i)] = full.x[(f, idx)];
+            }
             self.y[i] = full.y[idx];
             if let (Some(dst), Some(src)) = (self.weights.as_mut(), full.weights.as_ref()) {
                 dst[i] = src[idx];

@@ -1,5 +1,6 @@
 #[cfg(feature = "progress")]
 mod imp {
+    use std::fmt::Display;
     use std::io::IsTerminal;
     use std::time::{Duration, Instant};
 
@@ -88,7 +89,7 @@ mod imp {
             total_evals: u64,
             cycles_remaining: usize,
         ) where
-            T: Float + num_traits::ToPrimitive + std::fmt::Display,
+            T: Float + num_traits::ToPrimitive + Display,
             Ops: OpNames,
         {
             if !self.show {
@@ -127,7 +128,7 @@ mod imp {
 
     fn update_progress_msg<T, Ops, const D: usize>(ctx: ProgressMsgCtx<'_, T, Ops, D>)
     where
-        T: Float + num_traits::ToPrimitive + std::fmt::Display,
+        T: Float + num_traits::ToPrimitive + Display,
         Ops: OpNames,
     {
         let ProgressMsgCtx {
@@ -201,7 +202,7 @@ mod imp {
         render: RenderOptions,
     ) -> String
     where
-        T: Float + num_traits::ToPrimitive + std::fmt::Display,
+        T: Float + num_traits::ToPrimitive + Display,
         Ops: OpNames,
     {
         let terminal_width = terminal_width.max(80);

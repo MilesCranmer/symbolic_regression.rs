@@ -22,9 +22,10 @@ fn combining_constant_exprs_shifts_const_indices_and_merges_metadata() {
     let (y, ok) = dynamic_expressions::eval_tree_array::<f64, TestOps, 3>(&expr, x_view, &opts);
     assert!(ok);
 
-    let mut y_ref = vec![0.0f64; x_view.nrows()];
-    for row in 0..x_view.nrows() {
-        y_ref[row] = (x_data[row * x_view.ncols()] + 1.0) + (x_data[row * x_view.ncols() + 1] + 2.0);
+    let n_rows = x_view.ncols();
+    let mut y_ref = vec![0.0f64; n_rows];
+    for (row, yv) in y_ref.iter_mut().enumerate() {
+        *yv = (x_data[row] + 1.0) + (x_data[n_rows + row] + 2.0);
     }
     assert_close_vec(&y, &y_ref, 1e-12);
 }

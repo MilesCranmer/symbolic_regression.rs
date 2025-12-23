@@ -38,7 +38,7 @@ fn c(value: f64) -> PostfixExpr<f64, AllOps, 3> {
 fn math_wrappers_build_and_eval() {
     let n_rows = 4usize;
     let data = vec![0.2f64; 2 * n_rows];
-    let x = Array2::from_shape_vec((n_rows, 2), data).unwrap();
+    let x = Array2::from_shape_vec((2, n_rows), data).unwrap();
     let opts = EvalOptions {
         check_finite: true,
         early_exit: true,

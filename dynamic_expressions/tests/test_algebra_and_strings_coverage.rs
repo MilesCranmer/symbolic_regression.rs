@@ -90,11 +90,6 @@ fn algebra_overloads_and_string_paths_are_exercised() {
     let (y, ok) = eval_tree_array::<f64, TestOps, 3>(&ex, x_view, &opts);
     assert!(ok);
     for (i, &v) in y.iter().enumerate() {
-        assert_relative_eq!(
-            v,
-            x_data[i * x_view.ncols()] - 3.2,
-            epsilon = 1e-12,
-            max_relative = 1e-12
-        );
+        assert_relative_eq!(v, x_data[i] - 3.2, epsilon = 1e-12, max_relative = 1e-12);
     }
 }

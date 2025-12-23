@@ -27,7 +27,7 @@ fn optimize_constants_resets_birth_on_improvement() {
         y[i] = 2.0 * xi + 3.0;
     }
     let dataset = crate::Dataset::new(
-        Array2::from_shape_vec((n_rows, n_features), x).unwrap(),
+        Array2::from_shape_vec((n_features, n_rows), x).unwrap(),
         Array1::from_vec(y),
     );
 

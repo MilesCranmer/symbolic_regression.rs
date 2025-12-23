@@ -12,15 +12,15 @@ fn main() {
 
     let mut rng = StdRng::seed_from_u64(0);
 
-    let mut x = Array2::zeros((n_rows, N_FEATURES));
+    let mut x = Array2::zeros((N_FEATURES, n_rows));
     let mut y = Array1::zeros(n_rows);
 
     for i in 0..n_rows {
         for j in 0..N_FEATURES {
-            x[(i, j)] = rng.random_range(-3.0f32..3.0f32);
+            x[(j, i)] = rng.random_range(-3.0f32..3.0f32);
         }
-        let x1 = x[(i, 1)];
-        let x4 = x[(i, 4)];
+        let x1 = x[(1, i)];
+        let x4 = x[(4, i)];
         y[i] = 2.0 * x4.cos() + x1 * x1 - 2.0;
     }
 

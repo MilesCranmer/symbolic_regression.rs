@@ -1,3 +1,7 @@
+use std::hash::{Hash, Hasher};
+
+use rustc_hash::FxHasher;
+
 use crate::node::{PNode, Src};
 
 #[derive(Clone, Debug)]
@@ -5,6 +9,7 @@ pub struct EvalPlan<const D: usize> {
     pub instrs: Vec<Instr<D>>,
     pub n_slots: usize,
     pub root: Src,
+    pub hash: u64,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -13,6 +18,12 @@ pub struct Instr<const D: usize> {
     pub op: u16,
     pub args: [Src; D],
     pub dst: u16,
+}
+
+pub(crate) fn build_node_hash(nodes: &[PNode]) -> u64 {
+    let mut hasher = FxHasher::default();
+    nodes.hash(&mut hasher);
+    hasher.finish()
 }
 
 pub fn compile_plan<const D: usize>(nodes: &[PNode], n_features: usize, n_consts: usize) -> EvalPlan<D> {
@@ -88,5 +99,11 @@ pub fn compile_plan<const D: usize>(nodes: &[PNode], n_features: usize, n_consts
     assert_eq!(stack.len(), 1, "Postfix did not reduce to a single root");
     let root = stack.pop().unwrap();
     let n_slots = max_slot as usize;
-    EvalPlan { instrs, n_slots, root }
+    let hash = build_node_hash(nodes);
+    EvalPlan {
+        instrs,
+        n_slots,
+        root,
+        hash,
+    }
 }

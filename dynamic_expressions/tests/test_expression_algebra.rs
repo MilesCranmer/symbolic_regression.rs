@@ -42,11 +42,6 @@ fn lit_left_mul_works() {
     assert!(ok);
 
     for (i, &v) in y.iter().enumerate() {
-        assert_relative_eq!(
-            v,
-            2.0 * x_data[i * x_view.ncols()],
-            epsilon = 1e-12,
-            max_relative = 1e-12
-        );
+        assert_relative_eq!(v, 2.0 * x_data[i], epsilon = 1e-12, max_relative = 1e-12);
     }
 }

@@ -16,7 +16,7 @@ fn equation_search_runs() {
         y[i] = xi * xi + xi;
     }
     let dataset = crate::Dataset::new(
-        Array2::from_shape_vec((n_rows, n_features), x).unwrap(),
+        Array2::from_shape_vec((n_features, n_rows), x).unwrap(),
         Array1::from_vec(y),
     );
 

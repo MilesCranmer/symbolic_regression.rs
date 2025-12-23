@@ -27,12 +27,12 @@ pub fn c(value: f64) -> PostfixExpr<f64, TestOps, 3> {
 #[allow(dead_code)]
 pub fn make_x(n_features: usize, n_rows: usize) -> (Vec<f64>, Array2<f64>) {
     let mut data = vec![0.0f64; n_features * n_rows];
-    for row in 0..n_rows {
-        for feature in 0..n_features {
-            data[row * n_features + feature] = (row as f64 + 1.0) * (feature as f64 + 1.0) * 0.01;
+    for feature in 0..n_features {
+        for row in 0..n_rows {
+            data[feature * n_rows + row] = (row as f64 + 1.0) * (feature as f64 + 1.0) * 0.01;
         }
     }
-    let x = Array2::from_shape_vec((n_rows, n_features), data.clone()).unwrap();
+    let x = Array2::from_shape_vec((n_features, n_rows), data.clone()).unwrap();
     (data, x)
 }
 
@@ -60,11 +60,11 @@ pub fn finite_diff_dir(
     let mut plus = x_data.to_vec();
     let mut minus = x_data.to_vec();
     for row in 0..n_rows {
-        plus[row * n_features + dir] += eps;
-        minus[row * n_features + dir] -= eps;
+        plus[dir * n_rows + row] += eps;
+        minus[dir * n_rows + row] -= eps;
     }
-    let x_plus = Array2::from_shape_vec((n_rows, n_features), plus).unwrap();
-    let x_minus = Array2::from_shape_vec((n_rows, n_features), minus).unwrap();
+    let x_plus = Array2::from_shape_vec((n_features, n_rows), plus).unwrap();
+    let x_minus = Array2::from_shape_vec((n_features, n_rows), minus).unwrap();
     let opts = EvalOptions {
         check_finite: true,
         early_exit: true,
@@ -93,8 +93,8 @@ pub fn grad_matches_diffs(expr: &PostfixExpr<f64, TestOps, 3>, x: &ArrayView2<'_
         check_finite: true,
         early_exit: true,
     };
-    let n_rows = x.nrows();
-    let n_dir = if variable { x.ncols() } else { expr.consts.len() };
+    let n_rows = x.ncols();
+    let n_dir = if variable { x.nrows() } else { expr.consts.len() };
 
     let mut gctx = GradContext::<f64, 3>::new(n_rows);
     let (_eval, grad, ok) = eval_grad_tree_array::<f64, TestOps, 3>(expr, *x, variable, &mut gctx, &opts);

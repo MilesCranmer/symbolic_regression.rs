@@ -11,6 +11,7 @@ use ndarray::Array2;
 fn constants_get_set_roundtrip_changes_eval() {
     let mut expr = expr_readme_like();
     let (_x_data, x) = make_x(2, 19);
+    let x = x.as_standard_layout().to_owned();
     let x_view = x.view();
     let opts = EvalOptions {
         check_finite: true,
@@ -61,6 +62,7 @@ fn compile_plan_leaf_only_has_no_instrs() {
 #[test]
 fn eval_root_var_and_const_cases() {
     let (x_data, x) = make_x(2, 11);
+    let x = x.as_standard_layout().to_owned();
     let x_view = x.view();
     let opts = EvalOptions {
         check_finite: true,
@@ -70,9 +72,8 @@ fn eval_root_var_and_const_cases() {
     let expr_var = var(1);
     let (outv, okv) = eval_tree_array::<f64, TestOps, 3>(&expr_var, x_view, &opts);
     assert!(okv);
-    let expected: Vec<f64> = (0..x_view.nrows())
-        .map(|row| x_data[row * x_view.ncols() + 1])
-        .collect();
+    let n_rows = x_view.ncols();
+    let expected: Vec<f64> = (0..n_rows).map(|row| x_data[n_rows + row]).collect();
     assert_close_vec(&outv, &expected, 0.0);
 
     let expr_const = c(2.5);
@@ -84,6 +85,7 @@ fn eval_root_var_and_const_cases() {
 #[test]
 fn const_only_operator_fast_path_is_exercised() {
     let (_x_data, x) = make_x(2, 7);
+    let x = x.as_standard_layout().to_owned();
     let x_view = x.view();
     let opts = EvalOptions {
         check_finite: true,
@@ -115,20 +117,20 @@ fn early_exit_paths_return_nans_for_diff_and_grad() {
 
     let n_rows = 9;
     let x_data = vec![1.0f64; n_rows];
-    let x = Array2::from_shape_vec((n_rows, 1), x_data).unwrap();
+    let x = Array2::from_shape_vec((1, n_rows), x_data).unwrap();
     let x_view = x.view();
     let opts = EvalOptions {
         check_finite: true,
         early_exit: true,
     };
 
-    let mut dctx = DiffContext::<f64, 3>::new(n_rows);
+    let mut dctx = DiffContext::<f64, 3>::new(x_view.ncols());
     let (eval, der, ok) = eval_diff_tree_array::<f64, TestOps, 3>(&expr, x_view, 0, &mut dctx, &opts);
     assert!(!ok);
     assert!(eval.iter().all(|v| v.is_nan()));
     assert!(der.iter().all(|v| v.is_nan()));
 
-    let mut gctx = GradContext::<f64, 3>::new(n_rows);
+    let mut gctx = GradContext::<f64, 3>::new(x_view.ncols());
     let (eval, grad, ok) = eval_grad_tree_array::<f64, TestOps, 3>(&expr, x_view, true, &mut gctx, &opts);
     assert!(!ok);
     assert!(eval.iter().all(|v| v.is_nan()));
@@ -139,24 +141,35 @@ fn early_exit_paths_return_nans_for_diff_and_grad() {
 fn contexts_resize_and_reuse_scratch() {
     let n_rows = 5;
     let mut ectx = EvalContext::<f64, 3>::new(n_rows);
-    ectx.ensure_scratch(2);
-    assert_eq!(ectx.scratch.len(), 2);
-    ectx.scratch[0].clear(); // wrong len
-    ectx.ensure_scratch(2);
-    assert_eq!(ectx.scratch[0].len(), n_rows);
+    let expr = expr_readme_like();
+    let (_x_data, x) = make_x(2, n_rows);
+    let x_view = x.view();
+    ectx.setup(&expr, x_view);
+    let plan_slots = ectx.plan.as_ref().unwrap().n_slots;
+    let scratch = ectx.scratch.as_mut().expect("scratch allocated");
+    assert_eq!(scratch.nrows(), plan_slots);
+    scratch.as_slice_mut().expect("scratch contiguous").fill(0.0);
+    ectx.setup(&expr, x_view);
+    let scratch = ectx.scratch.as_ref().expect("scratch allocated");
+    assert_eq!(scratch.ncols(), n_rows);
 
     let mut gctx = GradContext::<f64, 3>::new(n_rows);
     gctx.ensure_scratch(2, 4);
-    assert_eq!(gctx.grad_scratch[0].len(), 4 * n_rows);
-    gctx.grad_scratch[0].clear();
+    assert_eq!(gctx.grad_scratch.nrows(), 2);
+    assert_eq!(gctx.grad_scratch.ncols(), 4 * n_rows);
+    gctx.grad_scratch
+        .as_slice_mut()
+        .expect("grad scratch contiguous")
+        .fill(0.0);
     gctx.ensure_scratch(2, 4);
-    assert_eq!(gctx.grad_scratch[0].len(), 4 * n_rows);
+    assert_eq!(gctx.grad_scratch.ncols(), 4 * n_rows);
 }
 
 #[test]
 fn reuse_contexts_hits_cached_plan_paths() {
     let expr = expr_readme_like();
     let (_x_data, x) = make_x(2, 23);
+    let x = x.as_standard_layout().to_owned();
     let x_view = x.view();
     let opts = EvalOptions {
         check_finite: true,
@@ -164,23 +177,23 @@ fn reuse_contexts_hits_cached_plan_paths() {
     };
 
     // Eval: reuse EvalContext.
-    let mut ectx = EvalContext::<f64, 3>::new(x_view.nrows());
-    let mut out0 = vec![0.0f64; x_view.nrows()];
-    let mut out1 = vec![0.0f64; x_view.nrows()];
+    let mut ectx = EvalContext::<f64, 3>::new(x_view.ncols());
+    let mut out0 = vec![0.0f64; x_view.ncols()];
+    let mut out1 = vec![0.0f64; x_view.ncols()];
     let ok0 = dynamic_expressions::eval_tree_array_into::<f64, TestOps, 3>(&mut out0, &expr, x_view, &mut ectx, &opts);
     let ok1 = dynamic_expressions::eval_tree_array_into::<f64, TestOps, 3>(&mut out1, &expr, x_view, &mut ectx, &opts);
     assert!(ok0 && ok1);
     assert_eq!(out0, out1);
 
     // Diff: reuse DiffContext.
-    let mut dctx = DiffContext::<f64, 3>::new(x_view.nrows());
+    let mut dctx = DiffContext::<f64, 3>::new(x_view.ncols());
     let (_e0, d0, ok0) = eval_diff_tree_array::<f64, TestOps, 3>(&expr, x_view, 0, &mut dctx, &opts);
     let (_e1, d1, ok1) = eval_diff_tree_array::<f64, TestOps, 3>(&expr, x_view, 0, &mut dctx, &opts);
     assert!(ok0 && ok1);
     assert_eq!(d0, d1);
 
     // Grad: reuse GradContext.
-    let mut gctx = GradContext::<f64, 3>::new(x_view.nrows());
+    let mut gctx = GradContext::<f64, 3>::new(x_view.ncols());
     let (_e0, g0, ok0) = eval_grad_tree_array::<f64, TestOps, 3>(&expr, x_view, true, &mut gctx, &opts);
     let (_e1, g1, ok1) = eval_grad_tree_array::<f64, TestOps, 3>(&expr, x_view, true, &mut gctx, &opts);
     assert!(ok0 && ok1);
@@ -190,6 +203,7 @@ fn reuse_contexts_hits_cached_plan_paths() {
 #[test]
 fn nonfinite_root_const_branches_eval_and_diff() {
     let (_x_data, x) = make_x(1, 5);
+    let x = x.as_standard_layout().to_owned();
     let x_view = x.view();
 
     let expr = c(f64::NAN);
@@ -208,8 +222,8 @@ fn nonfinite_root_const_branches_eval_and_diff() {
         check_finite: true,
         early_exit: true,
     };
-    let mut out = vec![123.0f64; x_view.nrows()];
-    let mut ectx = EvalContext::<f64, 3>::new(x_view.nrows());
+    let mut out = vec![123.0f64; x_view.ncols()];
+    let mut ectx = EvalContext::<f64, 3>::new(x_view.ncols());
     let ok = dynamic_expressions::eval_tree_array_into::<f64, TestOps, 3>(&mut out, &expr, x_view, &mut ectx, &opts);
     assert!(!ok);
     assert!(out.iter().all(|&v| v == 123.0));
@@ -219,7 +233,7 @@ fn nonfinite_root_const_branches_eval_and_diff() {
         check_finite: true,
         early_exit: false,
     };
-    let mut dctx = DiffContext::<f64, 3>::new(x_view.nrows());
+    let mut dctx = DiffContext::<f64, 3>::new(x_view.ncols());
     let (e, d, ok) = eval_diff_tree_array::<f64, TestOps, 3>(&expr, x_view, 0, &mut dctx, &opts);
     assert!(!ok);
     assert!(e.iter().all(|v| v.is_nan()));

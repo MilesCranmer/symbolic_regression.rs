@@ -1,6 +1,7 @@
 mod common;
 
 use common::*;
+use dynamic_expressions::GradContext;
 
 #[test]
 fn grad_variable_matches_stacked_diffs_readme_like() {
@@ -19,12 +20,12 @@ fn grad_constant_has_correct_shape() {
         check_finite: true,
         early_exit: true,
     };
-    let mut gctx = dynamic_expressions::GradContext::<f64, 3>::new(x_view.nrows());
+    let mut gctx = GradContext::<f64, 3>::new(x_view.ncols());
     let (_eval, grad, ok) =
         dynamic_expressions::eval_grad_tree_array::<f64, TestOps, 3>(&expr, x_view, false, &mut gctx, &opts);
     assert!(ok);
     assert_eq!(grad.n_dir, expr.consts.len());
-    assert_eq!(grad.n_rows, x_view.nrows());
+    assert_eq!(grad.n_rows, x_view.ncols());
     for v in grad.data {
         assert!(v.is_finite());
     }

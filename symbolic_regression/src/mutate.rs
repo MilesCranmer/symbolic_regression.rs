@@ -1,3 +1,5 @@
+use std::ops::AddAssign;
+
 pub use dynamic_expressions::compress_constants;
 use dynamic_expressions::expression::PostfixExpr;
 use dynamic_expressions::node::PNode;
@@ -31,7 +33,7 @@ pub enum MutationChoice {
     Optimize,
 }
 
-pub struct NextGenerationCtx<'a, T: Float, Ops, const D: usize, R: Rng> {
+pub struct NextGenerationCtx<'a, T: Float + AddAssign, Ops, const D: usize, R: Rng> {
     pub rng: &'a mut R,
     pub dataset: TaggedDataset<'a, T>,
     pub temperature: f64,
@@ -63,7 +65,7 @@ fn has_binary_op(nodes: &[PNode]) -> bool {
     nodes.iter().any(|n| matches!(n, PNode::Op { arity: 2, .. }))
 }
 
-pub fn condition_mutation_weights<T: Float, Ops, const D: usize>(
+pub fn condition_mutation_weights<T: Float + AddAssign, Ops, const D: usize>(
     weights: &mut MutationWeights,
     member: &PopMember<T, Ops, D>,
     options: &Options<T, D>,
@@ -135,14 +137,14 @@ pub fn sample_mutation<R: Rng>(rng: &mut R, weights: &MutationWeights) -> Mutati
     choices[dist.sample(rng)].0
 }
 
-struct MutationOutcome<T: Float, Ops, const D: usize> {
+struct MutationOutcome<T: Float + AddAssign, Ops, const D: usize> {
     expr: PostfixExpr<T, Ops, D>,
     mutated: bool,
     evals: f64,
     return_immediately: bool,
 }
 
-struct MutationApplyCtx<'a, 'd, T: Float, Ops, const D: usize, R: Rng> {
+struct MutationApplyCtx<'a, 'd, T: Float + AddAssign, Ops, const D: usize, R: Rng> {
     rng: &'a mut R,
     member: &'a PopMember<T, Ops, D>,
     expr: PostfixExpr<T, Ops, D>,
@@ -155,7 +157,7 @@ struct MutationApplyCtx<'a, 'd, T: Float, Ops, const D: usize, R: Rng> {
 
 impl MutationChoice {
     #[allow(clippy::too_many_arguments)]
-    fn apply<T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive, Ops, const D: usize, R: Rng>(
+    fn apply<T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + AddAssign, Ops, const D: usize, R: Rng>(
         self,
         ctx: MutationApplyCtx<'_, '_, T, Ops, D, R>,
     ) -> MutationOutcome<T, Ops, D>
@@ -288,7 +290,12 @@ impl MutationChoice {
     }
 }
 
-pub fn next_generation<T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive, Ops, const D: usize, R: Rng>(
+pub fn next_generation<
+    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + AddAssign,
+    Ops,
+    const D: usize,
+    R: Rng,
+>(
     member: &PopMember<T, Ops, D>,
     ctx: NextGenerationCtx<'_, T, Ops, D, R>,
 ) -> (PopMember<T, Ops, D>, bool, f64)
@@ -421,7 +428,7 @@ where
     (baby, true, evals)
 }
 
-pub fn crossover_generation<T: Float, Ops, const D: usize, R: Rng>(
+pub fn crossover_generation<T: Float + AddAssign, Ops, const D: usize, R: Rng>(
     member1: &PopMember<T, Ops, D>,
     member2: &PopMember<T, Ops, D>,
     ctx: CrossoverCtx<'_, T, Ops, D, R>,

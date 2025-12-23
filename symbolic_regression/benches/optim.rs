@@ -56,20 +56,19 @@ fn make_dataset(seed: u64, n_rows: usize, n_features: usize) -> Dataset<T> {
     for _ in 0..n_rows * n_features {
         x.push(rng.random_range(-5.0f32..5.0f32));
     }
-    let x_arr = Array2::from_shape_vec((n_rows, n_features), x).unwrap();
-
-    let eqn = |row: &[T]| -> T {
-        let a = (2.13f32 * row[0]).cos();
-        let b = row[1] * row[2].abs().powf(0.9f32) * 0.5f32;
-        let c = row[3].abs().powf(1.5f32) * 0.3f32;
-        a + b - c
-    };
+    let x_arr = Array2::from_shape_vec((n_features, n_rows), x).unwrap();
 
     let mut y = Vec::with_capacity(n_rows);
     for r in 0..n_rows {
-        let row = x_arr.row(r);
         let noise: f32 = rng.sample(StandardNormal);
-        y.push(eqn(row.as_slice().unwrap()) + 0.1f32 * noise);
+        let x0 = x_arr[(0, r)];
+        let x1 = x_arr[(1, r)];
+        let x2 = x_arr[(2, r)];
+        let x3 = x_arr[(3, r)];
+        let a = (2.13f32 * x0).cos();
+        let b = x1 * x2.abs().powf(0.9f32) * 0.5f32;
+        let c = x3.abs().powf(1.5f32) * 0.3f32;
+        y.push(a + b - c + 0.1f32 * noise);
     }
 
     Dataset::new(x_arr, Array1::from_vec(y))
@@ -88,7 +87,7 @@ fn make_random_dataset(seed: u64, n_rows: usize, n_features: usize) -> Dataset<T
         y.push(v);
     }
     Dataset::new(
-        Array2::from_shape_vec((n_rows, n_features), x).unwrap(),
+        Array2::from_shape_vec((n_features, n_rows), x).unwrap(),
         Array1::from_vec(y),
     )
 }

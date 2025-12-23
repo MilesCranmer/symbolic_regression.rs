@@ -40,7 +40,7 @@ impl<T: Float, Ops, const D: usize> Clone for PopMember<T, Ops, D> {
 pub struct Evaluator<T: Float, const D: usize> {
     pub eval_opts: EvalOptions,
     pub yhat: Vec<T>,
-    pub scratch: Vec<Vec<T>>,
+    pub scratch: ndarray::Array2<T>,
 }
 
 impl<T: Float, const D: usize> Evaluator<T, D> {
@@ -51,18 +51,13 @@ impl<T: Float, const D: usize> Evaluator<T, D> {
                 early_exit: true,
             },
             yhat: vec![T::zero(); n_rows],
-            scratch: Vec::new(),
+            scratch: ndarray::Array2::zeros((0, 0)),
         }
     }
 
     pub fn ensure_n_rows(&mut self, n_rows: usize) {
         if self.yhat.len() != n_rows {
             self.yhat.resize(n_rows, T::zero());
-        }
-        for slot in &mut self.scratch {
-            if slot.len() != n_rows {
-                slot.resize(n_rows, T::zero());
-            }
         }
     }
 }
@@ -101,12 +96,11 @@ where
         options: &Options<T, D>,
         evaluator: &mut Evaluator<T, D>,
     ) -> bool {
-        let x = dataset.x.view();
         let ok = dynamic_expressions::eval_plan_array_into(
             &mut evaluator.yhat,
             &self.plan,
             &self.expr,
-            x,
+            dataset.x.view(),
             &mut evaluator.scratch,
             &evaluator.eval_opts,
         );

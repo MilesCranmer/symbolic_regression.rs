@@ -19,7 +19,7 @@ fn leaf_expr() -> PostfixExpr<T, TestOps, D> {
 #[test]
 fn next_generation_fails_constraints_after_retries() {
     let dataset = crate::Dataset::new(
-        Array2::from_shape_vec((8, 1), vec![0.0; 8]).unwrap(),
+        Array2::from_shape_vec((1, 8), vec![0.0; 8]).unwrap(),
         Array1::from_vec(vec![0.0; 8]),
     );
 
@@ -89,7 +89,7 @@ fn next_generation_fails_constraints_after_retries() {
 #[test]
 fn reg_evol_cycle_skips_replacement_when_configured() {
     let dataset = crate::Dataset::new(
-        Array2::from_shape_vec((8, 1), vec![0.0; 8]).unwrap(),
+        Array2::from_shape_vec((1, 8), vec![0.0; 8]).unwrap(),
         Array1::from_vec(vec![0.0; 8]),
     );
     let weights = MutationWeights {
