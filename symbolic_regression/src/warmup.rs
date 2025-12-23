@@ -1,5 +1,6 @@
-use crate::options::Options;
 use num_traits::Float;
+
+use crate::options::Options;
 
 pub fn get_cur_maxsize<T: Float, const D: usize>(
     options: &Options<T, D>,
@@ -11,8 +12,7 @@ pub fn get_cur_maxsize<T: Float, const D: usize>(
     let in_warmup = fraction_elapsed <= options.warmup_maxsize_by;
 
     if options.warmup_maxsize_by > 0.0 && in_warmup {
-        3 + (((options.maxsize - 3) as f32) * fraction_elapsed / options.warmup_maxsize_by).floor()
-            as usize
+        3 + (((options.maxsize - 3) as f32) * fraction_elapsed / options.warmup_maxsize_by).floor() as usize
     } else {
         options.maxsize
     }

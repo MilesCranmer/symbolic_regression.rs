@@ -34,6 +34,7 @@ csv = { version = "1", optional = true }
 calamine = { version = "0.32", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
+rayon = "1"
 
 [features]
 default = ["progress"]
@@ -49,7 +50,7 @@ cli = [
 ]
 bench = []
 [dev-dependencies]
-criterion = "0.8"
+criterion = "0.7"
 proptest = "1"
 rust_xlsxwriter = "0.92"
 tempfile = "3"

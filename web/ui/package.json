@@ -6,11 +6,12 @@
   "scripts": {
     "gen:csv": "node scripts/generate_default_csv.mjs",
     "dev": "npm run gen:csv && vite",
-    "build": "npm run gen:csv && vite build",
+    "build:wasm": "bash scripts/build_wasm.sh",
+    "build": "npm run gen:csv && npm run build:wasm && vite build",
     "preview": "vite preview",
     "test": "npm run gen:csv && vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright install --with-deps chromium && playwright test"
   },
   "dependencies": {
     "papaparse": "^5.5.3",

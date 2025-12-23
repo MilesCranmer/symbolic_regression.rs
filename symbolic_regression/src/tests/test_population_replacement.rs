@@ -1,20 +1,16 @@
-use super::common::{TestOps, D, T};
-use crate::dataset::TaggedDataset;
-use crate::loss_functions::baseline_loss_from_zero_expression;
-use crate::operator_library::OperatorLibrary;
-use crate::pop_member::{Evaluator, MemberId, PopMember};
-use crate::population::Population;
-use crate::Options;
 use dynamic_expressions::expression::{Metadata, PostfixExpr};
 use dynamic_expressions::node::PNode;
 use ndarray::{Array1, Array2};
 
+use super::common::{D, T, TestOps};
+use crate::Options;
+use crate::dataset::TaggedDataset;
+use crate::operator_library::OperatorLibrary;
+use crate::pop_member::{Evaluator, MemberId, PopMember};
+use crate::population::Population;
+
 fn leaf_expr(feature: u16) -> PostfixExpr<T, TestOps, D> {
-    PostfixExpr::new(
-        vec![PNode::Var { feature }],
-        Vec::new(),
-        Metadata::default(),
-    )
+    PostfixExpr::new(vec![PNode::Var { feature }], Vec::new(), Metadata::default())
 }
 
 #[test]
@@ -29,7 +25,7 @@ fn population_replaces_by_oldest_birth() {
     };
     let mut evaluator = Evaluator::<T, D>::new(1);
     let baseline_loss = if options.use_baseline {
-        baseline_loss_from_zero_expression::<T, TestOps, D>(&dataset, options.loss.as_ref())
+        crate::loss_functions::baseline_loss_from_zero_expression::<T, TestOps, D>(&dataset, options.loss.as_ref())
     } else {
         None
     };

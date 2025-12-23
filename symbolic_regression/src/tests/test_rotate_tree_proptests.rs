@@ -1,11 +1,12 @@
-use crate::mutation_functions::rotate_tree_in_place;
+use std::collections::BTreeMap;
+
 use dynamic_expressions::expression::{Metadata, PostfixExpr};
 use dynamic_expressions::node::PNode;
-use dynamic_expressions::node_utils::is_valid_postfix;
 use proptest::prelude::*;
-use rand::rngs::StdRng;
 use rand::SeedableRng;
-use std::collections::BTreeMap;
+use rand::rngs::StdRng;
+
+use crate::mutation_functions::rotate_tree_in_place;
 
 const N_FEATURES: usize = 5;
 const N_CONSTS: usize = 3;
@@ -15,11 +16,7 @@ const D_TEST: usize = 3;
 enum GenTree {
     Var(u16),
     Const(u16),
-    Op {
-        arity: u8,
-        op: u16,
-        children: Vec<GenTree>,
-    },
+    Op { arity: u8, op: u16, children: Vec<GenTree> },
 }
 
 impl GenTree {
@@ -27,18 +24,11 @@ impl GenTree {
         match self {
             GenTree::Var(feature) => out.push(PNode::Var { feature: *feature }),
             GenTree::Const(idx) => out.push(PNode::Const { idx: *idx }),
-            GenTree::Op {
-                arity,
-                op,
-                children,
-            } => {
+            GenTree::Op { arity, op, children } => {
                 for c in children {
                     c.to_postfix(out);
                 }
-                out.push(PNode::Op {
-                    arity: *arity,
-                    op: *op,
-                });
+                out.push(PNode::Op { arity: *arity, op: *op });
             }
         }
     }
@@ -69,33 +59,15 @@ fn arb_subtree() -> impl Strategy<Value = GenTree> {
 
     leaf.prop_recursive(6, 32, 10, |inner| {
         prop_oneof![
-            (
-                Just(1u8),
-                0u16..20u16,
-                prop::collection::vec(inner.clone(), 1)
-            )
-                .prop_map(|(arity, op, children)| GenTree::Op {
-                    arity,
-                    op,
-                    children
-                }),
-            (
-                Just(2u8),
-                0u16..20u16,
-                prop::collection::vec(inner.clone(), 2)
-            )
-                .prop_map(|(arity, op, children)| GenTree::Op {
-                    arity,
-                    op,
-                    children
-                }),
-            (Just(3u8), 0u16..20u16, prop::collection::vec(inner, 3)).prop_map(
-                |(arity, op, children)| GenTree::Op {
-                    arity,
-                    op,
-                    children
-                }
-            ),
+            (Just(1u8), 0u16..20u16, prop::collection::vec(inner.clone(), 1))
+                .prop_map(|(arity, op, children)| GenTree::Op { arity, op, children }),
+            (Just(2u8), 0u16..20u16, prop::collection::vec(inner.clone(), 2))
+                .prop_map(|(arity, op, children)| GenTree::Op { arity, op, children }),
+            (Just(3u8), 0u16..20u16, prop::collection::vec(inner, 3)).prop_map(|(arity, op, children)| GenTree::Op {
+                arity,
+                op,
+                children
+            }),
         ]
     })
 }
@@ -110,11 +82,7 @@ fn arb_rotatable_tree_nodes() -> impl Strategy<Value = Vec<PNode>> {
             nodes
         })
         .prop_filter("rotatable tree", |nodes| {
-            let mut expr = PostfixExpr::<f64, (), D_TEST>::new(
-                nodes.clone(),
-                vec![0.0; N_CONSTS],
-                Metadata::default(),
-            );
+            let mut expr = PostfixExpr::<f64, (), D_TEST>::new(nodes.clone(), vec![0.0; N_CONSTS], Metadata::default());
             let mut rng = StdRng::seed_from_u64(0);
             rotate_tree_in_place(&mut rng, &mut expr)
         })
@@ -179,7 +147,7 @@ proptest! {
         prop_assert!(rotate_tree_in_place(&mut rng, &mut expr));
 
         let after = &expr.nodes;
-        prop_assert!(is_valid_postfix(after));
+        prop_assert!(dynamic_expressions::node_utils::is_valid_postfix(after));
         let _plan = dynamic_expressions::compile_plan::<D_TEST>(after, N_FEATURES, N_CONSTS);
 
         // Node multiset must be preserved.

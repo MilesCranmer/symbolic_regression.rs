@@ -1,16 +1,17 @@
-use crate::constant_optimization::{optimize_constants, OptimizeConstantsCtx};
-use crate::dataset::TaggedDataset;
-use crate::loss_functions::baseline_loss_from_zero_expression;
-use crate::optim::{bfgs_minimize, BackTracking, EvalBudget, Objective, OptimOptions};
-use crate::pop_member::Evaluator;
-use crate::{Dataset, MemberId, OperatorLibrary, Options, PopMember};
 use dynamic_expressions::expression::{Metadata, PostfixExpr};
 use dynamic_expressions::node::PNode;
 use dynamic_expressions::operator_enum::presets::BuiltinOpsF64;
 use dynamic_expressions::operator_registry::OpRegistry;
 use ndarray::{Array1, Array2};
-use rand::rngs::StdRng;
 use rand::SeedableRng;
+use rand::rngs::StdRng;
+
+use crate::constant_optimization::{OptimizeConstantsCtx, optimize_constants};
+use crate::dataset::TaggedDataset;
+use crate::loss_functions::baseline_loss_from_zero_expression;
+use crate::optim::{BackTracking, EvalBudget, Objective, OptimOptions, bfgs_minimize};
+use crate::pop_member::Evaluator;
+use crate::{Dataset, MemberId, OperatorLibrary, Options, PopMember};
 
 const D: usize = 3;
 type T = f64;
@@ -103,7 +104,7 @@ pub fn constant_opt_linear_env() -> ConstantOptLinearEnv {
     let x: Vec<f64> = (0..n_rows).map(|i| (i as f64) / (n_rows as f64)).collect();
     let y: Vec<f64> = x.iter().map(|&xi| 2.0 * xi + 3.0).collect();
     let dataset = Dataset::new(
-        Array2::from_shape_vec((n_rows, n_features), x).unwrap(),
+        Array2::from_shape_vec((n_features, n_rows), x).unwrap(),
         Array1::from_vec(y),
     );
 

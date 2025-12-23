@@ -1,7 +1,5 @@
-use dynamic_expressions::operator_enum::scalar::{
-    diff_nary, grad_nary, GradKernelCtx, GradRef, SrcRef,
-};
 use dynamic_expressions::EvalOptions;
+use dynamic_expressions::operator_enum::scalar::{GradKernelCtx, GradRef, SrcRef, diff_nary, grad_nary};
 
 fn nan_eval_1(args: &[f64; 1]) -> f64 {
     let _ = args;

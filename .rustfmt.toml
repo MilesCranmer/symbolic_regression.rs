@@ -1,0 +1,21 @@
+# Style edition
+style_edition = "2024"
+unstable_features = true
+
+# Imports
+reorder_imports = true
+group_imports = "StdExternalCrate"
+imports_granularity = "Module"
+
+# General
+newline_style = "Unix"
+max_width = 120
+use_field_init_shorthand = true
+use_try_shorthand = true
+
+# Comments + docs
+wrap_comments = true
+comment_width = 120
+normalize_comments = true
+normalize_doc_attributes = true
+doc_comment_code_block_width = 100

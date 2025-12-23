@@ -3,7 +3,7 @@ use dynamic_expressions::operator_enum::scalar::{
 };
 use dynamic_expressions::strings::OpNames;
 use dynamic_expressions::{
-    eval_diff_tree_array, eval_grad_tree_array, eval_tree_array, EvalOptions, PNode, PostfixExpr,
+    EvalOptions, PNode, PostfixExpr, eval_diff_tree_array, eval_grad_tree_array, eval_tree_array,
 };
 use ndarray::Array2;
 
@@ -66,18 +66,11 @@ fn var(feature: u16) -> PostfixExpr<f64, FnOps, 2> {
 }
 
 fn cos_expr(x: PostfixExpr<f64, FnOps, 2>) -> PostfixExpr<f64, FnOps, 2> {
-    dynamic_expressions::expression_algebra::__apply_postfix::<f64, FnOps, 2, 1>(
-        Op1::Cos as u16,
-        [x],
-    )
+    dynamic_expressions::expression_algebra::__apply_postfix::<f64, FnOps, 2, 1>(Op1::Cos as u16, [x])
 }
 
 fn c(value: f64) -> PostfixExpr<f64, FnOps, 2> {
-    PostfixExpr::new(
-        vec![PNode::Const { idx: 0 }],
-        vec![value],
-        Default::default(),
-    )
+    PostfixExpr::new(vec![PNode::Const { idx: 0 }], vec![value], Default::default())
 }
 
 #[test]
@@ -88,12 +81,12 @@ fn define_scalar_ops_end_to_end_paths_are_covered() {
     let n_features = 2usize;
     let n_rows = 100usize;
     let mut data = vec![0.0f64; n_features * n_rows];
-    for row in 0..n_rows {
-        for feature in 0..n_features {
-            data[row * n_features + feature] = (row as f64 + 1.0) * (feature as f64 + 1.0) * 0.001;
+    for feature in 0..n_features {
+        for row in 0..n_rows {
+            data[feature * n_rows + row] = (row as f64 + 1.0) * (feature as f64 + 1.0) * 0.001;
         }
     }
-    let x = Array2::from_shape_vec((n_rows, n_features), data).unwrap();
+    let x = Array2::from_shape_vec((n_features, n_rows), data).unwrap();
 
     let opts = EvalOptions {
         check_finite: true,
@@ -102,26 +95,25 @@ fn define_scalar_ops_end_to_end_paths_are_covered() {
 
     let (y, ok) = eval_tree_array::<f64, FnOps, 2>(&expr, x.view(), &opts);
     assert!(ok);
-    assert_eq!(y.len(), n_rows);
+    assert_eq!(y.len(), x.ncols());
 
-    let mut dctx = dynamic_expressions::DiffContext::<f64, 2>::new(n_rows);
+    let mut dctx = dynamic_expressions::DiffContext::<f64, 2>::new(x.ncols());
     let (_e, d, ok) = eval_diff_tree_array::<f64, FnOps, 2>(&expr, x.view(), 0, &mut dctx, &opts);
     assert!(ok);
-    assert_eq!(d.len(), n_rows);
+    assert_eq!(d.len(), x.ncols());
 
-    let mut gctx = dynamic_expressions::GradContext::<f64, 2>::new(n_rows);
-    let (_e, g, ok) =
-        eval_grad_tree_array::<f64, FnOps, 2>(&expr, x.view(), true, &mut gctx, &opts);
+    let mut gctx = dynamic_expressions::GradContext::<f64, 2>::new(x.ncols());
+    let (_e, g, ok) = eval_grad_tree_array::<f64, FnOps, 2>(&expr, x.view(), true, &mut gctx, &opts);
     assert!(ok);
-    assert_eq!(g.n_dir, n_features);
-    assert_eq!(g.n_rows, n_rows);
+    assert_eq!(g.n_dir, x.nrows());
+    assert_eq!(g.n_rows, x.ncols());
 }
 
 #[test]
 fn define_scalar_ops_constant_only_fast_path_is_exercised() {
     let expr = cos_expr(c(0.0));
     let x_data = vec![0.0f64; 2];
-    let x = Array2::from_shape_vec((2, 1), x_data).unwrap();
+    let x = Array2::from_shape_vec((1, 2), x_data).unwrap();
     let opts = EvalOptions {
         check_finite: true,
         early_exit: true,
@@ -135,7 +127,7 @@ fn define_scalar_ops_constant_only_fast_path_is_exercised() {
 fn define_scalar_ops_constant_only_nonfinite_sets_complete_false() {
     let expr = cos_expr(c(f64::NAN));
     let x_data = vec![0.0f64; 2];
-    let x = Array2::from_shape_vec((2, 1), x_data).unwrap();
+    let x = Array2::from_shape_vec((1, 2), x_data).unwrap();
     let opts = EvalOptions {
         check_finite: true,
         early_exit: false,
@@ -149,7 +141,7 @@ fn define_scalar_ops_nonfinite_early_exit_true_returns_false() {
     // This hits the non-const path of eval_nary and returns early from the row loop.
     let expr = var(0) * f64::NAN;
     let x_data = vec![1.0f64; 4];
-    let x = Array2::from_shape_vec((4, 1), x_data).unwrap();
+    let x = Array2::from_shape_vec((1, 4), x_data).unwrap();
     let opts = EvalOptions {
         check_finite: true,
         early_exit: true,
@@ -162,7 +154,7 @@ fn define_scalar_ops_nonfinite_early_exit_true_returns_false() {
 fn define_scalar_ops_nonfinite_early_exit_true_constant_only_returns_false() {
     let expr = cos_expr(c(f64::NAN));
     let x_data = vec![0.0f64; 2];
-    let x = Array2::from_shape_vec((2, 1), x_data).unwrap();
+    let x = Array2::from_shape_vec((1, 2), x_data).unwrap();
     let opts = EvalOptions {
         check_finite: true,
         early_exit: true,
@@ -289,12 +281,6 @@ fn define_scalar_ops_grad_panics_on_unsupported_arity() {
 
 #[test]
 fn define_scalar_ops_op_names_unknown_paths_are_exercised() {
-    assert_eq!(
-        <FnOps as OpNames>::op_name(OpId { arity: 1, id: 999 }),
-        "unknown_op"
-    );
-    assert_eq!(
-        <FnOps as OpNames>::op_name(OpId { arity: 9, id: 0 }),
-        "unknown_op"
-    );
+    assert_eq!(<FnOps as OpNames>::op_name(OpId { arity: 1, id: 999 }), "unknown_op");
+    assert_eq!(<FnOps as OpNames>::op_name(OpId { arity: 9, id: 0 }), "unknown_op");
 }

@@ -1,16 +1,16 @@
-use crate::operators::Operators;
-use crate::options::Options;
 use dynamic_expressions::expression::PostfixExpr;
 use dynamic_expressions::node::PNode;
-use dynamic_expressions::node_utils::{subtree_range, subtree_sizes};
+use dynamic_expressions::node_utils;
 use num_traits::Float;
 use rand::Rng;
-use rand_distr::Distribution;
-use rand_distr::StandardNormal;
+use rand_distr::{self, Distribution};
+
+use crate::operators::Operators;
+use crate::options::Options;
 
 fn random_leaf<T: Float, R: Rng>(rng: &mut R, n_features: usize, consts: &mut Vec<T>) -> PNode {
     if rng.random::<bool>() {
-        let val_f64: f64 = StandardNormal.sample(rng);
+        let val_f64: f64 = rand_distr::StandardNormal.sample(rng);
         let val = T::from(val_f64).unwrap();
         let idx: u16 = consts
             .len()
@@ -38,9 +38,7 @@ pub fn random_expr<T: Float, Ops, const D: usize, R: Rng>(
     let mut consts: Vec<T> = Vec::new();
     nodes.push(random_leaf(rng, n_features, &mut consts));
 
-    while nodes.len() < target_size
-        && operators.total_ops_up_to(D.min(target_size - nodes.len())) > 0
-    {
+    while nodes.len() < target_size && operators.total_ops_up_to(D.min(target_size - nodes.len())) > 0 {
         let rem = target_size - nodes.len();
         let max_arity = rem.min(D);
         let arity = operators.sample_arity(rng, max_arity);
@@ -260,12 +258,12 @@ pub(crate) fn swap_operands_in_place<T, Ops, const D: usize, R: Rng>(
     if idxs.is_empty() {
         return false;
     }
-    let sizes = subtree_sizes(&expr.nodes);
+    let sizes = node_utils::subtree_sizes(&expr.nodes);
     let root_idx = idxs[rng.random_range(0..idxs.len())];
     let PNode::Op { op, .. } = expr.nodes[root_idx] else {
         return false;
     };
-    let (sub_start, sub_end) = subtree_range(&sizes, root_idx);
+    let (sub_start, sub_end) = node_utils::subtree_range(&sizes, root_idx);
     let child = child_ranges(&sizes, root_idx, 2);
     let mut new_sub: Vec<PNode> = Vec::with_capacity(sub_end + 1 - sub_start);
     new_sub.extend_from_slice(&expr.nodes[child[1].0..=child[1].1]);
@@ -275,14 +273,11 @@ pub(crate) fn swap_operands_in_place<T, Ops, const D: usize, R: Rng>(
     true
 }
 
-pub(crate) fn rotate_tree_in_place<T, Ops, const D: usize, R: Rng>(
-    rng: &mut R,
-    expr: &mut PostfixExpr<T, Ops, D>,
-) -> bool {
+pub fn rotate_tree_in_place<T, Ops, const D: usize, R: Rng>(rng: &mut R, expr: &mut PostfixExpr<T, Ops, D>) -> bool {
     // Match SymbolicRegression.jl's `randomly_rotate_tree!`:
     // pick a random rotation root where some child is an operator, then
     // rotate along a random internal edge (root -> pivot) using a random grandchild.
-    let sizes = subtree_sizes(&expr.nodes);
+    let sizes = node_utils::subtree_sizes(&expr.nodes);
     let mut valid_roots: Vec<usize> = Vec::new();
     for (i, n) in expr.nodes.iter().enumerate() {
         let PNode::Op { arity, .. } = *n else {
@@ -293,10 +288,7 @@ pub(crate) fn rotate_tree_in_place<T, Ops, const D: usize, R: Rng>(
             continue;
         }
         let children = child_ranges(&sizes, i, a);
-        if children
-            .iter()
-            .any(|c| matches!(expr.nodes[c.1], PNode::Op { .. }))
-        {
+        if children.iter().any(|c| matches!(expr.nodes[c.1], PNode::Op { .. })) {
             valid_roots.push(i);
         }
     }
@@ -345,7 +337,7 @@ pub(crate) fn rotate_tree_in_place<T, Ops, const D: usize, R: Rng>(
     let grandchild_pos = rng.random_range(0..pivot_arity);
     let grandchild = pivot_children[grandchild_pos];
 
-    let (sub_start, sub_end) = subtree_range(&sizes, root_idx);
+    let (sub_start, sub_end) = node_utils::subtree_range(&sizes, root_idx);
 
     // Build the rotated version of the old root, with its `pivot_pos` child replaced by `grandchild`.
     let mut rotated_root: Vec<PNode> = Vec::with_capacity(sub_end + 1 - sub_start);
@@ -379,7 +371,7 @@ pub(crate) fn rotate_tree_in_place<T, Ops, const D: usize, R: Rng>(
     true
 }
 
-pub(crate) fn insert_random_op_in_place<T: Float, Ops, const D: usize, R: Rng>(
+pub fn insert_random_op_in_place<T: Float, Ops, const D: usize, R: Rng>(
     rng: &mut R,
     expr: &mut PostfixExpr<T, Ops, D>,
     operators: &Operators<D>,
@@ -392,8 +384,8 @@ pub(crate) fn insert_random_op_in_place<T: Float, Ops, const D: usize, R: Rng>(
         return false;
     }
     let root_idx = rng.random_range(0..expr.nodes.len());
-    let sizes = subtree_sizes(&expr.nodes);
-    let (start, end) = subtree_range(&sizes, root_idx);
+    let sizes = node_utils::subtree_sizes(&expr.nodes);
+    let (start, end) = node_utils::subtree_range(&sizes, root_idx);
     let old_sub: Vec<PNode> = expr.nodes[start..=end].to_vec();
 
     let arity = operators.sample_arity(rng, D);
@@ -521,8 +513,8 @@ pub(crate) fn delete_random_op_in_place<T: Clone, Ops, const D: usize, R: Rng>(
     if a == 0 {
         return false;
     }
-    let sizes = subtree_sizes(&expr.nodes);
-    let (sub_start, sub_end) = subtree_range(&sizes, root_idx);
+    let sizes = node_utils::subtree_sizes(&expr.nodes);
+    let (sub_start, sub_end) = node_utils::subtree_range(&sizes, root_idx);
     if sub_start == sub_end {
         return false;
     }
@@ -571,26 +563,24 @@ pub(crate) fn crossover_trees<T: Clone, Ops, const D: usize, R: Rng>(
         out
     }
 
-    let a_sizes = subtree_sizes(&a.nodes);
-    let b_sizes = subtree_sizes(&b.nodes);
+    let a_sizes = node_utils::subtree_sizes(&a.nodes);
+    let b_sizes = node_utils::subtree_sizes(&b.nodes);
     let a_root = rng.random_range(0..a.nodes.len());
     let b_root = rng.random_range(0..b.nodes.len());
-    let (a_start, a_end) = subtree_range(&a_sizes, a_root);
-    let (b_start, b_end) = subtree_range(&b_sizes, b_root);
+    let (a_start, a_end) = node_utils::subtree_range(&a_sizes, a_root);
+    let (b_start, b_end) = node_utils::subtree_range(&b_sizes, b_root);
 
     let a_sub = &a.nodes[a_start..=a_end];
     let b_sub = &b.nodes[b_start..=b_end];
 
-    let mut child_a_nodes: Vec<PNode> =
-        Vec::with_capacity(a.nodes.len() - a_sub.len() + b_sub.len());
+    let mut child_a_nodes: Vec<PNode> = Vec::with_capacity(a.nodes.len() - a_sub.len() + b_sub.len());
     child_a_nodes.extend_from_slice(&a.nodes[..a_start]);
     let mut child_a_consts = a.consts.clone();
     let b_sub_remap = remap_subtree_consts(b_sub, &b.consts, &mut child_a_consts);
     child_a_nodes.extend_from_slice(&b_sub_remap);
     child_a_nodes.extend_from_slice(&a.nodes[a_end + 1..]);
 
-    let mut child_b_nodes: Vec<PNode> =
-        Vec::with_capacity(b.nodes.len() - b_sub.len() + a_sub.len());
+    let mut child_b_nodes: Vec<PNode> = Vec::with_capacity(b.nodes.len() - b_sub.len() + a_sub.len());
     child_b_nodes.extend_from_slice(&b.nodes[..b_start]);
     let mut child_b_consts = b.consts.clone();
     let a_sub_remap = remap_subtree_consts(a_sub, &a.consts, &mut child_b_consts);

@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-import init, { WasmSearch } from "../pkg/symbolic_regression_wasm.js";
+import init, { init_thread_pool, WasmSearch } from "../pkg/symbolic_regression_wasm.js";
 import type { WorkerFromWorkerMsg, WorkerToWorkerMsg } from "./protocol";
 
 let search: WasmSearch | null = null;
@@ -64,7 +64,21 @@ self.onmessage = async (e: MessageEvent<WorkerToWorkerMsg>) => {
   try {
     if (msg.type === "init") {
       running = false;
-      await init();
+      const wasmExports = await init();
+      const sharedArrayBufferAvailable = typeof SharedArrayBuffer !== "undefined";
+      const hasSharedMemory = sharedArrayBufferAvailable && wasmExports?.memory?.buffer instanceof SharedArrayBuffer;
+      if (self.crossOriginIsolated && hasSharedMemory) {
+        const n = Math.max(2, Math.min(Number(self.navigator?.hardwareConcurrency ?? 4), 16));
+        try {
+          await init_thread_pool(n);
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn("init_thread_pool failed, continuing single-threaded:", err);
+        }
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn("SharedArrayBuffer unavailable; running single-threaded.");
+      }
       search = new WasmSearch(msg.csvText, msg.options as any, msg.unary as any, msg.binary as any, msg.ternary as any);
       search.set_pareto_k(PARETO_K);
       const split = search.get_split_indices();

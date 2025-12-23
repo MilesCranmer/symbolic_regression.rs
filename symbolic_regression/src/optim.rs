@@ -62,11 +62,7 @@ pub(crate) fn inf_norm(v: &[f64]) -> f64 {
 }
 
 pub(crate) fn dot(a: &[f64], b: &[f64]) -> f64 {
-    a.iter()
-        .copied()
-        .zip(b.iter().copied())
-        .map(|(x, y)| x * y)
-        .sum()
+    a.iter().copied().zip(b.iter().copied()).map(|(x, y)| x * y).sum()
 }
 
 pub(crate) fn axpy_into(out: &mut [f64], x: &[f64], alpha: f64, s: &[f64]) {
@@ -82,12 +78,7 @@ pub(crate) fn matvec(out: &mut [f64], a: &[f64], x: &[f64]) {
 
     for i in 0..n {
         let row = &a[i * n..(i + 1) * n];
-        out[i] = row
-            .iter()
-            .copied()
-            .zip(x.iter().copied())
-            .map(|(aa, xx)| aa * xx)
-            .sum();
+        out[i] = row.iter().copied().zip(x.iter().copied()).map(|(aa, xx)| aa * xx).sum();
     }
 }
 
@@ -97,21 +88,10 @@ fn quadratic_step(alpha: f64, phi: f64, phi0: f64, dphi0: f64) -> Option<f64> {
         return None;
     }
     let out = -(dphi0 * alpha * alpha) / denom;
-    if out.is_finite() {
-        Some(out)
-    } else {
-        None
-    }
+    if out.is_finite() { Some(out) } else { None }
 }
 
-fn cubic_step(
-    alpha1: f64,
-    phi1: f64,
-    alpha2: f64,
-    phi2: f64,
-    phi0: f64,
-    dphi0: f64,
-) -> Option<f64> {
+fn cubic_step(alpha1: f64, phi1: f64, alpha2: f64, phi2: f64, phi0: f64, dphi0: f64) -> Option<f64> {
     let d1 = phi1 - phi0 - dphi0 * alpha1;
     let d2 = phi2 - phi0 - dphi0 * alpha2;
     let denom = alpha1 * alpha1 * alpha2 * alpha2 * (alpha2 - alpha1);
@@ -136,11 +116,7 @@ fn cubic_step(
     let disc = (b * b - 3.0 * a * dphi0).max(0.0);
     let sqrt_disc = disc.sqrt();
     let out = (-b + sqrt_disc) / (3.0 * a);
-    if out.is_finite() {
-        Some(out)
-    } else {
-        None
-    }
+    if out.is_finite() { Some(out) } else { None }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -312,11 +288,7 @@ pub(crate) fn bfgs_minimize(
                 return None;
             }
             let v = obj.f_only(x_trial, &mut budget)?;
-            if v.is_finite() {
-                Some(v)
-            } else {
-                None
-            }
+            if v.is_finite() { Some(v) } else { None }
         };
 
         let (_alpha, _) = backtracking_linesearch(
@@ -448,11 +420,7 @@ pub(crate) fn newton_1d_minimize(
                 return None;
             }
             let v = obj.f_only(x_t, &mut budget)?;
-            if v.is_finite() {
-                Some(v)
-            } else {
-                None
-            }
+            if v.is_finite() { Some(v) } else { None }
         };
 
         let x_vec = [x];

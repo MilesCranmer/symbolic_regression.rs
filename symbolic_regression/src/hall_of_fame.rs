@@ -1,7 +1,8 @@
+use num_traits::Float;
+
 use crate::check_constraints::check_constraints;
 use crate::options::Options;
 use crate::pop_member::PopMember;
-use num_traits::Float;
 
 pub struct HallOfFame<T: Float, Ops, const D: usize> {
     pub best_by_complexity: Vec<Option<PopMember<T, Ops, D>>>,
@@ -14,12 +15,7 @@ impl<T: Float, Ops, const D: usize> HallOfFame<T, Ops, D> {
         }
     }
 
-    pub fn consider(
-        &mut self,
-        member: &PopMember<T, Ops, D>,
-        options: &Options<T, D>,
-        curmaxsize: usize,
-    ) {
+    pub fn consider(&mut self, member: &PopMember<T, Ops, D>, options: &Options<T, D>, curmaxsize: usize) {
         if !check_constraints(&member.expr, options, curmaxsize) {
             return;
         }

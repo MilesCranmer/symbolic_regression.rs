@@ -1,7 +1,8 @@
-use super::common::{TestOps, D, T};
-use crate::operator_library::OperatorLibrary;
-use crate::{equation_search, Options};
 use ndarray::{Array1, Array2};
+
+use super::common::{D, T, TestOps};
+use crate::operator_library::OperatorLibrary;
+use crate::{Options, equation_search};
 
 #[test]
 fn equation_search_runs() {
@@ -15,7 +16,7 @@ fn equation_search_runs() {
         y[i] = xi * xi + xi;
     }
     let dataset = crate::Dataset::new(
-        Array2::from_shape_vec((n_rows, n_features), x).unwrap(),
+        Array2::from_shape_vec((n_features, n_rows), x).unwrap(),
         Array1::from_vec(y),
     );
 

@@ -67,6 +67,7 @@ function OperatorsGroup(props: {
 export function ModelingTask(): React.ReactElement {
   const registry = useSessionStore((s) => s.operatorRegistry);
   const options = useSessionStore((s) => s.options);
+  const runtime = useSessionStore((s) => s.runtime);
   const setOptionsPatch = useSessionStore((s) => s.setOptionsPatch);
 
   const unaryOps = useSessionStore((s) => s.unaryOps);
@@ -80,7 +81,11 @@ export function ModelingTask(): React.ReactElement {
     return (
       <div className="pane">
         <div className="card">
-          <div className="muted">Loading defaults…</div>
+          {runtime.status === "error" && runtime.error ? (
+            <div className="error">{runtime.error}</div>
+          ) : (
+            <div className="muted">Loading defaults…</div>
+          )}
         </div>
       </div>
     );

@@ -1,7 +1,8 @@
 // CLI argument parsing.
 
-use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
+
+use clap::{Parser, ValueEnum};
 
 use crate::options::cli_args::OptionsArgs;
 

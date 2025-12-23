@@ -1,18 +1,17 @@
-use dynamic_expressions::{compile_plan, count_depth, subtree_sizes, tree_mapreduce, PNode};
+use dynamic_expressions::{PNode, compile_plan};
 
 #[test]
 fn tree_utils_reject_invalid_nodes() {
     // Stack underflow (operator without children) should panic.
     let underflow = vec![PNode::Op { arity: 2, op: 0 }];
-    assert!(std::panic::catch_unwind(|| count_depth(&underflow)).is_err());
-    assert!(std::panic::catch_unwind(|| subtree_sizes(&underflow)).is_err());
-    assert!(std::panic::catch_unwind(|| tree_mapreduce(
-        &underflow,
-        |_| 1usize,
-        |_| 1usize,
-        |p, _| p
-    ))
-    .is_err());
+    assert!(std::panic::catch_unwind(|| dynamic_expressions::count_depth(&underflow)).is_err());
+    assert!(std::panic::catch_unwind(|| dynamic_expressions::subtree_sizes(&underflow)).is_err());
+    assert!(
+        std::panic::catch_unwind(|| {
+            dynamic_expressions::tree_mapreduce(&underflow, |_| 1usize, |_| 1usize, |p, _| p)
+        })
+        .is_err()
+    );
 }
 
 #[test]

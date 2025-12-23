@@ -1,7 +1,7 @@
 use approx::assert_relative_eq;
 use dynamic_expressions::{
-    eval_diff_tree_array, eval_grad_tree_array, eval_tree_array, DiffContext, EvalOptions,
-    GradContext, PNode, PostfixExpr,
+    DiffContext, EvalOptions, GradContext, PNode, PostfixExpr, eval_diff_tree_array, eval_grad_tree_array,
+    eval_tree_array,
 };
 use ndarray::{Array2, ArrayView2};
 
@@ -21,37 +21,31 @@ pub fn var(feature: u16) -> PostfixExpr<f64, TestOps, 3> {
 
 #[allow(dead_code)]
 pub fn c(value: f64) -> PostfixExpr<f64, TestOps, 3> {
-    PostfixExpr::new(
-        vec![PNode::Const { idx: 0 }],
-        vec![value],
-        Default::default(),
-    )
+    PostfixExpr::new(vec![PNode::Const { idx: 0 }], vec![value], Default::default())
 }
 
 #[allow(dead_code)]
 pub fn make_x(n_features: usize, n_rows: usize) -> (Vec<f64>, Array2<f64>) {
     let mut data = vec![0.0f64; n_features * n_rows];
-    for row in 0..n_rows {
-        for feature in 0..n_features {
-            data[row * n_features + feature] = (row as f64 + 1.0) * (feature as f64 + 1.0) * 0.01;
+    for feature in 0..n_features {
+        for row in 0..n_rows {
+            data[feature * n_rows + row] = (row as f64 + 1.0) * (feature as f64 + 1.0) * 0.01;
         }
     }
-    let x = Array2::from_shape_vec((n_rows, n_features), data.clone()).unwrap();
+    let x = Array2::from_shape_vec((n_features, n_rows), data.clone()).unwrap();
     (data, x)
 }
 
 #[allow(dead_code)]
 pub fn expr_readme_like() -> PostfixExpr<f64, TestOps, 3> {
     // x1 * cos(x2 - 3.2)
-    use dynamic_expressions::math::cos;
-    var(0) * cos(var(1) - 3.2)
+    var(0) * dynamic_expressions::operators::cos(var(1) - 3.2)
 }
 
 #[allow(dead_code)]
 pub fn expr_ternary() -> PostfixExpr<f64, TestOps, 3> {
     // fma(x1, x2, c0) = x1*x2 + c0
-    use dynamic_expressions::math::fma;
-    fma(var(0), var(1), c(0.7))
+    dynamic_expressions::operators::fma(var(0), var(1), c(0.7))
 }
 
 #[allow(dead_code)]
@@ -66,11 +60,11 @@ pub fn finite_diff_dir(
     let mut plus = x_data.to_vec();
     let mut minus = x_data.to_vec();
     for row in 0..n_rows {
-        plus[row * n_features + dir] += eps;
-        minus[row * n_features + dir] -= eps;
+        plus[dir * n_rows + row] += eps;
+        minus[dir * n_rows + row] -= eps;
     }
-    let x_plus = Array2::from_shape_vec((n_rows, n_features), plus).unwrap();
-    let x_minus = Array2::from_shape_vec((n_rows, n_features), minus).unwrap();
+    let x_plus = Array2::from_shape_vec((n_features, n_rows), plus).unwrap();
+    let x_minus = Array2::from_shape_vec((n_features, n_rows), minus).unwrap();
     let opts = EvalOptions {
         check_finite: true,
         early_exit: true,
@@ -94,41 +88,28 @@ pub fn assert_close_vec(a: &[f64], b: &[f64], tol: f64) {
 }
 
 #[allow(dead_code)]
-pub fn grad_matches_diffs(
-    expr: &PostfixExpr<f64, TestOps, 3>,
-    x: &ArrayView2<'_, f64>,
-    variable: bool,
-) {
+pub fn grad_matches_diffs(expr: &PostfixExpr<f64, TestOps, 3>, x: &ArrayView2<'_, f64>, variable: bool) {
     let opts = EvalOptions {
         check_finite: true,
         early_exit: true,
     };
-    let n_rows = x.nrows();
-    let n_dir = if variable {
-        x.ncols()
-    } else {
-        expr.consts.len()
-    };
+    let n_rows = x.ncols();
+    let n_dir = if variable { x.nrows() } else { expr.consts.len() };
 
     let mut gctx = GradContext::<f64, 3>::new(n_rows);
-    let (_eval, grad, ok) =
-        eval_grad_tree_array::<f64, TestOps, 3>(expr, *x, variable, &mut gctx, &opts);
+    let (_eval, grad, ok) = eval_grad_tree_array::<f64, TestOps, 3>(expr, *x, variable, &mut gctx, &opts);
     assert!(ok);
     assert_eq!(grad.n_dir, n_dir);
     assert_eq!(grad.n_rows, n_rows);
 
-    // Compare each direction to eval_diff (variable) or to basis perturbation for constants via diff isn't supported directly,
-    // so for constants we just check gradient is finite and has correct shape.
+    // Compare each direction to eval_diff (variable) or to basis perturbation for constants via diff isn't supported
+    // directly, so for constants we just check gradient is finite and has correct shape.
     if variable {
         for dir in 0..n_dir {
             let mut dctx = DiffContext::<f64, 3>::new(n_rows);
-            let (_e, d, okd) =
-                eval_diff_tree_array::<f64, TestOps, 3>(expr, *x, dir, &mut dctx, &opts);
+            let (_e, d, okd) = eval_diff_tree_array::<f64, TestOps, 3>(expr, *x, dir, &mut dctx, &opts);
             assert!(okd);
-            for (&gv, &dv) in grad.data[dir * n_rows..(dir + 1) * n_rows]
-                .iter()
-                .zip(d.iter())
-            {
+            for (&gv, &dv) in grad.data[dir * n_rows..(dir + 1) * n_rows].iter().zip(d.iter()) {
                 assert_relative_eq!(gv, dv, epsilon = 1e-6, max_relative = 1e-6);
             }
         }

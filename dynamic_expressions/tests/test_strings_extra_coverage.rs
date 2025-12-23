@@ -1,5 +1,6 @@
-use dynamic_expressions::strings::default_string_variable;
 use std::hint::black_box;
+
+use dynamic_expressions::strings::default_string_variable;
 
 #[test]
 fn default_string_variable_uses_provided_name() {

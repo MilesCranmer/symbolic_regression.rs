@@ -1,13 +1,15 @@
-use crate::options::Options;
-use dynamic_expressions::node::PNode;
-use dynamic_expressions::operator_enum::scalar::OpId;
-use num_traits::Float;
 use std::collections::HashMap;
+
+use dynamic_expressions::node::PNode;
+use dynamic_expressions::operator_enum::scalar;
+use num_traits::Float;
+
+use crate::options::Options;
 
 pub(crate) fn compute_custom_complexity_checked<T: Float, const D: usize>(
     nodes: &[PNode],
     options: &Options<T, D>,
-    op_arg_limits: Option<&HashMap<OpId, [Option<u16>; D]>>,
+    op_arg_limits: Option<&HashMap<scalar::OpId, [Option<u16>; D]>>,
 ) -> Option<usize> {
     let mut st: Vec<usize> = Vec::with_capacity(nodes.len().min(256));
 
@@ -31,7 +33,7 @@ pub(crate) fn compute_custom_complexity_checked<T: Float, const D: usize>(
                     child[j] = st.pop().unwrap_or(0);
                 }
 
-                let oid = OpId { arity, id: op };
+                let oid = scalar::OpId { arity, id: op };
                 if let Some(limits) = op_arg_limits.and_then(|m| m.get(&oid)) {
                     for j in 0..a {
                         let Some(lim) = limits[j] else {
@@ -47,11 +49,7 @@ pub(crate) fn compute_custom_complexity_checked<T: Float, const D: usize>(
                 for c in child {
                     sum = sum.saturating_add(c);
                 }
-                let base = options
-                    .operator_complexity_overrides
-                    .get(&oid)
-                    .copied()
-                    .unwrap_or(1);
+                let base = options.operator_complexity_overrides.get(&oid).copied().unwrap_or(1);
                 st.push((base as usize).saturating_add(sum));
             }
         }
@@ -63,10 +61,7 @@ pub(crate) fn compute_custom_complexity_checked<T: Float, const D: usize>(
     Some(st[0])
 }
 
-pub fn compute_complexity<T: Float, const D: usize>(
-    nodes: &[PNode],
-    options: &Options<T, D>,
-) -> usize {
+pub fn compute_complexity<T: Float, const D: usize>(nodes: &[PNode], options: &Options<T, D>) -> usize {
     if options.uses_default_complexity() {
         return nodes.len();
     }

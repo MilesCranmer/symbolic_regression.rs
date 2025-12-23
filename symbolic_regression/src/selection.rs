@@ -1,12 +1,13 @@
+use std::cmp::Ordering;
+
+use num_traits::Float;
+use rand::Rng;
+use rand::distr::{self, Distribution};
+
 use crate::adaptive_parsimony::RunningSearchStatistics;
 use crate::options::Options;
 use crate::pop_member::PopMember;
 use crate::population::Population;
-use num_traits::Float;
-use rand::distr::weighted::WeightedIndex;
-use rand::distr::Distribution;
-use rand::Rng;
-use std::cmp::Ordering;
 
 fn sample_tournament_place<R: Rng>(rng: &mut R, n: usize, p: f32) -> usize {
     if n <= 1 || p >= 1.0 {
@@ -19,7 +20,7 @@ fn sample_tournament_place<R: Rng>(rng: &mut R, n: usize, p: f32) -> usize {
         weights.push(cur);
         cur *= q;
     }
-    let dist = WeightedIndex::new(weights).expect("tournament weights must be positive");
+    let dist = distr::weighted::WeightedIndex::new(weights).expect("tournament weights must be positive");
     dist.sample(rng) + 1
 }
 

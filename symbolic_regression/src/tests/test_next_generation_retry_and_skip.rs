@@ -1,31 +1,25 @@
-use super::common::{TestOps, D, T};
-use crate::adaptive_parsimony::RunningSearchStatistics;
-use crate::dataset::TaggedDataset;
-use crate::loss_functions::baseline_loss_from_zero_expression;
-use crate::mutate::{next_generation, NextGenerationCtx};
-use crate::operator_library::OperatorLibrary;
-use crate::pop_member::{Evaluator, MemberId, PopMember};
-use crate::population::Population;
-use crate::regularized_evolution::{reg_evol_cycle, RegEvolCtx};
-use crate::{MutationWeights, Options};
 use dynamic_expressions::expression::{Metadata, PostfixExpr};
 use dynamic_expressions::node::PNode;
 use ndarray::{Array1, Array2};
-use rand::rngs::StdRng;
 use rand::SeedableRng;
+use rand::rngs::StdRng;
+
+use super::common::{D, T, TestOps};
+use crate::adaptive_parsimony::RunningSearchStatistics;
+use crate::dataset::TaggedDataset;
+use crate::operator_library::OperatorLibrary;
+use crate::pop_member::{Evaluator, MemberId, PopMember};
+use crate::population::Population;
+use crate::{MutationWeights, Options, mutate, regularized_evolution};
 
 fn leaf_expr() -> PostfixExpr<T, TestOps, D> {
-    PostfixExpr::new(
-        vec![PNode::Var { feature: 0 }],
-        Vec::new(),
-        Metadata::default(),
-    )
+    PostfixExpr::new(vec![PNode::Var { feature: 0 }], Vec::new(), Metadata::default())
 }
 
 #[test]
 fn next_generation_fails_constraints_after_retries() {
     let dataset = crate::Dataset::new(
-        Array2::from_shape_vec((8, 1), vec![0.0; 8]).unwrap(),
+        Array2::from_shape_vec((1, 8), vec![0.0; 8]).unwrap(),
         Array1::from_vec(vec![0.0; 8]),
     );
 
@@ -61,7 +55,7 @@ fn next_generation_fails_constraints_after_retries() {
     let mut evaluator = Evaluator::<T, D>::new(dataset.n_rows);
     let mut member = PopMember::from_expr(MemberId(0), None, 0, leaf_expr(), dataset.n_features);
     let baseline_loss = if options.use_baseline {
-        baseline_loss_from_zero_expression::<T, TestOps, D>(&dataset, options.loss.as_ref())
+        crate::loss_functions::baseline_loss_from_zero_expression::<T, TestOps, D>(&dataset, options.loss.as_ref())
     } else {
         None
     };
@@ -74,9 +68,9 @@ fn next_generation_fails_constraints_after_retries() {
 
     let mut next_id = 1u64;
     let mut next_birth = 1u64;
-    let (_baby, accepted, _evals) = next_generation::<T, TestOps, D, _>(
+    let (_baby, accepted, _evals) = mutate::next_generation::<T, TestOps, D, _>(
         &member,
-        NextGenerationCtx {
+        mutate::NextGenerationCtx {
             rng: &mut rng,
             dataset: full_dataset,
             temperature: 1.0,
@@ -95,7 +89,7 @@ fn next_generation_fails_constraints_after_retries() {
 #[test]
 fn reg_evol_cycle_skips_replacement_when_configured() {
     let dataset = crate::Dataset::new(
-        Array2::from_shape_vec((8, 1), vec![0.0; 8]).unwrap(),
+        Array2::from_shape_vec((1, 8), vec![0.0; 8]).unwrap(),
         Array1::from_vec(vec![0.0; 8]),
     );
     let weights = MutationWeights {
@@ -130,7 +124,7 @@ fn reg_evol_cycle_skips_replacement_when_configured() {
 
     let mut evaluator = Evaluator::<T, D>::new(dataset.n_rows);
     let baseline_loss = if options.use_baseline {
-        baseline_loss_from_zero_expression::<T, TestOps, D>(&dataset, options.loss.as_ref())
+        crate::loss_functions::baseline_loss_from_zero_expression::<T, TestOps, D>(&dataset, options.loss.as_ref())
     } else {
         None
     };
@@ -144,7 +138,7 @@ fn reg_evol_cycle_skips_replacement_when_configured() {
 
     let mut next_id = 1u64;
     let mut next_birth = 1u64;
-    let ctx = RegEvolCtx::<T, TestOps, D, _> {
+    let ctx = regularized_evolution::RegEvolCtx::<T, TestOps, D, _> {
         rng: &mut rng,
         dataset: full_dataset,
         stats: &stats,
@@ -157,6 +151,6 @@ fn reg_evol_cycle_skips_replacement_when_configured() {
         _ops: core::marker::PhantomData,
     };
 
-    reg_evol_cycle::<T, TestOps, D, _>(&mut pop, ctx);
+    regularized_evolution::reg_evol_cycle::<T, TestOps, D, _>(&mut pop, ctx);
     assert_eq!(pop.members.len(), 1);
 }

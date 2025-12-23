@@ -1,6 +1,9 @@
 import { create } from "zustand";
 import * as Papa from "papaparse";
-import initWasm, { builtin_operator_registry, default_search_options } from "../pkg/symbolic_regression_wasm.js";
+import initWasm, {
+  builtin_operator_registry,
+  default_search_options,
+} from "../pkg/symbolic_regression_wasm.js";
 import { DEFAULT_CSV } from "../generated/defaultCsv";
 import type {
   EquationPoint,
@@ -140,20 +143,31 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   loadWasmMetadata: async () => {
     if (get().wasmLoaded) return;
-    await initWasm();
-    const [ops, defaults] = await Promise.all([builtin_operator_registry(), default_search_options()]);
+    try {
+      await initWasm();
 
-    const operatorRegistry = ops as WasmOpInfo[];
-    const defaultOptions = defaults as WasmSearchOptions;
-    set({
-      wasmLoaded: true,
-      operatorRegistry,
-      defaultOptions,
-      options: defaultOptions
-    });
+      const [ops, defaults] = await Promise.all([builtin_operator_registry(), default_search_options()]);
 
-    // Default operator selection (a safe "basic" set).
-    get().applyPreset("basic");
+      const operatorRegistry = ops as WasmOpInfo[];
+      const defaultOptions = defaults as WasmSearchOptions;
+      set({
+        wasmLoaded: true,
+        operatorRegistry,
+        defaultOptions,
+        options: defaultOptions
+      });
+
+      // Default operator selection (a safe "basic" set).
+      get().applyPreset("basic");
+    } catch (err) {
+      set((s) => ({
+        runtime: {
+          ...s.runtime,
+          status: "error",
+          error: `WASM init failed: ${String(err)}`
+        }
+      }));
+    }
   },
 
   setCsvText: (csvText) => set({ csvText }),
