@@ -35,6 +35,7 @@ calamine = { version = "0.32", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 rayon = "1"
+rustc-hash = "2.1.1"
 
 [features]
 default = ["progress"]

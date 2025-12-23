@@ -1,7 +1,8 @@
 use std::hash::Hasher;
+use std::mem;
 
 use ndarray::{Array1, Array2};
-use num_traits::{Float, ToPrimitive};
+use num_traits::Float;
 use rand::Rng;
 use rustc_hash::FxHasher;
 
@@ -42,9 +43,17 @@ pub struct Dataset<T: Float> {
 
 impl<T: Float> Dataset<T> {
     fn hash_slice(hasher: &mut FxHasher, slice: &[T]) {
-        for value in slice {
-            let bits = value.to_bits();
-            hasher.write_u64(bits.to_u64().expect("float bits should fit in u64"));
+        let is_f32 = mem::size_of::<T>() == mem::size_of::<f32>() && mem::align_of::<T>() == mem::align_of::<f32>();
+        if is_f32 {
+            for value in slice {
+                let bits = value.to_f32().unwrap_or(f32::NAN).to_bits();
+                hasher.write_u32(bits);
+            }
+        } else {
+            for value in slice {
+                let bits = value.to_f64().unwrap_or(f64::NAN).to_bits();
+                hasher.write_u64(bits);
+            }
         }
     }
 
