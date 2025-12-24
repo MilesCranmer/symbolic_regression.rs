@@ -149,8 +149,8 @@ where
         let (der_before, der_rest) = der_scratch.split_at_mut(dst_start);
         let (dst_der, der_after) = der_rest.split_at_mut(slot_stride);
 
-        let mut args_refs: [SrcRef<'_, T>; D] = core::array::from_fn(|_| SrcRef::Const(T::zero()));
-        let mut dargs_refs: [SrcRef<'_, T>; D] = core::array::from_fn(|_| SrcRef::Const(T::zero()));
+        let mut args_refs: [SrcRef<'_, T>; D] = [SrcRef::Const(T::zero()); D];
+        let mut dargs_refs: [SrcRef<'_, T>; D] = [SrcRef::Const(T::zero()); D];
         for (j, (dst_a, dst_da)) in args_refs
             .iter_mut()
             .take(arity)
@@ -279,8 +279,8 @@ where
         let (grad_before, grad_rest) = grad_scratch.split_at_mut(grad_dst_start);
         let (dst_grad, grad_after) = grad_rest.split_at_mut(grad_stride);
 
-        let mut args_refs: [SrcRef<'_, T>; D] = core::array::from_fn(|_| SrcRef::Const(T::zero()));
-        let mut arg_grads: [GradRef<'_, T>; D] = core::array::from_fn(|_| GradRef::Zero);
+        let mut args_refs: [SrcRef<'_, T>; D] = [SrcRef::Const(T::zero()); D];
+        let mut arg_grads: [GradRef<'_, T>; D] = [GradRef::Zero; D];
         for (j, (dst_a, dst_ga)) in args_refs
             .iter_mut()
             .take(arity)

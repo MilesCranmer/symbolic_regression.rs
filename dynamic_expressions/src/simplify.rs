@@ -434,7 +434,7 @@ where
                     continue;
                 }
 
-                let mut vals: [T; D] = core::array::from_fn(|_| T::zero());
+                let mut vals: [T; D] = [T::zero(); D];
                 for (j, f) in children.iter().enumerate() {
                     vals[j] = f.const_value;
                 }
@@ -446,7 +446,7 @@ where
                 }
 
                 let mut out = [T::zero()];
-                let mut args: [SrcRef<'_, T>; D] = core::array::from_fn(|_| SrcRef::Const(T::zero()));
+                let mut args: [SrcRef<'_, T>; D] = [SrcRef::Const(T::zero()); D];
                 for j in 0..a {
                     args[j] = SrcRef::Const(vals[j]);
                 }
