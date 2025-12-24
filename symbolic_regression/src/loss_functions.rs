@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use dynamic_expressions::EvalOptions;
 use dynamic_expressions::operator_enum::scalar;
+use dynamic_expressions::utils::ZipEq;
 use ndarray::Array2;
 use num_traits::Float;
 
@@ -125,9 +126,8 @@ impl<T: Float, L: PointwiseLoss<T> + Send + Sync> LossFn<T> for MeanLoss<L> {
                 }
                 let n = T::from(y.len()).unwrap();
                 yhat.iter()
-                    .copied()
-                    .zip(y.iter().copied())
-                    .map(|(a, b)| self.0.point_loss(a, b))
+                    .zip_eq(y)
+                    .map(|(&a, &b)| self.0.point_loss(a, b))
                     .fold(T::zero(), |acc, v| acc + v)
                     / n
             }
@@ -138,10 +138,9 @@ impl<T: Float, L: PointwiseLoss<T> + Send + Sync> LossFn<T> for MeanLoss<L> {
                     return T::zero();
                 }
                 yhat.iter()
-                    .copied()
-                    .zip(y.iter().copied())
-                    .zip(w.iter().copied())
-                    .map(|((a, b), wi)| wi * self.0.point_loss(a, b))
+                    .zip_eq(y)
+                    .zip_eq(w)
+                    .map(|((&a, &b), &wi)| wi * self.0.point_loss(a, b))
                     .fold(T::zero(), |acc, v| acc + v)
                     / sum_w
             }
@@ -158,8 +157,8 @@ impl<T: Float, L: PointwiseLoss<T> + Send + Sync> LossFn<T> for MeanLoss<L> {
                     return;
                 }
                 let inv = T::from(y.len()).unwrap().recip();
-                for ((o, a), b) in out.iter_mut().zip(yhat.iter()).zip(y.iter()) {
-                    *o = inv * self.0.point_dloss_dyhat(*a, *b);
+                for ((o, &a), &b) in out.iter_mut().zip_eq(yhat).zip_eq(y) {
+                    *o = inv * self.0.point_dloss_dyhat(a, b);
                 }
             }
             Some(w) => {
@@ -170,8 +169,8 @@ impl<T: Float, L: PointwiseLoss<T> + Send + Sync> LossFn<T> for MeanLoss<L> {
                     return;
                 }
                 let inv = sum_w.recip();
-                for (((o, a), b), wi) in out.iter_mut().zip(yhat.iter()).zip(y.iter()).zip(w.iter()) {
-                    *o = (*wi) * inv * self.0.point_dloss_dyhat(*a, *b);
+                for (((o, &a), &b), &wi) in out.iter_mut().zip_eq(yhat).zip_eq(y).zip_eq(w) {
+                    *o = wi * inv * self.0.point_dloss_dyhat(a, b);
                 }
             }
         }
@@ -360,8 +359,8 @@ impl<T: Float> LossFn<T> for Rmse {
             None => {
                 let inv = T::from(y.len()).unwrap().recip();
                 let scale = inv / rmse;
-                for ((o, a), b) in out.iter_mut().zip(yhat.iter()).zip(y.iter()) {
-                    *o = scale * (*a - *b);
+                for ((o, &a), &b) in out.iter_mut().zip_eq(yhat).zip_eq(y) {
+                    *o = scale * (a - b);
                 }
             }
             Some(w) => {
@@ -372,8 +371,8 @@ impl<T: Float> LossFn<T> for Rmse {
                     return;
                 }
                 let scale = sum_w.recip() / rmse;
-                for (((o, a), b), wi) in out.iter_mut().zip(yhat.iter()).zip(y.iter()).zip(w.iter()) {
-                    *o = scale * (*wi) * (*a - *b);
+                for (((o, &a), &b), &wi) in out.iter_mut().zip_eq(yhat).zip_eq(y).zip_eq(w) {
+                    *o = scale * wi * (a - b);
                 }
             }
         }

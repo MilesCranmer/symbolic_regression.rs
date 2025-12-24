@@ -1,4 +1,5 @@
 use approx::assert_relative_eq;
+use dynamic_expressions::utils::ZipEq;
 use dynamic_expressions::{
     DiffContext, EvalOptions, GradContext, PNode, PostfixExpr, eval_diff_tree_array, eval_grad_tree_array,
     eval_tree_array,
@@ -74,7 +75,7 @@ pub fn finite_diff_dir(
     assert!(okp && okm);
     eplus
         .iter()
-        .zip(eminus.iter())
+        .zip_eq(&eminus)
         .map(|(a, b)| (a - b) / (2.0 * eps))
         .collect()
 }
@@ -82,7 +83,7 @@ pub fn finite_diff_dir(
 #[allow(dead_code)]
 pub fn assert_close_vec(a: &[f64], b: &[f64], tol: f64) {
     assert_eq!(a.len(), b.len());
-    for (&av, &bv) in a.iter().zip(b.iter()) {
+    for (&av, &bv) in a.iter().zip_eq(b) {
         assert_relative_eq!(av, bv, epsilon = tol, max_relative = tol);
     }
 }
@@ -109,7 +110,7 @@ pub fn grad_matches_diffs(expr: &PostfixExpr<f64, TestOps, 3>, x: &ArrayView2<'_
             let mut dctx = DiffContext::<f64, 3>::new(n_rows);
             let (_e, d, okd) = eval_diff_tree_array::<f64, TestOps, 3>(expr, *x, dir, &mut dctx, &opts);
             assert!(okd);
-            for (&gv, &dv) in grad.data[dir * n_rows..(dir + 1) * n_rows].iter().zip(d.iter()) {
+            for (&gv, dv) in grad.data[dir * n_rows..(dir + 1) * n_rows].iter().zip_eq(d) {
                 assert_relative_eq!(gv, dv, epsilon = 1e-6, max_relative = 1e-6);
             }
         }

@@ -1,6 +1,7 @@
 use std::ops::AddAssign;
 
 use dynamic_expressions::operator_enum::scalar;
+use dynamic_expressions::utils::ZipEq;
 use dynamic_expressions::{
     EvalOptions, GradContext, SubtreeCache, eval_grad_plan_array_into_cached, eval_plan_array_into_cached,
 };
@@ -145,7 +146,7 @@ impl<'a, T: Float + AddAssign, const D: usize> EvalWorkspace<'a, T, D> {
                 .dloss_dyhat
                 .iter()
                 .copied()
-                .zip(self.dy_dc_buf[base..base + n_rows].iter().copied())
+                .zip_eq(self.dy_dc_buf[base..base + n_rows].iter().copied())
                 .fold(T::zero(), |a, (dl, dc)| a + dl * dc);
             *gout = acc.to_f64().unwrap_or(f64::INFINITY);
         }
@@ -192,7 +193,7 @@ where
 {
     fn f_only(&mut self, x: &[f64], budget: &mut crate::optim::EvalBudget) -> Option<f64> {
         budget.f_calls += 1;
-        for (dst, &src) in self.expr.consts.iter_mut().zip(x.iter()) {
+        for (dst, &src) in self.expr.consts.iter_mut().zip_eq(x) {
             *dst = T::from_f64(src)?;
         }
         self.workspace.loss_only::<Ops>(self.plan, self.expr)
@@ -200,7 +201,7 @@ where
 
     fn fg(&mut self, x: &[f64], g_out: &mut [f64], budget: &mut crate::optim::EvalBudget) -> Option<f64> {
         budget.f_calls += 1;
-        for (dst, &src) in self.expr.consts.iter_mut().zip(x.iter()) {
+        for (dst, &src) in self.expr.consts.iter_mut().zip_eq(x) {
             *dst = T::from_f64(src)?;
         }
         self.workspace.loss_and_grad::<Ops>(self.plan, self.expr, g_out)
@@ -288,7 +289,7 @@ where
     }
 
     if best_f < baseline {
-        for (dst, &src) in member.expr.consts.iter_mut().zip(best_x.iter()) {
+        for (dst, &src) in member.expr.consts.iter_mut().zip_eq(&best_x) {
             *dst = T::from_f64(src).unwrap_or_else(T::zero);
         }
         let ok = member.evaluate(&dataset, options, evaluator);

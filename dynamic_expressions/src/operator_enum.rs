@@ -1056,7 +1056,7 @@ pub mod scalar {
             } else {
                 let mut vals: [T; A] = [T::zero(); A];
                 for (row, outv) in out.iter_mut().enumerate() {
-                    for (v, view) in vals.iter_mut().zip_eq(views.iter()) {
+                    for (v, view) in vals.iter_mut().zip_eq(views) {
                         *v = view.get(row);
                     }
                     *outv = eval(&vals);
@@ -1104,7 +1104,7 @@ pub mod scalar {
 
             let mut vals: [T; A] = [T::zero(); A];
             for (row, outv) in out.iter_mut().enumerate() {
-                for (v, view) in vals.iter_mut().zip_eq(views.iter()) {
+                for (v, view) in vals.iter_mut().zip_eq(views) {
                     *v = view.get(row);
                 }
                 *outv = Op::eval(&vals);
@@ -1134,10 +1134,10 @@ pub mod scalar {
             let dval_views: [ArgView<'_, T>; A] = make_arg_views(dargs);
 
             for ((row, outv), outd) in out_val.iter_mut().enumerate().zip_eq(out_der.iter_mut()) {
-                for (v, view) in vals.iter_mut().zip_eq(val_views.iter()) {
+                for (v, view) in vals.iter_mut().zip_eq(val_views) {
                     *v = view.get(row);
                 }
-                for (dv, view) in dvals.iter_mut().zip_eq(dval_views.iter()) {
+                for (dv, view) in dvals.iter_mut().zip_eq(dval_views) {
                     *dv = view.get(row);
                 }
                 let v = eval(&vals);
@@ -1181,10 +1181,10 @@ pub mod scalar {
             let dval_views: [ArgView<'_, T>; A] = make_arg_views(dargs);
 
             for ((row, outv), outd) in out_val.iter_mut().enumerate().zip_eq(out_der.iter_mut()) {
-                for (v, view) in vals.iter_mut().zip_eq(val_views.iter()) {
+                for (v, view) in vals.iter_mut().zip_eq(val_views) {
                     *v = view.get(row);
                 }
-                for (dv, view) in dvals.iter_mut().zip_eq(dval_views.iter()) {
+                for (dv, view) in dvals.iter_mut().zip_eq(dval_views) {
                     *dv = view.get(row);
                 }
                 let v = Op::eval(&vals);
@@ -1256,7 +1256,7 @@ pub mod scalar {
                 let mut vals: [T; A] = [T::zero(); A];
 
                 for (row, outv) in ctx.out_val.iter_mut().enumerate() {
-                    for (v, view) in vals.iter_mut().zip_eq(arg_views.iter()) {
+                    for (v, view) in vals.iter_mut().zip_eq(arg_views) {
                         *v = view.get(row);
                     }
                     *outv = eval(&vals);
@@ -1264,7 +1264,7 @@ pub mod scalar {
 
                 for (dir, grad_dir) in ctx.out_grad.chunks_mut(ctx.n_rows).enumerate().take(ctx.n_dir) {
                     for (row, outg) in grad_dir.iter_mut().enumerate() {
-                        for (v, view) in vals.iter_mut().zip_eq(arg_views.iter()) {
+                        for (v, view) in vals.iter_mut().zip_eq(arg_views) {
                             *v = view.get(row);
                         }
                         let mut g = T::zero();
@@ -1341,7 +1341,7 @@ pub mod scalar {
                 let mut vals: [T; A] = [T::zero(); A];
 
                 for (row, outv) in ctx.out_val.iter_mut().enumerate() {
-                    for (v, view) in vals.iter_mut().zip_eq(arg_views.iter()) {
+                    for (v, view) in vals.iter_mut().zip_eq(arg_views) {
                         *v = view.get(row);
                     }
                     *outv = Op::eval(&vals);
@@ -1349,7 +1349,7 @@ pub mod scalar {
 
                 for (dir, grad_dir) in ctx.out_grad.chunks_mut(ctx.n_rows).enumerate().take(ctx.n_dir) {
                     for (row, outg) in grad_dir.iter_mut().enumerate() {
-                        for (v, view) in vals.iter_mut().zip_eq(arg_views.iter()) {
+                        for (v, view) in vals.iter_mut().zip_eq(arg_views) {
                             *v = view.get(row);
                         }
                         let mut g = T::zero();

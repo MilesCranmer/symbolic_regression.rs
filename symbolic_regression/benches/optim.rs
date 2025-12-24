@@ -3,6 +3,7 @@ use core::marker::PhantomData;
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use dynamic_expressions::operator_enum::presets::BuiltinOpsF32;
 use dynamic_expressions::operator_enum::{builtin, scalar};
+use dynamic_expressions::utils::ZipEq;
 use ndarray::{Array1, Array2};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -127,7 +128,7 @@ fn bench_search(c: &mut Criterion) {
     group.sample_size(10);
     group.bench_function("equation_search", |b| {
         b.iter(|| {
-            for (dataset, options) in datasets.iter().zip(options.iter()) {
+            for (dataset, options) in datasets.iter().zip_eq(&options) {
                 let _ = equation_search::<T, Ops, D>(dataset, options);
             }
         })

@@ -4,6 +4,7 @@ use csv::ReaderBuilder;
 use dynamic_expressions::operator_enum::presets::BuiltinOpsF64;
 use dynamic_expressions::operator_registry::OpRegistry;
 use dynamic_expressions::strings::{StringTreeOptions, string_tree};
+use dynamic_expressions::utils::ZipEq;
 use dynamic_expressions::{EvalOptions, eval_plan_array_into};
 use ndarray::{Array1, Array2};
 use rand::SeedableRng;
@@ -578,7 +579,7 @@ fn compute_metrics(yhat: &[f64], dataset: &Dataset<f64>) -> WasmMetrics {
 
     match w {
         None => {
-            for (&yh, &yi) in yhat.iter().zip(y.iter()) {
+            for (&yh, &yi) in yhat.iter().zip_eq(y) {
                 let r = yh - yi;
                 let ar = r.abs();
                 mse += r * r;
@@ -596,7 +597,7 @@ fn compute_metrics(yhat: &[f64], dataset: &Dataset<f64>) -> WasmMetrics {
             }
         }
         Some(w) => {
-            for ((&yh, &yi), &wi) in yhat.iter().zip(y.iter()).zip(w.iter()) {
+            for ((&yh, &yi), &wi) in yhat.iter().zip_eq(y).zip_eq(w) {
                 let r = yh - yi;
                 let ar = r.abs();
                 sum_w += wi;
@@ -647,7 +648,7 @@ fn r2_and_corr(yhat: &[f64], y: &[f64], w: Option<&[f64]>) -> (f64, f64) {
             if sum_w == 0.0 {
                 0.0
             } else {
-                y.iter().zip(w.iter()).map(|(&yi, &wi)| yi * wi).sum::<f64>() / sum_w
+                y.iter().zip_eq(w).map(|(&yi, &wi)| yi * wi).sum::<f64>() / sum_w
             }
         }
     };
@@ -656,7 +657,7 @@ fn r2_and_corr(yhat: &[f64], y: &[f64], w: Option<&[f64]>) -> (f64, f64) {
     let mut sst = 0.0;
     match w {
         None => {
-            for (&yh, &yi) in yhat.iter().zip(y.iter()) {
+            for (&yh, &yi) in yhat.iter().zip_eq(y) {
                 let r = yh - yi;
                 sse += r * r;
                 let d = yi - y_mean;
@@ -664,7 +665,7 @@ fn r2_and_corr(yhat: &[f64], y: &[f64], w: Option<&[f64]>) -> (f64, f64) {
             }
         }
         Some(w) => {
-            for ((&yh, &yi), &wi) in yhat.iter().zip(y.iter()).zip(w.iter()) {
+            for ((&yh, &yi), &wi) in yhat.iter().zip_eq(y).zip_eq(w) {
                 let r = yh - yi;
                 sse += wi * r * r;
                 let d = yi - y_mean;
@@ -679,7 +680,7 @@ fn r2_and_corr(yhat: &[f64], y: &[f64], w: Option<&[f64]>) -> (f64, f64) {
     let mut cov = 0.0;
     let mut vy = 0.0;
     let mut vyh = 0.0;
-    for (&yh, &yi) in yhat.iter().zip(y.iter()) {
+    for (&yh, &yi) in yhat.iter().zip_eq(y) {
         let dyh = yh - yh_mean;
         let dy = yi - y_mean;
         cov += dyh * dy;

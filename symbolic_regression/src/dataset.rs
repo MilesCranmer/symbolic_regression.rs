@@ -1,6 +1,7 @@
 use std::hash::Hasher;
 use std::mem;
 
+use dynamic_expressions::utils::ZipEq;
 use ndarray::{Array1, Array2};
 use num_traits::Float;
 use rand::Rng;
@@ -139,7 +140,7 @@ impl<T: Float> Dataset<T> {
                 let sum_w = w.iter().copied().fold(T::zero(), |a, b| a + b);
                 y.iter()
                     .copied()
-                    .zip(w.iter().copied())
+                    .zip_eq(w.iter().copied())
                     .map(|(yi, wi)| yi * wi)
                     .fold(T::zero(), |a, b| a + b)
                     / sum_w

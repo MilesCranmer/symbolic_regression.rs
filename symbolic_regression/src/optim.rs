@@ -1,5 +1,7 @@
 //! Rust-only module (no direct Julia file): lightweight optimization routines.
 
+use dynamic_expressions::utils::ZipEq;
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct OptimOptions {
     pub iterations: usize,
@@ -62,11 +64,11 @@ pub(crate) fn inf_norm(v: &[f64]) -> f64 {
 }
 
 pub(crate) fn dot(a: &[f64], b: &[f64]) -> f64 {
-    a.iter().copied().zip(b.iter().copied()).map(|(x, y)| x * y).sum()
+    a.iter().copied().zip_eq(b.iter().copied()).map(|(x, y)| x * y).sum()
 }
 
 pub(crate) fn axpy_into(out: &mut [f64], x: &[f64], alpha: f64, s: &[f64]) {
-    for ((o, &xi), &si) in out.iter_mut().zip(x.iter()).zip(s.iter()) {
+    for ((o, &xi), &si) in out.iter_mut().zip_eq(x).zip_eq(s) {
         *o = xi + alpha * si;
     }
 }
@@ -78,7 +80,12 @@ pub(crate) fn matvec(out: &mut [f64], a: &[f64], x: &[f64]) {
 
     for i in 0..n {
         let row = &a[i * n..(i + 1) * n];
-        out[i] = row.iter().copied().zip(x.iter().copied()).map(|(aa, xx)| aa * xx).sum();
+        out[i] = row
+            .iter()
+            .copied()
+            .zip_eq(x.iter().copied())
+            .map(|(aa, xx)| aa * xx)
+            .sum();
     }
 }
 
@@ -273,7 +280,7 @@ pub(crate) fn bfgs_minimize(
             for i in 0..n {
                 inv_h[i * n + i] = 1.0;
             }
-            for (dst, &gi) in s.iter_mut().zip(g.iter()) {
+            for (dst, gi) in s.iter_mut().zip_eq(&g) {
                 *dst = -gi;
             }
             dphi0 = dot(&g, &s);
@@ -314,10 +321,10 @@ pub(crate) fn bfgs_minimize(
         }
 
         // BFGS update (inverse Hessian):
-        for ((dst, &xi), &xpi) in dx.iter_mut().zip(x.iter()).zip(x_prev.iter()) {
+        for ((dst, xi), xpi) in dx.iter_mut().zip_eq(&x).zip_eq(&x_prev) {
             *dst = xi - xpi;
         }
-        for ((dst, &gcur), &gpi) in dg.iter_mut().zip(g.iter()).zip(g_prev.iter()) {
+        for ((dst, gcur), gpi) in dg.iter_mut().zip_eq(&g).zip_eq(&g_prev) {
             *dst = gcur - gpi;
         }
 
