@@ -45,7 +45,6 @@ jobs:
       - name: Install Rust (rustfmt + clippy)
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: nightly-2025-12-19
           components: rustfmt, clippy
 
       - name: Rust cache
@@ -73,7 +72,6 @@ jobs:
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: nightly-2025-12-19
           components: rust-src
           target: wasm32-unknown-unknown
 
