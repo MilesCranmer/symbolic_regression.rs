@@ -238,7 +238,7 @@ where
         let (before, rest) = scratch_data.split_at_mut(dst_start);
         let (dst_buf, after) = rest.split_at_mut(slot_stride);
 
-        let mut args_refs: [SrcRef<'_, T>; D] = core::array::from_fn(|_| SrcRef::Const(T::zero()));
+        let mut args_refs: [SrcRef<'_, T>; D] = [SrcRef::Const(T::zero()); D];
         for (j, dst) in args_refs.iter_mut().take(arity).enumerate() {
             *dst = resolve_val_src(instr.args[j], x_data, n_rows, &expr.consts, dst_slot, before, after);
         }
@@ -344,7 +344,7 @@ where
             continue;
         }
 
-        let mut args_refs: [SrcRef<'_, T>; D] = core::array::from_fn(|_| SrcRef::Const(T::zero()));
+        let mut args_refs: [SrcRef<'_, T>; D] = [SrcRef::Const(T::zero()); D];
         for (j, dst) in args_refs.iter_mut().take(arity).enumerate() {
             *dst = resolve_val_src(instr.args[j], x_data, n_rows, &expr.consts, dst_slot, before, after);
         }
