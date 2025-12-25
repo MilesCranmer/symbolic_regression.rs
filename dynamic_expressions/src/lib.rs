@@ -10,6 +10,8 @@ pub mod node_utils;
 pub mod operator_enum;
 pub mod operator_registry;
 pub mod operators;
+#[cfg(feature = "proptest-utils")]
+pub mod proptest_utils;
 pub mod simplify;
 pub mod strings;
 pub mod utils;

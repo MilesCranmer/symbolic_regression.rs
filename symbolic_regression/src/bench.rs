@@ -2,6 +2,7 @@ use dynamic_expressions::expression::{Metadata, PostfixExpr};
 use dynamic_expressions::node::PNode;
 use dynamic_expressions::operator_enum::presets::BuiltinOpsF64;
 use dynamic_expressions::operator_registry::OpRegistry;
+use dynamic_expressions::utils::ZipEq;
 use ndarray::{Array1, Array2};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -26,7 +27,7 @@ impl Objective for QuadND<'_> {
     fn f_only(&mut self, x: &[f64], budget: &mut EvalBudget) -> Option<f64> {
         budget.f_calls += 1;
         let mut acc = 0.0;
-        for ((&xi, &ti), &wi) in x.iter().zip(self.target.iter()).zip(self.weight.iter()) {
+        for ((&xi, &ti), &wi) in x.iter().zip_eq(self.target).zip_eq(self.weight) {
             let d = xi - ti;
             acc += wi * d * d;
         }
@@ -38,9 +39,9 @@ impl Objective for QuadND<'_> {
         let mut acc = 0.0;
         for (((&xi, &ti), &wi), go) in x
             .iter()
-            .zip(self.target.iter())
-            .zip(self.weight.iter())
-            .zip(g_out.iter_mut())
+            .zip_eq(self.target)
+            .zip_eq(self.weight)
+            .zip_eq(g_out.iter_mut())
         {
             let d = xi - ti;
             acc += wi * d * d;

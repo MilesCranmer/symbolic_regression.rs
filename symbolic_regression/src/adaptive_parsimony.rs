@@ -1,5 +1,7 @@
 use std::cmp::Ordering;
 
+use dynamic_expressions::utils::ZipEq;
+
 #[derive(Clone, Debug)]
 pub struct RunningSearchStatistics {
     pub window_size: f64,
@@ -81,7 +83,7 @@ impl RunningSearchStatistics {
         if self.normalized_frequencies.len() != self.frequencies.len() {
             self.normalized_frequencies.resize(self.frequencies.len(), 0.0);
         }
-        for (o, &v) in self.normalized_frequencies.iter_mut().zip(self.frequencies.iter()) {
+        for (o, &v) in self.normalized_frequencies.iter_mut().zip_eq(&self.frequencies) {
             *o = v / sum;
         }
     }

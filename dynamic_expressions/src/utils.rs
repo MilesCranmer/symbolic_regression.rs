@@ -2,6 +2,23 @@ use std::collections::HashMap;
 
 use crate::expression::PostfixExpr;
 
+/// Extension trait that provides `.zip_eq()` - like `.zip()` but debug-asserts equal lengths.
+/// In release builds, this compiles to a plain `zip` with zero overhead.
+pub trait ZipEq: ExactSizeIterator + Sized {
+    #[inline]
+    fn zip_eq<B>(self, other: B) -> std::iter::Zip<Self, B::IntoIter>
+    where
+        B: IntoIterator,
+        B::IntoIter: ExactSizeIterator,
+    {
+        let other = other.into_iter();
+        debug_assert_eq!(self.len(), other.len(), "zip_eq: length mismatch");
+        self.zip(other)
+    }
+}
+
+impl<I: ExactSizeIterator> ZipEq for I {}
+
 #[derive(Clone, Debug)]
 pub struct ConstRef {
     pub const_indices: Vec<usize>,

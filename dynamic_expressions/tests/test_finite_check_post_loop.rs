@@ -1,10 +1,8 @@
 use std::hint::black_box;
 
 use dynamic_expressions::EvalOptions;
-use dynamic_expressions::operator_enum::builtin::Add;
-use dynamic_expressions::operator_enum::scalar::{
-    GradKernelCtx, GradRef, SrcRef, diff_apply, diff_nary, eval_apply, eval_nary, grad_apply, grad_nary,
-};
+use dynamic_expressions::operator_enum::builtin::{Add, BuiltinOp};
+use dynamic_expressions::operator_enum::scalar::{GradKernelCtx, GradRef, SrcRef, diff_nary, eval_nary, grad_nary};
 
 fn id_eval(args: &[f64; 1]) -> f64 {
     args[0]
@@ -69,7 +67,7 @@ fn eval_nary_const_only_nonfinite_sets_complete_false() {
 }
 
 #[test]
-fn eval_apply_checks_after_loop_when_no_early_exit() {
+fn eval_nary_checks_after_loop_when_no_early_exit_binary() {
     let xs = [1.0, f64::NAN, 3.0];
     let ys = [1.0, 2.0, 3.0];
     let args = [SrcRef::Slice(&xs), SrcRef::Slice(&ys)];
@@ -78,23 +76,33 @@ fn eval_apply_checks_after_loop_when_no_early_exit() {
         check_finite: true,
         early_exit: false,
     });
-    assert!(!eval_apply::<2, f64, Add>(&mut out, &args, &opts));
+    assert!(!eval_nary::<2, f64>(
+        <Add as BuiltinOp<f64, 2>>::eval,
+        &mut out,
+        &args,
+        &opts
+    ));
     assert!(out[1].is_nan());
 }
 
 #[test]
-fn eval_apply_const_only_check_finite_false_returns_true() {
+fn eval_nary_const_only_check_finite_false_returns_true_binary() {
     let args = [SrcRef::Const(1.0), SrcRef::Const(2.0)];
     let mut out = [0.0; 3];
     let opts = black_box(EvalOptions {
         check_finite: false,
         early_exit: true,
     });
-    assert!(eval_apply::<2, f64, Add>(&mut out, &args, &opts));
+    assert!(eval_nary::<2, f64>(
+        <Add as BuiltinOp<f64, 2>>::eval,
+        &mut out,
+        &args,
+        &opts
+    ));
 }
 
 #[test]
-fn diff_apply_checks_after_loop_when_no_early_exit() {
+fn diff_nary_checks_after_loop_when_no_early_exit_binary() {
     let xs = [1.0, f64::NAN, 3.0];
     let ys = [1.0, 2.0, 3.0];
     let dxs = [1.0, 1.0, 1.0];
@@ -107,7 +115,9 @@ fn diff_apply_checks_after_loop_when_no_early_exit() {
         check_finite: true,
         early_exit: false,
     });
-    assert!(!diff_apply::<2, f64, Add>(
+    assert!(!diff_nary::<2, f64>(
+        <Add as BuiltinOp<f64, 2>>::eval,
+        <Add as BuiltinOp<f64, 2>>::partial,
         &mut out_val,
         &mut out_der,
         &args,
@@ -165,7 +175,7 @@ fn diff_nary_checks_after_loop_when_no_early_exit() {
 }
 
 #[test]
-fn diff_apply_no_checks_returns_true() {
+fn diff_nary_no_checks_returns_true_binary() {
     let xs = [1.0, f64::NAN, 3.0];
     let ys = [1.0, 2.0, 3.0];
     let dxs = [1.0, 1.0, 1.0];
@@ -178,7 +188,9 @@ fn diff_apply_no_checks_returns_true() {
         check_finite: false,
         early_exit: true,
     });
-    assert!(diff_apply::<2, f64, Add>(
+    assert!(diff_nary::<2, f64>(
+        <Add as BuiltinOp<f64, 2>>::eval,
+        <Add as BuiltinOp<f64, 2>>::partial,
         &mut out_val,
         &mut out_der,
         &args,
@@ -199,15 +211,19 @@ fn grad_apply_checks_after_loop_when_no_early_exit() {
         check_finite: true,
         early_exit: false,
     });
-    assert!(!grad_apply::<2, f64, Add>(GradKernelCtx {
-        out_val: &mut out_val,
-        out_grad: &mut out_grad,
-        args: &args,
-        arg_grads: &arg_grads,
-        n_dir: 1,
-        n_rows: 2,
-        opts: &opts,
-    }));
+    assert!(!grad_nary::<2, f64>(
+        Add::eval,
+        Add::partial,
+        GradKernelCtx {
+            out_val: &mut out_val,
+            out_grad: &mut out_grad,
+            args: &args,
+            arg_grads: &arg_grads,
+            n_dir: 1,
+            n_rows: 2,
+            opts: &opts,
+        }
+    ));
     assert!(out_val[1].is_nan());
 }
 
@@ -223,15 +239,19 @@ fn grad_apply_no_checks_returns_true() {
         check_finite: false,
         early_exit: true,
     });
-    assert!(grad_apply::<2, f64, Add>(GradKernelCtx {
-        out_val: &mut out_val,
-        out_grad: &mut out_grad,
-        args: &args,
-        arg_grads: &arg_grads,
-        n_dir: 1,
-        n_rows: 2,
-        opts: &opts,
-    }));
+    assert!(grad_nary::<2, f64>(
+        Add::eval,
+        Add::partial,
+        GradKernelCtx {
+            out_val: &mut out_val,
+            out_grad: &mut out_grad,
+            args: &args,
+            arg_grads: &arg_grads,
+            n_dir: 1,
+            n_rows: 2,
+            opts: &opts,
+        }
+    ));
 }
 
 #[test]

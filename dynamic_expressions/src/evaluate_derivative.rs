@@ -1,11 +1,12 @@
 use ndarray::{Array2, ArrayView2};
 use num_traits::Float;
 
-use crate::compile::{EvalPlan, compile_plan};
+use crate::compile::{EvalPlan, build_node_hash, compile_plan};
 use crate::evaluate::{EvalOptions, resolve_der_src, resolve_grad_src, resolve_val_src};
 use crate::expression::PostfixExpr;
 use crate::node::Src;
 use crate::operator_enum::scalar::{DiffKernelCtx, GradKernelCtx, GradRef, OpId, ScalarOpSet, SrcRef};
+use crate::utils::ZipEq;
 
 #[derive(Debug)]
 pub struct DiffContext<T: Float, const D: usize> {
@@ -112,10 +113,10 @@ where
     let n_rows = x_columns.ncols();
     let n_features = x_columns.nrows();
 
-    let needs_recompile = ctx.plan.is_none()
-        || ctx.plan_nodes_len != expr.nodes.len()
+    let needs_recompile = ctx.plan_nodes_len != expr.nodes.len()
         || ctx.plan_n_consts != expr.consts.len()
-        || ctx.plan_n_features != n_features;
+        || ctx.plan_n_features != n_features
+        || ctx.plan.as_ref().is_none_or(|p| p.hash != build_node_hash(&expr.nodes));
     if needs_recompile {
         ctx.plan = Some(compile_plan::<D>(&expr.nodes, n_features, expr.consts.len()));
         ctx.plan_nodes_len = expr.nodes.len();
@@ -149,12 +150,12 @@ where
         let (der_before, der_rest) = der_scratch.split_at_mut(dst_start);
         let (dst_der, der_after) = der_rest.split_at_mut(slot_stride);
 
-        let mut args_refs: [SrcRef<'_, T>; D] = core::array::from_fn(|_| SrcRef::Const(T::zero()));
-        let mut dargs_refs: [SrcRef<'_, T>; D] = core::array::from_fn(|_| SrcRef::Const(T::zero()));
+        let mut args_refs: [SrcRef<'_, T>; D] = [SrcRef::Const(T::zero()); D];
+        let mut dargs_refs: [SrcRef<'_, T>; D] = [SrcRef::Const(T::zero()); D];
         for (j, (dst_a, dst_da)) in args_refs
             .iter_mut()
             .take(arity)
-            .zip(dargs_refs.iter_mut().take(arity))
+            .zip_eq(dargs_refs.iter_mut().take(arity))
             .enumerate()
         {
             *dst_a = resolve_val_src(
@@ -240,10 +241,11 @@ where
     let n_rows = x_columns.ncols();
     let n_dir = if variable { x_columns.nrows() } else { expr.consts.len() };
 
-    let needs_recompile = ctx.plan.is_none()
-        || ctx.plan_nodes_len != expr.nodes.len()
+    let needs_recompile = ctx.plan_nodes_len != expr.nodes.len()
         || ctx.plan_n_consts != expr.consts.len()
-        || ctx.plan_n_features != x_columns.nrows();
+        || ctx.plan_n_features != x_columns.nrows()
+        || ctx.plan.as_ref().is_none_or(|p| p.hash != build_node_hash(&expr.nodes));
+
     if needs_recompile {
         ctx.plan = Some(compile_plan::<D>(&expr.nodes, x_columns.nrows(), expr.consts.len()));
         ctx.plan_nodes_len = expr.nodes.len();
@@ -279,12 +281,12 @@ where
         let (grad_before, grad_rest) = grad_scratch.split_at_mut(grad_dst_start);
         let (dst_grad, grad_after) = grad_rest.split_at_mut(grad_stride);
 
-        let mut args_refs: [SrcRef<'_, T>; D] = core::array::from_fn(|_| SrcRef::Const(T::zero()));
-        let mut arg_grads: [GradRef<'_, T>; D] = core::array::from_fn(|_| GradRef::Zero);
+        let mut args_refs: [SrcRef<'_, T>; D] = [SrcRef::Const(T::zero()); D];
+        let mut arg_grads: [GradRef<'_, T>; D] = [GradRef::Zero; D];
         for (j, (dst_a, dst_ga)) in args_refs
             .iter_mut()
             .take(arity)
-            .zip(arg_grads.iter_mut().take(arity))
+            .zip_eq(arg_grads.iter_mut().take(arity))
             .enumerate()
         {
             *dst_a = resolve_val_src(

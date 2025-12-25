@@ -54,6 +54,8 @@ criterion = "0.7"
 proptest = "1"
 rust_xlsxwriter = "0.92"
 tempfile = "3"
+dynamic_expressions = { path = "../dynamic_expressions", default-features = false, features = ["proptest-utils"] }
+
 
 [[bin]]
 name = "symreg"
