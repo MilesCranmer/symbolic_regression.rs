@@ -334,7 +334,7 @@ pub fn rotate_tree_in_place<T, Ops, const D: usize, R: Rng>(rng: &mut R, expr: &
     }
     let pivot_children = child_ranges(&sizes, pivot_root_idx, pivot_arity);
 
-    let grandchild_pos = rng.random_range(0..pivot_arity.saturating_sub(1).max(1));
+    let grandchild_pos = rng.random_range(0..pivot_arity);
     let grandchild = pivot_children[grandchild_pos];
 
     let (sub_start, sub_end) = node_utils::subtree_range(&sizes, root_idx);
