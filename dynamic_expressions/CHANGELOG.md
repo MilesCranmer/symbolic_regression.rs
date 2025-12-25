@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.8.0](https://github.com/astroautomata/symbolic_regression.rs/compare/dynamic_expressions-v0.7.0...dynamic_expressions-v0.8.0) (2025-12-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* various improvements for speed
+
+### Features
+
+* create proptest utils ([60495db](https://github.com/astroautomata/symbolic_regression.rs/commit/60495db79f815d196c21b7fb772f426a70580cef))
+* faster gradients ([a87bd12](https://github.com/astroautomata/symbolic_regression.rs/commit/a87bd12486c5324e7f20b66df4b6fec77a91422a))
+* internal safe zip function ([d7d9c0d](https://github.com/astroautomata/symbolic_regression.rs/commit/d7d9c0d357952b34cd1cd5dd5b6b0fc8b1375db8))
+* rayon parallelism for both local and web ([e3a1831](https://github.com/astroautomata/symbolic_regression.rs/commit/e3a1831d5b4758365630a0af0140c9316650024d))
+* rayon parallelism for both local and web ([987915a](https://github.com/astroautomata/symbolic_regression.rs/commit/987915a6472823db03449f3b4fdd1802f237679d))
+* various improvements for speed ([7157a83](https://github.com/astroautomata/symbolic_regression.rs/commit/7157a835b589eeddda28abf7c49b57c23706704a))
+* zero init method ([e56f516](https://github.com/astroautomata/symbolic_regression.rs/commit/e56f516d4c784ae6794afe882d0740de16c9d9a5))
+
+
+### Bug Fixes
+
+* early-exit outputs, wasm search state ([600281f](https://github.com/astroautomata/symbolic_regression.rs/commit/600281f97b547c6b62fa5d38b3914bda8e57c06d))
+* ensure function specialization ([0abf595](https://github.com/astroautomata/symbolic_regression.rs/commit/0abf5954384bb4bbfbfa482092db9da820172f96))
+* recompile upon different hash ([2f6915d](https://github.com/astroautomata/symbolic_regression.rs/commit/2f6915dad75e481e0488831a8b5e6785640b4d19))
+
 ## [0.7.0](https://github.com/astroautomata/symbolic_regression.rs/compare/dynamic_expressions-v0.6.0...dynamic_expressions-v0.7.0) (2025-12-19)
 
 

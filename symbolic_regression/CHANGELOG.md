@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.9.0](https://github.com/astroautomata/symbolic_regression.rs/compare/symbolic_regression-v0.8.0...symbolic_regression-v0.9.0) (2025-12-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* various improvements for speed
+
+### Features
+
+* faster gradients ([a87bd12](https://github.com/astroautomata/symbolic_regression.rs/commit/a87bd12486c5324e7f20b66df4b6fec77a91422a))
+* mutation optimization ([491b23c](https://github.com/astroautomata/symbolic_regression.rs/commit/491b23cc2fb49da29b1b64de587cca3497ebd9ec))
+* rayon parallelism for both local and web ([e3a1831](https://github.com/astroautomata/symbolic_regression.rs/commit/e3a1831d5b4758365630a0af0140c9316650024d))
+* rayon parallelism for both local and web ([987915a](https://github.com/astroautomata/symbolic_regression.rs/commit/987915a6472823db03449f3b4fdd1802f237679d))
+* various improvements for speed ([7157a83](https://github.com/astroautomata/symbolic_regression.rs/commit/7157a835b589eeddda28abf7c49b57c23706704a))
+
+
+### Bug Fixes
+
+* additional similarities to SR.jl ([1ebb838](https://github.com/astroautomata/symbolic_regression.rs/commit/1ebb838e4701853372d49b17a0217157f0cf3717))
+* correct baseline loss ([bccc349](https://github.com/astroautomata/symbolic_regression.rs/commit/bccc349cf83669564b1cf69d019f71123f4379a3))
+* early-exit outputs, wasm search state ([600281f](https://github.com/astroautomata/symbolic_regression.rs/commit/600281f97b547c6b62fa5d38b3914bda8e57c06d))
+* match SR.jl migration logic ([efb3c96](https://github.com/astroautomata/symbolic_regression.rs/commit/efb3c961d0366889290fcbb178d2ab9a6a1b2c76))
+* range clamping of pivot pos ([53bef2c](https://github.com/astroautomata/symbolic_regression.rs/commit/53bef2c552d9867f295f07c2ce63e8c9859170e3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * dynamic_expressions bumped from 0.7.0 to 0.8.0
+
 ## [0.8.0](https://github.com/astroautomata/symbolic_regression.rs/compare/symbolic_regression-v0.7.0...symbolic_regression-v0.8.0) (2025-12-19)
 
 

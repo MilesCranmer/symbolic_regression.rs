@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.6.0](https://github.com/astroautomata/symbolic_regression.rs/compare/symbolic_regression_wasm-v0.5.0...symbolic_regression_wasm-v0.6.0) (2025-12-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* various improvements for speed
+* wasm with atomics
+
+### Features
+
+* faster gradients ([a87bd12](https://github.com/astroautomata/symbolic_regression.rs/commit/a87bd12486c5324e7f20b66df4b6fec77a91422a))
+* make threading more robust on web ([4dc4659](https://github.com/astroautomata/symbolic_regression.rs/commit/4dc46594bcacda1972dd9e796e18c1536fa19ab0))
+* rayon parallelism for both local and web ([e3a1831](https://github.com/astroautomata/symbolic_regression.rs/commit/e3a1831d5b4758365630a0af0140c9316650024d))
+* rayon parallelism for both local and web ([987915a](https://github.com/astroautomata/symbolic_regression.rs/commit/987915a6472823db03449f3b4fdd1802f237679d))
+* various improvements for speed ([7157a83](https://github.com/astroautomata/symbolic_regression.rs/commit/7157a835b589eeddda28abf7c49b57c23706704a))
+
+
+### Bug Fixes
+
+* wasm rust flags ([b533e74](https://github.com/astroautomata/symbolic_regression.rs/commit/b533e7438e0793bdb4b9bcaec0d6d1fbc05e31da))
+
+
+### Build System
+
+* wasm with atomics ([8495251](https://github.com/astroautomata/symbolic_regression.rs/commit/84952515ce1f684d78c7a9f31484688723a930e8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * symbolic_regression bumped from 0.8.0 to 0.9.0
+    * dynamic_expressions bumped from 0.7.0 to 0.8.0
+
 ## [0.5.0](https://github.com/astroautomata/symbolic_regression.rs/compare/symbolic_regression_wasm-v0.4.1...symbolic_regression_wasm-v0.5.0) (2025-12-19)
 
 
