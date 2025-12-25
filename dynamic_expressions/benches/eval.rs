@@ -199,6 +199,17 @@ where
         })
     });
 
+    group.bench_function(criterion::BenchmarkId::from_parameter("compress_constants"), |b| {
+        b.iter_with_setup(
+            || trees.clone(),
+            |mut cloned_trees| {
+                for tree in &mut cloned_trees {
+                    let _ = dynamic_expressions::compress_constants(tree);
+                }
+            },
+        )
+    });
+
     group.finish();
 }
 

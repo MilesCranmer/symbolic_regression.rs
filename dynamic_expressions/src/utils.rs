@@ -1,6 +1,5 @@
-use std::collections::HashMap;
-
 use crate::expression::PostfixExpr;
+use crate::node::PNode;
 
 /// Extension trait that provides `.zip_eq()` - like `.zip()` but debug-asserts equal lengths.
 /// In release builds, this compiles to a plain `zip` with zero overhead.
@@ -45,38 +44,28 @@ pub fn set_scalar_constants<T, Ops, const D: usize>(
 }
 
 pub fn compress_constants<T: Clone, Ops, const D: usize>(expr: &mut PostfixExpr<T, Ops, D>) -> bool {
-    let mut remap: HashMap<u16, u16> = HashMap::new();
-    let mut new_consts: Vec<T> = Vec::new();
+    const SENTINEL: u16 = u16::MAX;
+    let mut remap: Vec<u16> = vec![SENTINEL; expr.consts.len()];
+    let mut new_consts: Vec<T> = Vec::with_capacity(expr.consts.len());
     let mut changed = false;
+
     for node in &mut expr.nodes {
-        let crate::node::PNode::Const { idx } = node else {
-            continue;
-        };
-
-        let old_idx = *idx;
-        let new_idx = if let Some(&v) = remap.get(idx) {
-            v
-        } else {
-            let old_i = *idx as usize;
-            let new_i = new_consts.len();
-            if new_i > u16::MAX as usize {
-                // Preserve current expression; this is a hard limit in the node encoding.
-                return false;
+        if let PNode::Const { idx } = node {
+            let slot = &mut remap[*idx as usize];
+            if *slot == SENTINEL {
+                let new_idx = new_consts.len();
+                if new_idx >= SENTINEL as usize {
+                    panic!("too many constants");
+                }
+                *slot = new_idx as u16;
+                new_consts.push(expr.consts[*idx as usize].clone());
             }
-            new_consts.push(expr.consts[old_i].clone());
-            let v = new_i as u16;
-            remap.insert(*idx, v);
-            v
-        };
-
-        *idx = new_idx;
-        if new_idx != old_idx {
-            changed = true;
+            changed |= *idx != *slot;
+            *idx = *slot;
         }
     }
-    if new_consts.len() != expr.consts.len() {
-        changed = true;
-    }
+
+    changed |= new_consts.len() != expr.consts.len();
     expr.consts = new_consts;
     changed
 }
