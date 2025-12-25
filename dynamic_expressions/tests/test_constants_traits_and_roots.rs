@@ -1,8 +1,10 @@
 mod common;
 
 use common::*;
+use dynamic_expressions::operator_enum::builtin;
+use dynamic_expressions::operator_enum::scalar::HasOp;
 use dynamic_expressions::{
-    DiffContext, EvalContext, EvalOptions, GradContext, PNode, PostfixExpression, eval_diff_tree_array,
+    DiffContext, EvalContext, EvalOptions, GradContext, PNode, PostfixExpr, PostfixExpression, eval_diff_tree_array,
     eval_grad_tree_array, eval_tree_array,
 };
 use ndarray::Array2;
@@ -191,13 +193,128 @@ fn reuse_contexts_hits_cached_plan_paths() {
     let (_e1, d1, ok1) = eval_diff_tree_array::<f64, TestOps, 3>(&expr, x_view, 0, &mut dctx, &opts);
     assert!(ok0 && ok1);
     assert_eq!(d0, d1);
+}
 
-    // Grad: reuse GradContext.
-    let mut gctx = GradContext::<f64, 3>::new(x_view.ncols());
-    let (_e0, g0, ok0) = eval_grad_tree_array::<f64, TestOps, 3>(&expr, x_view, true, &mut gctx, &opts);
-    let (_e1, g1, ok1) = eval_grad_tree_array::<f64, TestOps, 3>(&expr, x_view, true, &mut gctx, &opts);
-    assert!(ok0 && ok1);
-    assert_eq!(g0.data, g1.data);
+#[test]
+fn diff_context_reuse_recompiles_on_expr_change_same_len() {
+    let expr_add = var(0) + var(1);
+    let expr_mul = var(0) * var(1);
+    let (_x_data, x) = make_x(2, 11);
+    let x = x.as_standard_layout().to_owned();
+    let opts = EvalOptions {
+        check_finite: true,
+        early_exit: true,
+    };
+
+    let mut dctx = DiffContext::<f64, 3>::new(x.ncols());
+    let (_e0, _d0, ok0) = eval_diff_tree_array::<f64, TestOps, 3>(&expr_add, x.view(), 0, &mut dctx, &opts);
+    assert!(ok0);
+
+    let (eval_reuse, diff_reuse, ok1) =
+        eval_diff_tree_array::<f64, TestOps, 3>(&expr_mul, x.view(), 0, &mut dctx, &opts);
+    assert!(ok1);
+
+    let mut fresh = DiffContext::<f64, 3>::new(x.ncols());
+    let (eval_fresh, diff_fresh, ok_fresh) =
+        eval_diff_tree_array::<f64, TestOps, 3>(&expr_mul, x.view(), 0, &mut fresh, &opts);
+    assert!(ok_fresh);
+
+    assert_close_vec(&eval_reuse, &eval_fresh, 1e-12);
+    assert_close_vec(&diff_reuse, &diff_fresh, 1e-12);
+}
+
+#[test]
+fn grad_context_reuse_with_new_inputs_matches_fresh() {
+    let expr = expr_readme_like();
+    let (_x0, x0) = make_x(2, 23);
+    let mut x1 = x0.to_owned();
+    x1.map_inplace(|v| *v += 0.123);
+    let x0 = x0.as_standard_layout().to_owned();
+    let x1 = x1.as_standard_layout().to_owned();
+    let opts = EvalOptions {
+        check_finite: true,
+        early_exit: true,
+    };
+
+    let mut gctx = GradContext::<f64, 3>::new(x0.ncols());
+    let (_e0, _g0, ok0) = eval_grad_tree_array::<f64, TestOps, 3>(&expr, x0.view(), true, &mut gctx, &opts);
+    assert!(ok0);
+
+    let (eval_reuse, grad_reuse, ok1) =
+        eval_grad_tree_array::<f64, TestOps, 3>(&expr, x1.view(), true, &mut gctx, &opts);
+    assert!(ok1);
+
+    let mut fresh = GradContext::<f64, 3>::new(x1.ncols());
+    let (eval_fresh, grad_fresh, ok_fresh) =
+        eval_grad_tree_array::<f64, TestOps, 3>(&expr, x1.view(), true, &mut fresh, &opts);
+    assert!(ok_fresh);
+
+    assert_close_vec(&eval_reuse, &eval_fresh, 1e-12);
+    assert_close_vec(&grad_reuse.data, &grad_fresh.data, 1e-12);
+}
+
+#[test]
+fn grad_context_reuse_recompiles_on_expr_change_same_len() {
+    let expr_add = var(0) + var(1);
+    let expr_mul = var(0) * var(1);
+    let (_x_data, x) = make_x(2, 11);
+    let x = x.as_standard_layout().to_owned();
+    let opts = EvalOptions {
+        check_finite: true,
+        early_exit: true,
+    };
+
+    let mut gctx = GradContext::<f64, 3>::new(x.ncols());
+    let (_e0, _g0, ok0) = eval_grad_tree_array::<f64, TestOps, 3>(&expr_add, x.view(), true, &mut gctx, &opts);
+    assert!(ok0);
+
+    let (eval_reuse, grad_reuse, ok1) =
+        eval_grad_tree_array::<f64, TestOps, 3>(&expr_mul, x.view(), true, &mut gctx, &opts);
+    assert!(ok1);
+
+    let mut fresh = GradContext::<f64, 3>::new(x.ncols());
+    let (eval_fresh, grad_fresh, ok_fresh) =
+        eval_grad_tree_array::<f64, TestOps, 3>(&expr_mul, x.view(), true, &mut fresh, &opts);
+    assert!(ok_fresh);
+
+    assert_close_vec(&eval_reuse, &eval_fresh, 1e-12);
+    assert_close_vec(&grad_reuse.data, &grad_fresh.data, 1e-12);
+}
+
+#[test]
+fn grad_context_reuse_switches_variable_flag_with_equal_dir() {
+    let add_op = <TestOps as HasOp<builtin::Add, 2>>::ID;
+    let expr = PostfixExpr::<f64, TestOps, 3>::new(
+        vec![
+            PNode::Var { feature: 0 },
+            PNode::Const { idx: 1 },
+            PNode::Op { arity: 2, op: add_op },
+        ],
+        vec![0.25, 0.75],
+        Default::default(),
+    );
+
+    let (_x_data, x) = make_x(2, 9);
+    let x = x.as_standard_layout().to_owned();
+    let n_rows = x.ncols();
+    let opts = EvalOptions {
+        check_finite: true,
+        early_exit: true,
+    };
+
+    let mut gctx = GradContext::<f64, 3>::new(n_rows);
+    let (_e_var, grad_var, ok_var) = eval_grad_tree_array::<f64, TestOps, 3>(&expr, x.view(), true, &mut gctx, &opts);
+    assert!(ok_var);
+    let (_e_const, grad_const, ok_const) =
+        eval_grad_tree_array::<f64, TestOps, 3>(&expr, x.view(), false, &mut gctx, &opts);
+    assert!(ok_const);
+
+    let ones = vec![1.0; n_rows];
+    let zeros = vec![0.0; n_rows];
+    assert_close_vec(&grad_var.data[..n_rows], &ones, 1e-12);
+    assert_close_vec(&grad_var.data[n_rows..(2 * n_rows)], &zeros, 1e-12);
+    assert_close_vec(&grad_const.data[..n_rows], &zeros, 1e-12);
+    assert_close_vec(&grad_const.data[n_rows..(2 * n_rows)], &ones, 1e-12);
 }
 
 #[test]

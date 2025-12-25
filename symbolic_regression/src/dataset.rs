@@ -52,9 +52,7 @@ impl<T: Float> Dataset<T> {
     ) -> Self {
         let x = x.as_standard_layout().to_owned();
         let (n_features, n_rows) = x.dim();
-
         assert_eq!(y.len(), n_rows);
-
         let weights = weights.inspect(|w| assert_eq!(w.len(), n_rows));
 
         let avg_y = avg_y
@@ -105,7 +103,6 @@ impl<T: Float> Dataset<T> {
         }
         hasher.finish()
     }
-
     pub fn new(x: Array2<T>, y: Array1<T>) -> Self {
         Self::build_dataset(x, y, None, Vec::new(), None)
     }

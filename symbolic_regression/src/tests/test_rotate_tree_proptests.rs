@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use dynamic_expressions::expression::{Metadata, PostfixExpr};
 use dynamic_expressions::node::PNode;
+use dynamic_expressions::proptest_utils;
 use proptest::prelude::*;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -11,28 +12,6 @@ use crate::mutation_functions::rotate_tree_in_place;
 const N_FEATURES: usize = 5;
 const N_CONSTS: usize = 3;
 const D_TEST: usize = 3;
-
-#[derive(Clone, Debug)]
-enum GenTree {
-    Var(u16),
-    Const(u16),
-    Op { arity: u8, op: u16, children: Vec<GenTree> },
-}
-
-impl GenTree {
-    fn to_postfix(&self, out: &mut Vec<PNode>) {
-        match self {
-            GenTree::Var(feature) => out.push(PNode::Var { feature: *feature }),
-            GenTree::Const(idx) => out.push(PNode::Const { idx: *idx }),
-            GenTree::Op { arity, op, children } => {
-                for c in children {
-                    c.to_postfix(out);
-                }
-                out.push(PNode::Op { arity: *arity, op: *op });
-            }
-        }
-    }
-}
 
 fn node_multiset(nodes: &[PNode]) -> BTreeMap<(u8, u16, u16), usize> {
     // (tag, a, b) -> count, where:
@@ -51,41 +30,58 @@ fn node_multiset(nodes: &[PNode]) -> BTreeMap<(u8, u16, u16), usize> {
     m
 }
 
-fn arb_subtree() -> impl Strategy<Value = GenTree> {
-    let leaf = prop_oneof![
-        (0u16..(N_FEATURES as u16)).prop_map(GenTree::Var),
-        (0u16..(N_CONSTS as u16)).prop_map(GenTree::Const),
-    ];
-
-    leaf.prop_recursive(6, 32, 10, |inner| {
-        prop_oneof![
-            (Just(1u8), 0u16..20u16, prop::collection::vec(inner.clone(), 1))
-                .prop_map(|(arity, op, children)| GenTree::Op { arity, op, children }),
-            (Just(2u8), 0u16..20u16, prop::collection::vec(inner.clone(), 2))
-                .prop_map(|(arity, op, children)| GenTree::Op { arity, op, children }),
-            (Just(3u8), 0u16..20u16, prop::collection::vec(inner, 3)).prop_map(|(arity, op, children)| GenTree::Op {
-                arity,
-                op,
-                children
-            }),
-        ]
-    })
-}
-
 fn arb_rotatable_tree_nodes() -> impl Strategy<Value = Vec<PNode>> {
-    // Start with a valid tree, then filter to ones our implementation can rotate.
-    // (We prioritize simpler test code over generator efficiency.)
-    arb_subtree()
-        .prop_map(|t| {
-            let mut nodes = Vec::new();
-            t.to_postfix(&mut nodes);
-            nodes
-        })
-        .prop_filter("rotatable tree", |nodes| {
-            let mut expr = PostfixExpr::<f64, (), D_TEST>::new(nodes.clone(), vec![0.0; N_CONSTS], Metadata::default());
-            let mut rng = StdRng::seed_from_u64(0);
-            rotate_tree_in_place(&mut rng, &mut expr)
-        })
+    let op_ids: Vec<u16> = (0u16..20u16).collect();
+    (1usize..=D_TEST).prop_flat_map(move |root_arity| {
+        let op_ids = op_ids.clone();
+        (
+            Just(root_arity),
+            0usize..root_arity,
+            1usize..=D_TEST,
+            prop::sample::select(op_ids.clone()),
+            prop::sample::select(op_ids.clone()),
+        )
+            .prop_flat_map(move |(root_arity, pivot_pos, pivot_arity, op_root, op_pivot)| {
+                let pivot_children = prop::collection::vec(
+                    proptest_utils::arb_shallow_postfix_nodes(N_FEATURES, N_CONSTS, &op_ids, &op_ids, true),
+                    pivot_arity,
+                );
+                let other_children = prop::collection::vec(
+                    proptest_utils::arb_shallow_postfix_nodes(N_FEATURES, N_CONSTS, &op_ids, &op_ids, true),
+                    root_arity - 1,
+                );
+                (
+                    Just((root_arity, pivot_pos, pivot_arity, op_root, op_pivot)),
+                    pivot_children,
+                    other_children,
+                )
+            })
+            .prop_map(
+                |((root_arity, pivot_pos, pivot_arity, op_root, op_pivot), pivot_children, other_children)| {
+                    let mut nodes = Vec::new();
+                    let mut other_iter = other_children.into_iter();
+                    for j in 0..root_arity {
+                        if j == pivot_pos {
+                            for child in &pivot_children {
+                                nodes.extend_from_slice(child);
+                            }
+                            nodes.push(PNode::Op {
+                                arity: pivot_arity as u8,
+                                op: op_pivot,
+                            });
+                        } else {
+                            let child = other_iter.next().expect("missing non-pivot child");
+                            nodes.extend(child);
+                        }
+                    }
+                    nodes.push(PNode::Op {
+                        arity: root_arity as u8,
+                        op: op_root,
+                    });
+                    nodes
+                },
+            )
+    })
 }
 
 #[test]
@@ -121,13 +117,6 @@ fn rotate_tree_supports_non_binary_arity() {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig {
-        // Rotatable trees can be somewhat rare under a generic tree generator.
-        // Increase the global reject budget so we don't flake.
-        max_global_rejects: 100_000,
-        .. ProptestConfig::default()
-    })]
-
     #[test]
     fn rotate_tree_in_place_preserves_invariants(
         nodes in arb_rotatable_tree_nodes(),

@@ -828,7 +828,6 @@ pub mod scalar {
 
         use super::{__src_val, ArgView, GradKernelCtx, GradRef, SrcRef, grad_at};
         use crate::evaluate::EvalOptions;
-        use crate::operator_enum::builtin::BuiltinOp;
         use crate::utils::ZipEq;
 
         fn __all_finite<T: Float>(vals: &[T]) -> bool {
@@ -1028,7 +1027,7 @@ pub mod scalar {
         }
 
         pub fn eval_nary<const A: usize, T: Float>(
-            eval: fn(&[T; A]) -> T,
+            eval: impl Copy + Fn(&[T; A]) -> T,
             out: &mut [T],
             args: &[SrcRef<'_, T>],
             opts: &EvalOptions,
@@ -1050,9 +1049,9 @@ pub mod scalar {
             let views: [ArgView<'_, T>; A] = make_arg_views(args);
 
             if A == 1 {
-                eval_unary_loop(out, views[0], |a| eval(&vals1(a)));
+                eval_unary_loop(out, views[0], move |a| eval(&vals1(a)));
             } else if A == 2 {
-                eval_binary_loop(out, views[0], views[1], |a, b| eval(&vals2(a, b)));
+                eval_binary_loop(out, views[0], views[1], move |a, b| eval(&vals2(a, b)));
             } else {
                 let mut vals: [T; A] = [T::zero(); A];
                 for (row, outv) in out.iter_mut().enumerate() {
@@ -1066,56 +1065,9 @@ pub mod scalar {
             finish_complete(out, check_finite, early_exit)
         }
 
-        pub fn eval_apply<const A: usize, T: Float, Op: BuiltinOp<T, A>>(
-            out: &mut [T],
-            args: &[SrcRef<'_, T>],
-            opts: &EvalOptions,
-        ) -> bool {
-            debug_assert_eq!(args.len(), A);
-            let check_finite = opts.check_finite;
-            let early_exit = opts.early_exit;
-
-            if args.iter().all(|a| matches!(a, SrcRef::Const(_))) {
-                let vals: [T; A] = core::array::from_fn(|j| __src_val(args[j], 0));
-                let v = Op::eval(&vals);
-                out.fill(v);
-                if !check_finite {
-                    return true;
-                }
-                return finish_complete(out, check_finite, early_exit);
-            }
-
-            let views: [ArgView<'_, T>; A] = make_arg_views(args);
-
-            if A == 1 {
-                eval_unary_loop(out, views[0], |a| {
-                    let vals = vals1::<T, A>(a);
-                    Op::eval(&vals)
-                });
-                return finish_complete(out, check_finite, early_exit);
-            }
-            if A == 2 {
-                eval_binary_loop(out, views[0], views[1], |a, b| {
-                    let vals = vals2(a, b);
-                    Op::eval(&vals)
-                });
-                return finish_complete(out, check_finite, early_exit);
-            }
-
-            let mut vals: [T; A] = [T::zero(); A];
-            for (row, outv) in out.iter_mut().enumerate() {
-                for (v, view) in vals.iter_mut().zip_eq(views) {
-                    *v = view.get(row);
-                }
-                *outv = Op::eval(&vals);
-            }
-
-            finish_complete(out, check_finite, early_exit)
-        }
-
         pub fn diff_nary<const A: usize, T: Float + core::ops::AddAssign>(
-            eval: fn(&[T; A]) -> T,
-            partial: fn(&[T; A], usize) -> T,
+            eval: impl Copy + Fn(&[T; A]) -> T,
+            partial: impl Copy + Fn(&[T; A], usize) -> T,
             out_val: &mut [T],
             out_der: &mut [T],
             args: &[SrcRef<'_, T>],
@@ -1128,8 +1080,8 @@ pub mod scalar {
             let early_exit = opts.early_exit;
             let mut complete = true;
 
-            let mut vals: [T; A] = [T::zero(); A];
-            let mut dvals: [T; A] = [T::zero(); A];
+            let mut vals = [T::zero(); A];
+            let mut dvals = [T::zero(); A];
             let val_views: [ArgView<'_, T>; A] = make_arg_views(args);
             let dval_views: [ArgView<'_, T>; A] = make_arg_views(dargs);
 
@@ -1162,56 +1114,9 @@ pub mod scalar {
             complete
         }
 
-        pub fn diff_apply<const A: usize, T: Float + core::ops::AddAssign, Op: BuiltinOp<T, A>>(
-            out_val: &mut [T],
-            out_der: &mut [T],
-            args: &[SrcRef<'_, T>],
-            dargs: &[SrcRef<'_, T>],
-            opts: &EvalOptions,
-        ) -> bool {
-            debug_assert_eq!(args.len(), A);
-            debug_assert_eq!(dargs.len(), A);
-            let check_finite = opts.check_finite;
-            let early_exit = opts.early_exit;
-            let mut complete = true;
-
-            let mut vals: [T; A] = [T::zero(); A];
-            let mut dvals: [T; A] = [T::zero(); A];
-            let val_views: [ArgView<'_, T>; A] = make_arg_views(args);
-            let dval_views: [ArgView<'_, T>; A] = make_arg_views(dargs);
-
-            for ((row, outv), outd) in out_val.iter_mut().enumerate().zip_eq(out_der.iter_mut()) {
-                for (v, view) in vals.iter_mut().zip_eq(val_views) {
-                    *v = view.get(row);
-                }
-                for (dv, view) in dvals.iter_mut().zip_eq(dval_views) {
-                    *dv = view.get(row);
-                }
-                let v = Op::eval(&vals);
-                let mut d = T::zero();
-                for (j, dv) in dvals.iter().enumerate() {
-                    d += Op::partial(&vals, j) * *dv;
-                }
-                *outv = v;
-                *outd = d;
-            }
-
-            if check_finite {
-                let finite = __all_finite(out_val);
-                complete &= finite;
-                if !finite && early_exit {
-                    out_val.fill(T::nan());
-                    out_der.fill(T::nan());
-                    return false;
-                }
-            }
-
-            complete
-        }
-
         pub fn grad_nary<const A: usize, T: Float + core::ops::AddAssign>(
-            eval: fn(&[T; A]) -> T,
-            partial: fn(&[T; A], usize) -> T,
+            eval: impl Copy + Fn(&[T; A]) -> T,
+            partial: impl Copy + Fn(&[T; A], usize) -> T,
             ctx: GradKernelCtx<'_, '_, T>,
         ) -> bool {
             debug_assert_eq!(ctx.args.len(), A);
@@ -1223,7 +1128,7 @@ pub mod scalar {
             let arg_views: [ArgView<'_, T>; A] = make_arg_views(ctx.args);
 
             if A == 1 {
-                eval_unary_loop(ctx.out_val, arg_views[0], |a| eval(&vals1(a)));
+                eval_unary_loop(ctx.out_val, arg_views[0], move |a| eval(&vals1(a)));
                 let x = arg_views[0];
                 let dx_ref = ctx.arg_grads[0];
                 let n_rows = ctx.n_rows;
@@ -1233,7 +1138,7 @@ pub mod scalar {
                     grad_unary_loop::<T, _, A>(grad_dir, x, dx, partial);
                 }
             } else if A == 2 {
-                eval_binary_loop(ctx.out_val, arg_views[0], arg_views[1], |a, b| eval(&vals2(a, b)));
+                eval_binary_loop(ctx.out_val, arg_views[0], arg_views[1], move |a, b| eval(&vals2(a, b)));
 
                 let x = arg_views[0];
                 let y = arg_views[1];
@@ -1288,91 +1193,6 @@ pub mod scalar {
 
             complete
         }
-
-        pub fn grad_apply<const A: usize, T: Float + core::ops::AddAssign, Op: BuiltinOp<T, A>>(
-            ctx: GradKernelCtx<'_, '_, T>,
-        ) -> bool {
-            debug_assert_eq!(ctx.args.len(), A);
-            debug_assert_eq!(ctx.arg_grads.len(), A);
-
-            let check_finite = ctx.opts.check_finite;
-            let early_exit = ctx.opts.early_exit;
-            let mut complete = true;
-            let arg_views: [ArgView<'_, T>; A] = make_arg_views(ctx.args);
-
-            if A == 1 {
-                eval_unary_loop(ctx.out_val, arg_views[0], |a| {
-                    let vals = vals1::<T, A>(a);
-                    Op::eval(&vals)
-                });
-
-                let x = arg_views[0];
-                let dx_ref = ctx.arg_grads[0];
-                let n_rows = ctx.n_rows;
-                for dir in 0..ctx.n_dir {
-                    let grad_dir = &mut ctx.out_grad[dir * n_rows..(dir + 1) * n_rows];
-                    let dx = grad_dir_view(dx_ref, dir, n_rows);
-                    grad_unary_loop::<T, _, A>(grad_dir, x, dx, Op::partial);
-                }
-            } else if A == 2 {
-                eval_binary_loop(ctx.out_val, arg_views[0], arg_views[1], |a, b| {
-                    let vals = vals2(a, b);
-                    Op::eval(&vals)
-                });
-
-                let x = arg_views[0];
-                let y = arg_views[1];
-                let dx_ref = ctx.arg_grads[0];
-                let dy_ref = ctx.arg_grads[1];
-                let n_rows = ctx.n_rows;
-
-                for dir in 0..ctx.n_dir {
-                    let grad_dir = &mut ctx.out_grad[dir * n_rows..(dir + 1) * n_rows];
-                    let dx = grad_dir_view(dx_ref, dir, n_rows);
-                    let dy = grad_dir_view(dy_ref, dir, n_rows);
-                    if matches!((dx, dy), (ArgView::Const(dx_c), ArgView::Const(dy_c)) if dx_c.is_zero() && dy_c.is_zero())
-                    {
-                        grad_dir.fill(T::zero());
-                        continue;
-                    }
-                    grad_binary_loop::<T, _, A>(grad_dir, x, y, dx, dy, Op::partial);
-                }
-            } else {
-                let mut vals: [T; A] = [T::zero(); A];
-
-                for (row, outv) in ctx.out_val.iter_mut().enumerate() {
-                    for (v, view) in vals.iter_mut().zip_eq(arg_views) {
-                        *v = view.get(row);
-                    }
-                    *outv = Op::eval(&vals);
-                }
-
-                for (dir, grad_dir) in ctx.out_grad.chunks_mut(ctx.n_rows).enumerate().take(ctx.n_dir) {
-                    for (row, outg) in grad_dir.iter_mut().enumerate() {
-                        for (v, view) in vals.iter_mut().zip_eq(arg_views) {
-                            *v = view.get(row);
-                        }
-                        let mut g = T::zero();
-                        for (j, ag) in ctx.arg_grads.iter().copied().enumerate() {
-                            g += Op::partial(&vals, j) * grad_at(ag, dir, row, ctx.n_rows);
-                        }
-                        *outg = g;
-                    }
-                }
-            }
-
-            if check_finite {
-                let finite = __all_finite(ctx.out_val);
-                complete &= finite;
-                if !finite && early_exit {
-                    ctx.out_val.fill(T::nan());
-                    ctx.out_grad.fill(T::nan());
-                    return false;
-                }
-            }
-
-            complete
-        }
     }
 
     mod macros {
@@ -1380,7 +1200,7 @@ pub mod scalar {
         ///
         /// Example:
         ///
-        /// ```
+        /// ```rust,ignore
         /// dynamic_expressions::custom_opset! {
         ///     /// Example custom operators.
         ///     struct CustomOps<f64> {
@@ -1804,8 +1624,11 @@ pub mod scalar {
                         $arity => match op.id {
                             $(
                                 x if x == ($enum_name::$op_name as u16) =>
-                                    $crate::operator_enum::scalar::eval_apply::<$arity, $t, $crate::operator_enum::builtin::$op_name>(
-                                        ctx.out, ctx.args, ctx.opts,
+                                    $crate::operator_enum::scalar::eval_nary::<$arity, $t>(
+                                        <$crate::operator_enum::builtin::$op_name as $crate::operator_enum::builtin::BuiltinOp<$t, $arity>>::eval,
+                                        ctx.out,
+                                        ctx.args,
+                                        ctx.opts,
                                     ),
                             )*
                             _ => panic!("unknown op id {} for arity {}", op.id, op.arity),
@@ -1824,8 +1647,14 @@ pub mod scalar {
                         $arity => match op.id {
                             $(
                                 x if x == ($enum_name::$op_name as u16) =>
-                                    $crate::operator_enum::scalar::diff_apply::<$arity, $t, $crate::operator_enum::builtin::$op_name>(
-                                        ctx.out_val, ctx.out_der, ctx.args, ctx.dargs, ctx.opts,
+                                    $crate::operator_enum::scalar::diff_nary::<$arity, $t>(
+                                        <$crate::operator_enum::builtin::$op_name as $crate::operator_enum::builtin::BuiltinOp<$t, $arity>>::eval,
+                                        <$crate::operator_enum::builtin::$op_name as $crate::operator_enum::builtin::BuiltinOp<$t, $arity>>::partial,
+                                        ctx.out_val,
+                                        ctx.out_der,
+                                        ctx.args,
+                                        ctx.dargs,
+                                        ctx.opts,
                                     ),
                             )*
                             _ => panic!("unknown op id {} for arity {}", op.id, op.arity),
@@ -1844,7 +1673,11 @@ pub mod scalar {
                         $arity => match op.id {
                             $(
                                 x if x == ($enum_name::$op_name as u16) =>
-                                    $crate::operator_enum::scalar::grad_apply::<$arity, $t, $crate::operator_enum::builtin::$op_name>(ctx),
+                                    $crate::operator_enum::scalar::grad_nary::<$arity, $t>(
+                                        <$crate::operator_enum::builtin::$op_name as $crate::operator_enum::builtin::BuiltinOp<$t, $arity>>::eval,
+                                        <$crate::operator_enum::builtin::$op_name as $crate::operator_enum::builtin::BuiltinOp<$t, $arity>>::partial,
+                                        ctx,
+                                    ),
                             )*
                             _ => panic!("unknown op id {} for arity {}", op.id, op.arity),
                         },

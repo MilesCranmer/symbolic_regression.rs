@@ -38,8 +38,6 @@ jobs:
 
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: nightly-2025-12-19
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
@@ -57,7 +55,6 @@ jobs:
       - name: Install Rust (rustfmt)
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: nightly-2025-12-19
           components: rustfmt
 
       - name: Rust cache
@@ -76,7 +73,6 @@ jobs:
       - name: Install Rust (clippy)
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: nightly-2025-12-19
           components: clippy
 
       - name: Rust cache
@@ -94,8 +90,6 @@ jobs:
 
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: nightly-2025-12-19
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
@@ -115,7 +109,6 @@ jobs:
       - name: Install Rust (llvm-tools)
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: nightly-2025-12-19
           components: llvm-tools-preview
 
       - name: Rust cache
@@ -152,8 +145,6 @@ jobs:
 
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: nightly-2025-12-19
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
@@ -170,8 +161,6 @@ jobs:
 
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: nightly-2025-12-19
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2

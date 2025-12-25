@@ -1,7 +1,7 @@
 use ndarray::{Array2, ArrayView2};
 use num_traits::Float;
 
-use crate::compile::{EvalPlan, compile_plan};
+use crate::compile::{EvalPlan, build_node_hash, compile_plan};
 use crate::evaluate::{EvalOptions, resolve_der_src, resolve_grad_src, resolve_val_src};
 use crate::expression::PostfixExpr;
 use crate::node::Src;
@@ -114,10 +114,10 @@ where
     let n_rows = x_columns.ncols();
     let n_features = x_columns.nrows();
 
-    let needs_recompile = ctx.plan.is_none()
-        || ctx.plan_nodes_len != expr.nodes.len()
+    let needs_recompile = ctx.plan_nodes_len != expr.nodes.len()
         || ctx.plan_n_consts != expr.consts.len()
-        || ctx.plan_n_features != n_features;
+        || ctx.plan_n_features != n_features
+        || ctx.plan.as_ref().is_none_or(|p| p.hash != build_node_hash(&expr.nodes));
     if needs_recompile {
         ctx.plan = Some(compile_plan::<D>(&expr.nodes, n_features, expr.consts.len()));
         ctx.plan_nodes_len = expr.nodes.len();
@@ -242,10 +242,11 @@ where
     let n_rows = x_columns.ncols();
     let n_dir = if variable { x_columns.nrows() } else { expr.consts.len() };
 
-    let needs_recompile = ctx.plan.is_none()
-        || ctx.plan_nodes_len != expr.nodes.len()
+    let needs_recompile = ctx.plan_nodes_len != expr.nodes.len()
         || ctx.plan_n_consts != expr.consts.len()
-        || ctx.plan_n_features != x_columns.nrows();
+        || ctx.plan_n_features != x_columns.nrows()
+        || ctx.plan.as_ref().is_none_or(|p| p.hash != build_node_hash(&expr.nodes));
+
     if needs_recompile {
         ctx.plan = Some(compile_plan::<D>(&expr.nodes, x_columns.nrows(), expr.consts.len()));
         ctx.plan_nodes_len = expr.nodes.len();
