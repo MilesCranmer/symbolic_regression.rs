@@ -416,6 +416,7 @@ where
 
     let x_data = x_columns.as_slice().expect("X must be contiguous");
 
+    assert_eq!(ctx.n_rows, n_rows);
     ctx.ensure_scratch(plan.n_slots, n_dir);
     let val_scratch = ctx
         .val_scratch
@@ -576,6 +577,7 @@ where
 
     let x_data = x_columns.as_slice().expect("X must be contiguous");
 
+    assert_eq!(ctx.n_rows, n_rows);
     ctx.ensure_scratch(plan.n_slots, n_dir);
     cache.ensure(&expr.nodes, dataset_key, n_rows);
 
