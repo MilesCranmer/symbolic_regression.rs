@@ -31,6 +31,7 @@ proptest = { version = "1", optional = true }
 rstest = "0.26"
 approx = "0.5"
 criterion = "0.7"
+rand = { version = "0.9", default-features = false, features = ["std", "std_rng"] }
 fastrand = "2.3"
 
 [features]

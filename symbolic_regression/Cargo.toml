@@ -52,6 +52,7 @@ bench = []
 criterion = "0.7"
 proptest = "1"
 rand = { version = "0.9", default-features = false, features = ["std", "std_rng"] }
+rand_distr = "0.5"
 rust_xlsxwriter = "0.92"
 tempfile = "3"
 dynamic_expressions = { path = "../dynamic_expressions", default-features = false, features = ["proptest-utils"] }
