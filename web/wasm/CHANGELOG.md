@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.7.0](https://github.com/astroautomata/symbolic_regression.rs/compare/symbolic_regression_wasm-v0.6.0...symbolic_regression_wasm-v0.7.0) (2025-12-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* switch to a faster RNG
+
+### Features
+
+* switch to a faster RNG ([1ba12f3](https://github.com/astroautomata/symbolic_regression.rs/commit/1ba12f37a741dd8566dbd08ce1b9172a5e184666))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * symbolic_regression bumped from 0.9.0 to 0.10.0
+    * dynamic_expressions bumped from 0.8.0 to 0.9.0
+
 ## [0.6.0](https://github.com/astroautomata/symbolic_regression.rs/compare/symbolic_regression_wasm-v0.5.0...symbolic_regression_wasm-v0.6.0) (2025-12-25)
 
 

@@ -1,5 +1,5 @@
 {
-  "dynamic_expressions": "0.8.0",
-  "symbolic_regression": "0.9.0",
-  "web/wasm": "0.6.0"
+  "dynamic_expressions": "0.9.0",
+  "symbolic_regression": "0.10.0",
+  "web/wasm": "0.7.0"
 }

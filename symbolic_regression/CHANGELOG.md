@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.10.0](https://github.com/astroautomata/symbolic_regression.rs/compare/symbolic_regression-v0.9.0...symbolic_regression-v0.10.0) (2025-12-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* switch to a faster RNG
+* greatly simplify operator traits
+
+### Features
+
+* switch to a faster RNG ([1ba12f3](https://github.com/astroautomata/symbolic_regression.rs/commit/1ba12f37a741dd8566dbd08ce1b9172a5e184666))
+
+
+### Performance Improvements
+
+* skip depth check if maxsize faster ([6023fd7](https://github.com/astroautomata/symbolic_regression.rs/commit/6023fd717ce6f0da380574ff6efa67300cb33752))
+* skip depth check if maxsize faster ([9071242](https://github.com/astroautomata/symbolic_regression.rs/commit/90712429a1c82363e6388278cf57e33997fd9b40))
+* thread local stack for tree mapreduce ([4cbcad6](https://github.com/astroautomata/symbolic_regression.rs/commit/4cbcad6e9c7cea0b168fd15f6ebfa5841e60c6d5))
+
+
+### Code Refactoring
+
+* greatly simplify operator traits ([a4baa8e](https://github.com/astroautomata/symbolic_regression.rs/commit/a4baa8e1d2d9eca68406564c97427ee248ee2d4a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * dynamic_expressions bumped from 0.8.0 to 0.9.0
+
 ## [0.9.0](https://github.com/astroautomata/symbolic_regression.rs/compare/symbolic_regression-v0.8.0...symbolic_regression-v0.9.0) (2025-12-25)
 
 
