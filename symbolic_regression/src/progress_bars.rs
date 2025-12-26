@@ -183,7 +183,7 @@ mod imp {
             ),
         };
 
-        let hof = format_hall_of_fame(hall, term_width, 12, render);
+        let hof = format_hall_of_fame(hall, term_width, usize::MAX, render);
         let hof_title = "Hall of Fame:".to_string();
         pb.set_message(format!(
             "{}\n{}\n{}",
