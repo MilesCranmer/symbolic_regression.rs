@@ -2,20 +2,20 @@ use std::cell::RefCell;
 
 use crate::node::PNode;
 
-pub fn tree_mapreduce<R>(
+pub fn tree_mapreduce<R, B>(
     nodes: &[PNode],
     f_leaf: impl FnMut(&PNode) -> R,
-    f_branch: impl FnMut(&PNode) -> R,
-    op: impl FnMut(R, &[R]) -> R,
+    f_branch: impl FnMut(&PNode) -> B,
+    op: impl FnMut(B, &[R]) -> R,
 ) -> R {
     tree_mapreduce_with_stack(nodes, f_leaf, f_branch, op, None)
 }
 
-pub fn tree_mapreduce_with_stack<R>(
+pub fn tree_mapreduce_with_stack<R, B>(
     nodes: &[PNode],
     mut f_leaf: impl FnMut(&PNode) -> R,
-    mut f_branch: impl FnMut(&PNode) -> R,
-    mut op: impl FnMut(R, &[R]) -> R,
+    mut f_branch: impl FnMut(&PNode) -> B,
+    mut op: impl FnMut(B, &[R]) -> R,
     reusable_stack: Option<&mut Vec<R>>,
 ) -> R {
     match reusable_stack {
@@ -30,12 +30,12 @@ pub fn tree_mapreduce_with_stack<R>(
     }
 }
 
-fn tree_mapreduce_impl<R>(
+fn tree_mapreduce_impl<R, B>(
     nodes: &[PNode],
     stack: &mut Vec<R>,
     f_leaf: &mut impl FnMut(&PNode) -> R,
-    f_branch: &mut impl FnMut(&PNode) -> R,
-    op: &mut impl FnMut(R, &[R]) -> R,
+    f_branch: &mut impl FnMut(&PNode) -> B,
+    op: &mut impl FnMut(B, &[R]) -> R,
 ) -> R {
     for n in nodes {
         match *n {
