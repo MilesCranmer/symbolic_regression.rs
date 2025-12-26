@@ -2,74 +2,15 @@ use std::collections::HashSet;
 use std::fmt;
 use std::marker::PhantomData;
 
-use dynamic_expressions::operator_enum::{builtin, scalar};
-use dynamic_expressions::operator_registry;
+use dynamic_expressions::operator_enum::builtin;
+use dynamic_expressions::{HasOp, OpId, OperatorSet};
 use fastrand::Rng;
 
 use crate::random::usize_range;
 
 #[derive(Clone, Debug)]
-pub struct OpSpec {
-    pub op: scalar::OpId,
-    pub commutative: bool,
-    pub associative: bool,
-    pub complexity: u16,
-}
-
-#[derive(Clone, Debug)]
 pub struct Operators<const D: usize> {
-    pub ops_by_arity: [Vec<OpSpec>; D],
-}
-
-/// Convenience constructors for [`Operators`] based on a registry's declared maximum arity.
-pub trait OperatorRegistryExt: Sized {
-    type OperatorSet;
-
-    fn from_names(names: &[&str]) -> Result<Self::OperatorSet, OperatorSelectError>;
-
-    fn from_names_by_arity(
-        unary: &[&str],
-        binary: &[&str],
-        ternary: &[&str],
-    ) -> Result<Self::OperatorSet, OperatorSelectError>;
-}
-
-pub const fn max_arity(a: usize, b: usize) -> usize {
-    if a > b { a } else { b }
-}
-
-#[macro_export]
-#[doc(hidden)]
-macro_rules! __impl_operator_registry_ext_for {
-    ($Ops:ty; $($arity:literal),+ $(,)?) => {
-        $crate::__impl_operator_registry_ext_for!(@max $Ops; 0; $($arity),+);
-    };
-
-    (@max $Ops:ty; $cur:expr; $head:literal $(, $tail:literal)*) => {
-        $crate::__impl_operator_registry_ext_for!(
-            @max $Ops;
-            { $crate::operators::max_arity($cur, $head as usize) };
-            $($tail),*
-        );
-    };
-
-    (@max $Ops:ty; $max:expr; ) => {
-        impl $crate::OperatorRegistryExt for $Ops {
-            type OperatorSet = $crate::Operators<{ $max }>;
-
-            fn from_names(names: &[&str]) -> Result<Self::OperatorSet, $crate::OperatorSelectError> {
-                $crate::Operators::<{ $max }>::from_names::<Self>(names)
-            }
-
-            fn from_names_by_arity(
-                unary: &[&str],
-                binary: &[&str],
-                ternary: &[&str],
-            ) -> Result<Self::OperatorSet, $crate::OperatorSelectError> {
-                $crate::Operators::<{ $max }>::from_names_by_arity::<Self>(unary, binary, ternary)
-            }
-        }
-    };
+    pub ops_by_arity: [Vec<OpId>; D],
 }
 
 #[macro_export]
@@ -141,7 +82,6 @@ macro_rules! custom_opset {
                 )*
             }
         }
-        $crate::__impl_operator_registry_ext_for!($Ops; $($arity),+);
     };
 
     // Legacy syntax (passthrough to `dynamic_expressions::custom_opset!`).
@@ -156,22 +96,12 @@ macro_rules! custom_opset {
                 $( $arity { $( $op_name { $($op_body)* } )* } )*
             }
         }
-        $crate::__impl_operator_registry_ext_for!($Ops; $($arity),*);
     };
 }
 
-__impl_operator_registry_ext_for!(
-    dynamic_expressions::operator_enum::presets::BuiltinOpsF32;
-    1, 2, 3
-);
-__impl_operator_registry_ext_for!(
-    dynamic_expressions::operator_enum::presets::BuiltinOpsF64;
-    1, 2, 3
-);
-
 #[derive(Debug, Clone)]
 pub enum OperatorSelectError {
-    Lookup(dynamic_expressions::operator_registry::LookupError),
+    Lookup(dynamic_expressions::LookupError),
     ArityMismatch { token: String, expected: u8, found: u8 },
     ArityTooLarge { token: String, arity: u8, max_arity: usize },
     Duplicate(String),
@@ -209,9 +139,10 @@ impl<const D: usize> Operators<D> {
         }
     }
 
-    pub fn push(&mut self, arity: usize, spec: OpSpec) {
+    pub fn push(&mut self, op: OpId) {
+        let arity = op.arity as usize;
         assert!((1..=D).contains(&arity));
-        self.ops_by_arity[arity - 1].push(spec);
+        self.ops_by_arity[arity - 1].push(op);
     }
 
     pub fn nops(&self, arity: usize) -> usize {
@@ -221,17 +152,6 @@ impl<const D: usize> Operators<D> {
     pub fn total_ops_up_to(&self, max_arity: usize) -> usize {
         let max_arity = max_arity.min(D);
         (1..=max_arity).map(|a| self.nops(a)).sum()
-    }
-
-    pub fn get_op_complexity(&self, op: scalar::OpId) -> Option<u16> {
-        let a = op.arity as usize;
-        if !(1..=D).contains(&a) {
-            return None;
-        }
-        self.ops_by_arity[a - 1]
-            .iter()
-            .find(|s| s.op.id == op.id)
-            .map(|s| s.complexity)
     }
 
     pub fn sample_arity(&self, rng: &mut Rng, max_arity: usize) -> usize {
@@ -249,13 +169,13 @@ impl<const D: usize> Operators<D> {
         unreachable!()
     }
 
-    pub fn sample_op(&self, rng: &mut Rng, arity: usize) -> &OpSpec {
+    pub fn sample_op(&self, rng: &mut Rng, arity: usize) -> OpId {
         let v = &self.ops_by_arity[arity - 1];
         let i = usize_range(rng, 0..v.len());
-        &v[i]
+        v[i]
     }
 
-    pub fn from_names<Ops: operator_registry::OpRegistry>(names: &[&str]) -> Result<Self, OperatorSelectError> {
+    pub fn from_names<Ops: OperatorSet>(names: &[&str]) -> Result<Self, OperatorSelectError> {
         if names.is_empty() {
             return Err(OperatorSelectError::Empty);
         }
@@ -263,32 +183,24 @@ impl<const D: usize> Operators<D> {
         let mut seen: HashSet<(u8, u16)> = HashSet::new();
 
         for &tok in names {
-            let info = Ops::lookup(tok).map_err(OperatorSelectError::Lookup)?;
-            if (info.op.arity as usize) > D {
+            let op = Ops::lookup(tok).map_err(OperatorSelectError::Lookup)?;
+            if (op.arity as usize) > D {
                 return Err(OperatorSelectError::ArityTooLarge {
                     token: tok.to_string(),
-                    arity: info.op.arity,
+                    arity: op.arity,
                     max_arity: D,
                 });
             }
-            let key = (info.op.arity, info.op.id);
+            let key = (op.arity, op.id);
             if !seen.insert(key) {
                 return Err(OperatorSelectError::Duplicate(tok.to_string()));
             }
-            out.push(
-                info.op.arity as usize,
-                OpSpec {
-                    op: info.op,
-                    commutative: info.commutative,
-                    associative: info.associative,
-                    complexity: info.complexity,
-                },
-            );
+            out.push(op);
         }
         Ok(out)
     }
 
-    pub fn from_names_by_arity<Ops: operator_registry::OpRegistry>(
+    pub fn from_names_by_arity<Ops: OperatorSet>(
         unary: &[&str],
         binary: &[&str],
         ternary: &[&str],
@@ -302,34 +214,26 @@ impl<const D: usize> Operators<D> {
 
         for (expected, toks) in [(1u8, unary), (2u8, binary), (3u8, ternary)] {
             for &tok in toks {
-                let info = Ops::lookup_with_arity(tok, expected).map_err(OperatorSelectError::Lookup)?;
-                if info.op.arity != expected {
+                let op = Ops::lookup_with_arity(tok, expected).map_err(OperatorSelectError::Lookup)?;
+                if op.arity != expected {
                     return Err(OperatorSelectError::ArityMismatch {
                         token: tok.to_string(),
                         expected,
-                        found: info.op.arity,
+                        found: op.arity,
                     });
                 }
-                if (info.op.arity as usize) > D {
+                if (op.arity as usize) > D {
                     return Err(OperatorSelectError::ArityTooLarge {
                         token: tok.to_string(),
-                        arity: info.op.arity,
+                        arity: op.arity,
                         max_arity: D,
                     });
                 }
-                let key = (info.op.arity, info.op.id);
+                let key = (op.arity, op.id);
                 if !seen.insert(key) {
                     return Err(OperatorSelectError::Duplicate(tok.to_string()));
                 }
-                out.push(
-                    info.op.arity as usize,
-                    OpSpec {
-                        op: info.op,
-                        commutative: info.commutative,
-                        associative: info.associative,
-                        complexity: info.complexity,
-                    },
-                );
+                out.push(op);
             }
         }
 
@@ -380,56 +284,46 @@ impl<Ops, const D: usize> OperatorsBuilder<Ops, D> {
 impl<Ops, const D: usize> OperatorsBuilder<Ops, D> {
     pub fn sr_default_binary(self) -> Self
     where
-        Ops: scalar::HasOp<builtin::Add, 2>
-            + scalar::HasOp<builtin::Sub, 2>
-            + scalar::HasOp<builtin::Mul, 2>
-            + scalar::HasOp<builtin::Div, 2>,
+        Ops: HasOp<builtin::Add> + HasOp<builtin::Sub> + HasOp<builtin::Mul> + HasOp<builtin::Div> + OperatorSet,
     {
-        self.nary::<2, builtin::Add>()
-            .nary::<2, builtin::Sub>()
-            .nary::<2, builtin::Mul>()
-            .nary::<2, builtin::Div>()
+        self.binary::<builtin::Add>()
+            .binary::<builtin::Sub>()
+            .binary::<builtin::Mul>()
+            .binary::<builtin::Div>()
     }
 
     pub fn unary<Op>(self) -> Self
     where
-        Ops: scalar::HasOp<Op, 1>,
-        Op: builtin::OpMeta<1>,
+        Ops: HasOp<Op> + OperatorSet,
+        Op: dynamic_expressions::OpTag,
     {
-        self.nary::<1, Op>()
+        let op = <Ops as HasOp<Op>>::op_id();
+        assert_eq!(op.arity, 1, "unary() requires arity=1 (got {})", op.arity);
+        self.push_op::<Op>()
     }
 
     pub fn binary<Op>(self) -> Self
     where
-        Ops: scalar::HasOp<Op, 2>,
-        Op: builtin::OpMeta<2>,
+        Ops: HasOp<Op> + OperatorSet,
+        Op: dynamic_expressions::OpTag,
     {
-        self.nary::<2, Op>()
+        let op = <Ops as HasOp<Op>>::op_id();
+        assert_eq!(op.arity, 2, "binary() requires arity=2 (got {})", op.arity);
+        self.push_op::<Op>()
     }
 
-    pub fn nary<const A: usize, Op>(mut self) -> Self
+    fn push_op<Op>(mut self) -> Self
     where
-        Ops: scalar::HasOp<Op, A>,
-        Op: builtin::OpMeta<A>,
+        Ops: HasOp<Op> + OperatorSet,
+        Op: dynamic_expressions::OpTag,
     {
-        assert!(A >= 1 && A <= D, "arity {A} not supported for D={D}");
-        let arity_u8: u8 = A.try_into().unwrap_or_else(|_| panic!("arity {A} does not fit in u8"));
-
-        let commutative = <Op as builtin::OpMeta<A>>::COMMUTATIVE;
-        let associative = <Op as builtin::OpMeta<A>>::ASSOCIATIVE;
-
-        self.operators.push(
-            A,
-            OpSpec {
-                op: scalar::OpId {
-                    arity: arity_u8,
-                    id: <Ops as scalar::HasOp<Op, A>>::ID,
-                },
-                commutative,
-                associative,
-                complexity: <Op as builtin::OpMeta<A>>::COMPLEXITY,
-            },
+        let op = <Ops as HasOp<Op>>::op_id();
+        let arity = op.arity as usize;
+        assert!(
+            arity >= 1 && arity <= D,
+            "operator arity {arity} not supported for D={D}"
         );
+        self.operators.push(op);
         self
     }
 }
@@ -454,23 +348,17 @@ mod tests {
         let unary = ["-"];
         let ops = Operators::<3>::from_names_by_arity::<BuiltinOpsF64>(&unary, &[], &[]).unwrap();
         assert_eq!(ops.nops(1), 1);
-        assert_eq!(
-            ops.ops_by_arity[0][0].op.id,
-            <BuiltinOpsF64 as scalar::HasOp<builtin::Neg, 1>>::ID
-        );
+        assert_eq!(ops.ops_by_arity[0][0], <BuiltinOpsF64 as HasOp<builtin::Neg>>::op_id());
 
         let binary = ["-"];
         let ops = Operators::<3>::from_names_by_arity::<BuiltinOpsF64>(&[], &binary, &[]).unwrap();
         assert_eq!(ops.nops(2), 1);
-        assert_eq!(
-            ops.ops_by_arity[1][0].op.id,
-            <BuiltinOpsF64 as scalar::HasOp<builtin::Sub, 2>>::ID
-        );
+        assert_eq!(ops.ops_by_arity[1][0], <BuiltinOpsF64 as HasOp<builtin::Sub>>::op_id());
     }
 
     #[test]
     fn v2_custom_opset_dsl_builds_operator_set() {
-        let ops = V2Ops::from_names(&["square"]).unwrap();
+        let ops = Operators::<3>::from_names::<V2Ops>(&["square"]).unwrap();
         assert_eq!(ops.nops(1), 1);
     }
 }

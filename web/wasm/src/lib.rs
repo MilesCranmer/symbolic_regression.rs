@@ -2,10 +2,9 @@ use std::io::Cursor;
 
 use csv::ReaderBuilder;
 use dynamic_expressions::operator_enum::presets::BuiltinOpsF64;
-use dynamic_expressions::operator_registry::OpRegistry;
 use dynamic_expressions::strings::{StringTreeOptions, string_tree};
 use dynamic_expressions::utils::ZipEq;
-use dynamic_expressions::{EvalOptions, eval_plan_array_into};
+use dynamic_expressions::{EvalOptions, OpId, OperatorSet, eval_plan_array_into};
 use fastrand::Rng;
 use ndarray::{Array1, Array2};
 use serde::{Deserialize, Serialize};
@@ -43,19 +42,21 @@ pub struct WasmOpInfo {
 
 #[wasm_bindgen]
 pub fn builtin_operator_registry() -> Result<JsValue, JsValue> {
-    let ops: Vec<WasmOpInfo> = BuiltinOpsF64::registry()
-        .iter()
-        .filter(|i| (1..=3).contains(&i.op.arity))
-        .map(|i| WasmOpInfo {
-            arity: i.op.arity,
-            name: i.name.to_string(),
-            display: i.display.to_string(),
-            infix: i.infix.map(|s| s.to_string()),
-            commutative: i.commutative,
-            associative: i.associative,
-            complexity: i.complexity,
-        })
-        .collect();
+    let mut ops = Vec::new();
+    for arity in 1..=BuiltinOpsF64::MAX_ARITY {
+        for &id in BuiltinOpsF64::ops_with_arity(arity) {
+            let op = OpId { arity, id };
+            ops.push(WasmOpInfo {
+                arity,
+                name: BuiltinOpsF64::name(op).to_string(),
+                display: BuiltinOpsF64::display(op).to_string(),
+                infix: BuiltinOpsF64::infix(op).map(|s| s.to_string()),
+                commutative: BuiltinOpsF64::commutative(op),
+                associative: BuiltinOpsF64::associative(op),
+                complexity: BuiltinOpsF64::complexity(op),
+            });
+        }
+    }
     to_value(&ops).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 

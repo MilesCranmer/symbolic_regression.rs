@@ -1,3 +1,4 @@
+use dynamic_expressions::Operator;
 use dynamic_expressions::operator_enum::builtin::*;
 
 macro_rules! unary_bad_idx_panics {
@@ -7,7 +8,7 @@ macro_rules! unary_bad_idx_panics {
             #[should_panic]
             fn [<$name:snake _bad_idx_panics>]() {
                 let args = [$x];
-                let _ = <$name as BuiltinOp<f64, 1>>::partial(&args, 1);
+                let _ = <$name as Operator<f64, 1>>::partial(&args, 1);
             }
         }
     };
@@ -20,7 +21,7 @@ macro_rules! binary_bad_idx_panics {
             #[should_panic]
             fn [<$name:snake _bad_idx_panics>]() {
                 let args = [$x, $y];
-                let _ = <$name as BuiltinOp<f64, 2>>::partial(&args, 2);
+                let _ = <$name as Operator<f64, 2>>::partial(&args, 2);
             }
         }
     };
@@ -33,7 +34,7 @@ macro_rules! ternary_bad_idx_panics {
             #[should_panic]
             fn [<$name:snake _bad_idx_panics>]() {
                 let args = [$x, $y, $z];
-                let _ = <$name as BuiltinOp<f64, 3>>::partial(&args, 3);
+                let _ = <$name as Operator<f64, 3>>::partial(&args, 3);
             }
         }
     };

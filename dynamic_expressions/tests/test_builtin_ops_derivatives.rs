@@ -1,35 +1,36 @@
+use dynamic_expressions::Operator;
 use dynamic_expressions::operator_enum::builtin::*;
 
-fn fd_unary<Op: BuiltinOp<f64, 1>>(x: f64) -> f64 {
+fn fd_unary<Op: Operator<f64, 1>>(x: f64) -> f64 {
     let eps = 1e-7;
-    let vp = <Op as BuiltinOp<f64, 1>>::eval(&[x + eps]);
-    let vm = <Op as BuiltinOp<f64, 1>>::eval(&[x - eps]);
+    let vp = <Op as Operator<f64, 1>>::eval(&[x + eps]);
+    let vm = <Op as Operator<f64, 1>>::eval(&[x - eps]);
     (vp - vm) / (2.0 * eps)
 }
 
-fn check_unary<Op: BuiltinOp<f64, 1>>(x: f64, tol: f64) {
-    let d = <Op as BuiltinOp<f64, 1>>::partial(&[x], 0);
+fn check_unary<Op: Operator<f64, 1>>(x: f64, tol: f64) {
+    let d = <Op as Operator<f64, 1>>::partial(&[x], 0);
     let fd = fd_unary::<Op>(x);
     assert!((d - fd).abs() <= tol.max(tol * fd.abs()), "d={} fd={} (x={})", d, fd, x);
 }
 
-fn fd_binary_x<Op: BuiltinOp<f64, 2>>(x: f64, y: f64) -> f64 {
+fn fd_binary_x<Op: Operator<f64, 2>>(x: f64, y: f64) -> f64 {
     let eps = 1e-7;
-    let vp = <Op as BuiltinOp<f64, 2>>::eval(&[x + eps, y]);
-    let vm = <Op as BuiltinOp<f64, 2>>::eval(&[x - eps, y]);
+    let vp = <Op as Operator<f64, 2>>::eval(&[x + eps, y]);
+    let vm = <Op as Operator<f64, 2>>::eval(&[x - eps, y]);
     (vp - vm) / (2.0 * eps)
 }
 
-fn fd_binary_y<Op: BuiltinOp<f64, 2>>(x: f64, y: f64) -> f64 {
+fn fd_binary_y<Op: Operator<f64, 2>>(x: f64, y: f64) -> f64 {
     let eps = 1e-7;
-    let vp = <Op as BuiltinOp<f64, 2>>::eval(&[x, y + eps]);
-    let vm = <Op as BuiltinOp<f64, 2>>::eval(&[x, y - eps]);
+    let vp = <Op as Operator<f64, 2>>::eval(&[x, y + eps]);
+    let vm = <Op as Operator<f64, 2>>::eval(&[x, y - eps]);
     (vp - vm) / (2.0 * eps)
 }
 
-fn check_binary<Op: BuiltinOp<f64, 2>>(x: f64, y: f64, tol: f64) {
-    let dx = <Op as BuiltinOp<f64, 2>>::partial(&[x, y], 0);
-    let dy = <Op as BuiltinOp<f64, 2>>::partial(&[x, y], 1);
+fn check_binary<Op: Operator<f64, 2>>(x: f64, y: f64, tol: f64) {
+    let dx = <Op as Operator<f64, 2>>::partial(&[x, y], 0);
+    let dy = <Op as Operator<f64, 2>>::partial(&[x, y], 1);
     let fdx = fd_binary_x::<Op>(x, y);
     let fdy = fd_binary_y::<Op>(x, y);
     assert!(
@@ -103,45 +104,45 @@ fn binary_derivatives_match_finite_difference() {
 #[test]
 fn nonsmooth_ops_have_reasonable_partials_off_boundaries() {
     // Abs: derivative is ±1 away from 0.
-    assert_eq!(<Abs as BuiltinOp<f64, 1>>::partial(&[2.0], 0), 1.0);
-    assert_eq!(<Abs as BuiltinOp<f64, 1>>::partial(&[-2.0], 0), -1.0);
-    assert_eq!(<Abs as BuiltinOp<f64, 1>>::partial(&[0.0], 0), 0.0);
+    assert_eq!(<Abs as Operator<f64, 1>>::partial(&[2.0], 0), 1.0);
+    assert_eq!(<Abs as Operator<f64, 1>>::partial(&[-2.0], 0), -1.0);
+    assert_eq!(<Abs as Operator<f64, 1>>::partial(&[0.0], 0), 0.0);
 
     // Sign/Identity are simple.
-    assert_eq!(<Sign as BuiltinOp<f64, 1>>::partial(&[2.0], 0), 0.0);
-    assert_eq!(<Identity as BuiltinOp<f64, 1>>::partial(&[2.0], 0), 1.0);
+    assert_eq!(<Sign as Operator<f64, 1>>::partial(&[2.0], 0), 0.0);
+    assert_eq!(<Identity as Operator<f64, 1>>::partial(&[2.0], 0), 1.0);
 
     // Min/Max: away from ties they are 0/1.
-    assert_eq!(<Min as BuiltinOp<f64, 2>>::partial(&[1.0, 2.0], 0), 1.0);
-    assert_eq!(<Min as BuiltinOp<f64, 2>>::partial(&[1.0, 2.0], 1), 0.0);
-    assert_eq!(<Max as BuiltinOp<f64, 2>>::partial(&[1.0, 2.0], 0), 0.0);
-    assert_eq!(<Max as BuiltinOp<f64, 2>>::partial(&[1.0, 2.0], 1), 1.0);
-    assert_eq!(<Min as BuiltinOp<f64, 2>>::partial(&[2.0, 1.0], 0), 0.0);
-    assert_eq!(<Min as BuiltinOp<f64, 2>>::partial(&[2.0, 1.0], 1), 1.0);
-    assert_eq!(<Max as BuiltinOp<f64, 2>>::partial(&[2.0, 1.0], 0), 1.0);
-    assert_eq!(<Max as BuiltinOp<f64, 2>>::partial(&[2.0, 1.0], 1), 0.0);
+    assert_eq!(<Min as Operator<f64, 2>>::partial(&[1.0, 2.0], 0), 1.0);
+    assert_eq!(<Min as Operator<f64, 2>>::partial(&[1.0, 2.0], 1), 0.0);
+    assert_eq!(<Max as Operator<f64, 2>>::partial(&[1.0, 2.0], 0), 0.0);
+    assert_eq!(<Max as Operator<f64, 2>>::partial(&[1.0, 2.0], 1), 1.0);
+    assert_eq!(<Min as Operator<f64, 2>>::partial(&[2.0, 1.0], 0), 0.0);
+    assert_eq!(<Min as Operator<f64, 2>>::partial(&[2.0, 1.0], 1), 1.0);
+    assert_eq!(<Max as Operator<f64, 2>>::partial(&[2.0, 1.0], 0), 1.0);
+    assert_eq!(<Max as Operator<f64, 2>>::partial(&[2.0, 1.0], 1), 0.0);
     // Reverse order exercises the other eval branch.
-    assert_eq!(<Min as BuiltinOp<f64, 2>>::eval(&[2.0, 1.0]), 1.0);
-    assert_eq!(<Max as BuiltinOp<f64, 2>>::eval(&[2.0, 1.0]), 2.0);
+    assert_eq!(<Min as Operator<f64, 2>>::eval(&[2.0, 1.0]), 1.0);
+    assert_eq!(<Max as Operator<f64, 2>>::eval(&[2.0, 1.0]), 2.0);
     // Tie splits gradient evenly.
-    assert_eq!(<Min as BuiltinOp<f64, 2>>::partial(&[2.0, 2.0], 0), 0.5);
-    assert_eq!(<Min as BuiltinOp<f64, 2>>::partial(&[2.0, 2.0], 1), 0.5);
-    assert_eq!(<Max as BuiltinOp<f64, 2>>::partial(&[2.0, 2.0], 0), 0.5);
-    assert_eq!(<Max as BuiltinOp<f64, 2>>::partial(&[2.0, 2.0], 1), 0.5);
+    assert_eq!(<Min as Operator<f64, 2>>::partial(&[2.0, 2.0], 0), 0.5);
+    assert_eq!(<Min as Operator<f64, 2>>::partial(&[2.0, 2.0], 1), 0.5);
+    assert_eq!(<Max as Operator<f64, 2>>::partial(&[2.0, 2.0], 0), 0.5);
+    assert_eq!(<Max as Operator<f64, 2>>::partial(&[2.0, 2.0], 1), 0.5);
 
     // Clamp: inside bounds, derivative wrt x is 1; below/above it's 0.
     let args = [0.0, -1.0, 1.0];
-    assert_eq!(<Clamp as BuiltinOp<f64, 3>>::partial(&args, 0), 1.0);
+    assert_eq!(<Clamp as Operator<f64, 3>>::partial(&args, 0), 1.0);
     let args = [-2.0, -1.0, 1.0];
-    assert_eq!(<Clamp as BuiltinOp<f64, 3>>::partial(&args, 0), 0.0);
-    assert_eq!(<Clamp as BuiltinOp<f64, 3>>::partial(&args, 1), 1.0);
+    assert_eq!(<Clamp as Operator<f64, 3>>::partial(&args, 0), 0.0);
+    assert_eq!(<Clamp as Operator<f64, 3>>::partial(&args, 1), 1.0);
     // When x >= lo, derivative wrt lo is 0.
     let args = [0.0, -1.0, 1.0];
-    assert_eq!(<Clamp as BuiltinOp<f64, 3>>::partial(&args, 1), 0.0);
+    assert_eq!(<Clamp as Operator<f64, 3>>::partial(&args, 1), 0.0);
     let args = [2.0, -1.0, 1.0];
-    assert_eq!(<Clamp as BuiltinOp<f64, 3>>::partial(&args, 0), 0.0);
-    assert_eq!(<Clamp as BuiltinOp<f64, 3>>::partial(&args, 2), 1.0);
+    assert_eq!(<Clamp as Operator<f64, 3>>::partial(&args, 0), 0.0);
+    assert_eq!(<Clamp as Operator<f64, 3>>::partial(&args, 2), 1.0);
     // When x <= hi, derivative wrt hi is 0.
     let args = [0.0, -1.0, 1.0];
-    assert_eq!(<Clamp as BuiltinOp<f64, 3>>::partial(&args, 2), 0.0);
+    assert_eq!(<Clamp as Operator<f64, 3>>::partial(&args, 2), 0.0);
 }

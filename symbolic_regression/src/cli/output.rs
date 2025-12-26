@@ -23,7 +23,7 @@ pub fn print_front<T, Ops, const D: usize>(
     pretty: bool,
 ) where
     T: Float + Display,
-    Ops: dynamic_expressions::strings::OpNames,
+    Ops: dynamic_expressions::OperatorSet,
 {
     println!("target: {target}");
     println!("{:<10} {:<14} equation", "complexity", "loss");
@@ -47,7 +47,7 @@ pub fn write_results<T, Ops, const D: usize>(
 ) -> anyhow::Result<()>
 where
     T: Float + Display,
-    Ops: dynamic_expressions::strings::OpNames,
+    Ops: dynamic_expressions::OperatorSet,
 {
     let fmt = match format {
         Some(f) => f,
@@ -77,7 +77,7 @@ fn infer_format(path: &Path) -> anyhow::Result<OutputFormat> {
 fn write_csv<T, Ops, const D: usize>(path: &Path, results: &[TargetResult<T, Ops, D>]) -> anyhow::Result<()>
 where
     T: Float + Display,
-    Ops: dynamic_expressions::strings::OpNames,
+    Ops: dynamic_expressions::OperatorSet,
 {
     let mut wtr = csv::Writer::from_path(path).with_context(|| format!("failed to create {}", path.display()))?;
     wtr.write_record(["target", "complexity", "loss", "equation"])?;
@@ -111,7 +111,7 @@ struct JsonRow<'a> {
 fn write_json<T, Ops, const D: usize>(path: &Path, results: &[TargetResult<T, Ops, D>]) -> anyhow::Result<()>
 where
     T: Float + Display,
-    Ops: dynamic_expressions::strings::OpNames,
+    Ops: dynamic_expressions::OperatorSet,
 {
     let mut rows = Vec::new();
     for r in results {

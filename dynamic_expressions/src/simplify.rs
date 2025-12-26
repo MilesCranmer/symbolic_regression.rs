@@ -1,10 +1,10 @@
 use num_traits::Float;
 
+use crate::dispatch::{EvalKernelCtx, SrcRef};
 use crate::evaluate::EvalOptions;
 use crate::expression::PostfixExpr;
 use crate::node::PNode;
-use crate::operator_enum::scalar::{EvalKernelCtx, OpId, ScalarOpSet, SrcRef};
-use crate::operator_registry::OpRegistry;
+use crate::traits::{OpId, OperatorSet};
 
 #[derive(Clone, Copy)]
 struct Frame<T> {
@@ -32,11 +32,8 @@ struct CombineCfg {
     sub_id: Option<u16>,
 }
 
-fn lookup_id_with_arity<Ops: OpRegistry>(token: &str, arity: u8) -> Option<u16> {
-    Ops::registry()
-        .iter()
-        .find(|info| info.op.arity == arity && info.matches_token(token))
-        .map(|info| info.op.id)
+fn lookup_id_with_arity<Ops: OperatorSet>(token: &str, arity: u8) -> Option<u16> {
+    Ops::lookup_with_arity(token, arity).ok().map(|op| op.id)
 }
 
 fn is_const<const D: usize>(arena: &[ArenaNode<D>], id: usize) -> Option<u16> {
@@ -355,7 +352,7 @@ fn combine_operators_in_place_with_cfg<T, Ops, const D: usize>(
 ) -> bool
 where
     T: Float,
-    Ops: OpRegistry,
+    Ops: OperatorSet,
 {
     let Some((mut arena, root)) = parse_postfix_to_arena(expr) else {
         return false;
@@ -379,7 +376,7 @@ pub fn simplify_tree_in_place<T, Ops, const D: usize>(
 ) -> bool
 where
     T: Float,
-    Ops: ScalarOpSet<T>,
+    Ops: OperatorSet<T = T>,
 {
     fn push_nonconst_frame<T: Float>(stack: &mut Vec<Frame<T>>, start: usize) {
         stack.push(Frame {
@@ -493,7 +490,7 @@ where
 pub fn combine_operators_in_place<T, Ops, const D: usize>(expr: &mut PostfixExpr<T, Ops, D>) -> bool
 where
     T: Float,
-    Ops: OpRegistry,
+    Ops: OperatorSet,
 {
     let cfg = CombineCfg {
         add_id: lookup_id_with_arity::<Ops>("+", 2),
@@ -506,7 +503,7 @@ where
 pub fn simplify_in_place<T, Ops, const D: usize>(expr: &mut PostfixExpr<T, Ops, D>, eval_opts: &EvalOptions) -> bool
 where
     T: Float,
-    Ops: ScalarOpSet<T> + OpRegistry,
+    Ops: OperatorSet<T = T>,
 {
     let c1 = simplify_tree_in_place(expr, eval_opts);
     let c2 = combine_operators_in_place(expr);

@@ -2,10 +2,9 @@ mod common;
 
 use common::*;
 use dynamic_expressions::operator_enum::builtin;
-use dynamic_expressions::operator_enum::scalar::HasOp;
 use dynamic_expressions::{
-    DiffContext, EvalContext, EvalOptions, GradContext, PNode, PostfixExpr, PostfixExpression, eval_diff_tree_array,
-    eval_grad_tree_array, eval_tree_array,
+    DiffContext, EvalContext, EvalOptions, GradContext, HasOp, PNode, PostfixExpr, PostfixExpression,
+    eval_diff_tree_array, eval_grad_tree_array, eval_tree_array,
 };
 use ndarray::Array2;
 
@@ -283,7 +282,7 @@ fn grad_context_reuse_recompiles_on_expr_change_same_len() {
 
 #[test]
 fn grad_context_reuse_switches_variable_flag_with_equal_dir() {
-    let add_op = <TestOps as HasOp<builtin::Add, 2>>::ID;
+    let add_op = <TestOps as HasOp<builtin::Add>>::ID;
     let expr = PostfixExpr::<f64, TestOps, 3>::new(
         vec![
             PNode::Var { feature: 0 },

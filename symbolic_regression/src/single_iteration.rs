@@ -32,8 +32,7 @@ pub fn s_r_cycle<T, Ops, const D: usize>(
 ) -> (f64, HallOfFame<T, Ops, D>)
 where
     T: Float + FromPrimitive + ToPrimitive + AddAssign,
-    Ops:
-        dynamic_expressions::operator_enum::scalar::ScalarOpSet<T> + dynamic_expressions::operator_registry::OpRegistry,
+    Ops: dynamic_expressions::OperatorSet<T = T>,
 {
     let max_temp = 1.0;
     let min_temp = if ctx.options.annealing { 0.0 } else { 1.0 };
@@ -76,8 +75,7 @@ pub fn optimize_and_simplify_population<T, Ops, const D: usize>(
 ) -> f64
 where
     T: Float + FromPrimitive + ToPrimitive + AddAssign,
-    Ops:
-        dynamic_expressions::operator_enum::scalar::ScalarOpSet<T> + dynamic_expressions::operator_registry::OpRegistry,
+    Ops: dynamic_expressions::OperatorSet<T = T>,
 {
     let mut num_evals = 0.0;
 

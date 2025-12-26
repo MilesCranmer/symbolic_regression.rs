@@ -141,11 +141,7 @@ struct EquationSearchState<'a, T: Float + AddAssign, Ops, const D: usize> {
 pub fn equation_search<T, Ops, const D: usize>(dataset: &Dataset<T>, options: &Options<T, D>) -> SearchResult<T, Ops, D>
 where
     T: Float + AddAssign + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + Send + Sync,
-    Ops: dynamic_expressions::operator_enum::scalar::ScalarOpSet<T>
-        + dynamic_expressions::strings::OpNames
-        + dynamic_expressions::operator_registry::OpRegistry
-        + Send
-        + Sync,
+    Ops: dynamic_expressions::OperatorSet<T = T> + Send + Sync,
 {
     equation_search_parallel(dataset, options)
 }
@@ -156,11 +152,7 @@ pub fn equation_search_parallel<T, Ops, const D: usize>(
 ) -> SearchResult<T, Ops, D>
 where
     T: Float + AddAssign + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + Send + Sync,
-    Ops: dynamic_expressions::operator_enum::scalar::ScalarOpSet<T>
-        + dynamic_expressions::strings::OpNames
-        + dynamic_expressions::operator_registry::OpRegistry
-        + Send
-        + Sync,
+    Ops: dynamic_expressions::OperatorSet<T = T> + Send + Sync,
 {
     let baseline_loss = if options.use_baseline {
         baseline_loss_from_zero_expression::<T, Ops, D>(dataset, options.loss.as_ref())
@@ -244,9 +236,7 @@ pub struct SearchEngine<T: Float + AddAssign, Ops, const D: usize> {
 impl<T, Ops, const D: usize> SearchEngine<T, Ops, D>
 where
     T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + AddAssign,
-    Ops: dynamic_expressions::operator_enum::scalar::ScalarOpSet<T>
-        + dynamic_expressions::strings::OpNames
-        + dynamic_expressions::operator_registry::OpRegistry,
+    Ops: dynamic_expressions::OperatorSet<T = T>,
 {
     pub fn new(dataset: Dataset<T>, options: Options<T, D>) -> Self {
         let baseline_loss = if options.use_baseline {
@@ -423,8 +413,7 @@ fn execute_task<T, Ops, const D: usize>(
 ) -> SearchTaskResult<T, Ops, D>
 where
     T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + AddAssign,
-    Ops:
-        dynamic_expressions::operator_enum::scalar::ScalarOpSet<T> + dynamic_expressions::operator_registry::OpRegistry,
+    Ops: dynamic_expressions::OperatorSet<T = T>,
 {
     let (evals1, best_seen) =
         pop_state.run_iteration_phase(full_dataset, options, curmaxsize, &stats, |pop, ctx, eval_dataset| {
@@ -458,7 +447,7 @@ fn apply_task_result<T, Ops, const D: usize>(
     res: SearchTaskResult<T, Ops, D>,
 ) where
     T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + AddAssign,
-    Ops: dynamic_expressions::operator_enum::scalar::ScalarOpSet<T> + dynamic_expressions::strings::OpNames,
+    Ops: dynamic_expressions::OperatorSet<T = T>,
 {
     pools.total_evals = pools.total_evals.saturating_add(res.evals);
 
@@ -521,12 +510,7 @@ fn run_scoped_search<'scope, 'env, T, Ops, const D: usize>(
 ) where
     'env: 'scope,
     T: Float + AddAssign + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + Send + Sync + 'scope,
-    Ops: dynamic_expressions::operator_enum::scalar::ScalarOpSet<T>
-        + dynamic_expressions::strings::OpNames
-        + dynamic_expressions::operator_registry::OpRegistry
-        + Send
-        + Sync
-        + 'scope,
+    Ops: dynamic_expressions::OperatorSet<T = T> + Send + Sync + 'scope,
 {
     let full_dataset = state.full_dataset;
     let options = state.options;
@@ -584,7 +568,7 @@ fn init_populations<T, Ops, const D: usize>(
 ) -> PopPools<T, Ops, D>
 where
     T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + AddAssign,
-    Ops: dynamic_expressions::operator_enum::scalar::ScalarOpSet<T>,
+    Ops: dynamic_expressions::OperatorSet<T = T>,
 {
     let dataset = full_dataset.data;
     let mut total_evals: u64 = 0;

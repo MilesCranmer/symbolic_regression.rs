@@ -1,7 +1,7 @@
 use crate::expression::{Metadata, PostfixExpr};
 use crate::node::PNode;
 use crate::operator_enum::builtin::{Add, Div, Mul, Neg, Sub};
-use crate::operator_enum::scalar::HasOp;
+use crate::traits::HasOp;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Lit<T>(pub T);
@@ -14,12 +14,12 @@ macro_rules! impl_postfix_binop_self {
     ($Trait:ident, $method:ident, $Marker:ident) => {
         impl<T, Ops, const D: usize> core::ops::$Trait for PostfixExpr<T, Ops, D>
         where
-            Ops: HasOp<$Marker, 2>,
+            Ops: HasOp<$Marker>,
         {
             type Output = Self;
 
             fn $method(self, rhs: Self) -> Self::Output {
-                __apply_postfix::<T, Ops, D, 2>(<Ops as HasOp<$Marker, 2>>::ID, [self, rhs])
+                __apply_postfix::<T, Ops, D, 2>(<Ops as HasOp<$Marker>>::ID, [self, rhs])
             }
         }
     };
@@ -29,13 +29,13 @@ macro_rules! impl_postfix_binop_scalar_rhs {
     ($Trait:ident, $method:ident, $Marker:ident) => {
         impl<T, Ops, const D: usize> core::ops::$Trait<T> for PostfixExpr<T, Ops, D>
         where
-            Ops: HasOp<$Marker, 2>,
+            Ops: HasOp<$Marker>,
         {
             type Output = Self;
 
             fn $method(self, rhs: T) -> Self::Output {
                 __apply_postfix::<T, Ops, D, 2>(
-                    <Ops as HasOp<$Marker, 2>>::ID,
+                    <Ops as HasOp<$Marker>>::ID,
                     [self, __const_expr::<T, Ops, D>(rhs)],
                 )
             }
@@ -47,13 +47,13 @@ macro_rules! impl_lit_binop_postfix_rhs {
     ($Trait:ident, $method:ident, $Marker:ident) => {
         impl<T, Ops, const D: usize> core::ops::$Trait<PostfixExpr<T, Ops, D>> for Lit<T>
         where
-            Ops: HasOp<$Marker, 2>,
+            Ops: HasOp<$Marker>,
         {
             type Output = PostfixExpr<T, Ops, D>;
 
             fn $method(self, rhs: PostfixExpr<T, Ops, D>) -> Self::Output {
                 __apply_postfix::<T, Ops, D, 2>(
-                    <Ops as HasOp<$Marker, 2>>::ID,
+                    <Ops as HasOp<$Marker>>::ID,
                     [__const_expr::<T, Ops, D>(self.0), rhs],
                 )
             }
@@ -65,12 +65,12 @@ macro_rules! impl_postfix_unop {
     ($Trait:ident, $method:ident, $Marker:ident, $arity:expr) => {
         impl<T, Ops, const D: usize> core::ops::$Trait for PostfixExpr<T, Ops, D>
         where
-            Ops: HasOp<$Marker, $arity>,
+            Ops: HasOp<$Marker>,
         {
             type Output = Self;
 
             fn $method(self) -> Self::Output {
-                __apply_postfix::<T, Ops, D, $arity>(<Ops as HasOp<$Marker, $arity>>::ID, [self])
+                __apply_postfix::<T, Ops, D, $arity>(<Ops as HasOp<$Marker>>::ID, [self])
             }
         }
     };

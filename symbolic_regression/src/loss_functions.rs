@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
-use dynamic_expressions::EvalOptions;
-use dynamic_expressions::operator_enum::scalar;
 use dynamic_expressions::utils::ZipEq;
+use dynamic_expressions::{EvalOptions, OperatorSet};
 use ndarray::Array2;
 use num_traits::Float;
 
@@ -18,7 +17,7 @@ pub fn baseline_loss_from_zero_expression<T: Float, Ops, const D: usize>(
     loss: &dyn LossFn<T>,
 ) -> Option<T>
 where
-    Ops: scalar::ScalarOpSet<T>,
+    Ops: OperatorSet<T = T>,
 {
     let expr: dynamic_expressions::expression::PostfixExpr<T, Ops, D> =
         dynamic_expressions::expression::PostfixExpr::zero();

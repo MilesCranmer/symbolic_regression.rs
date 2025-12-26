@@ -2,9 +2,10 @@ use ndarray::{Array2, ArrayView2};
 use num_traits::Float;
 
 use crate::compile::{EvalPlan, build_node_hash, compile_plan};
+use crate::dispatch::{EvalKernelCtx, GradRef, SrcRef};
 use crate::expression::PostfixExpr;
 use crate::node::Src;
-use crate::operator_enum::scalar::{EvalKernelCtx, GradRef, OpId, ScalarOpSet, SrcRef};
+use crate::traits::{OpId, OperatorSet};
 
 #[derive(Copy, Clone, Debug)]
 pub struct EvalOptions {
@@ -43,11 +44,7 @@ impl<T: Float, const D: usize> EvalContext<T, D> {
         }
     }
 
-    pub fn setup<Ops>(&mut self, expr: &PostfixExpr<T, Ops, D>, x_columns: ArrayView2<'_, T>)
-    where
-        T: Float,
-        Ops: ScalarOpSet<T>,
-    {
+    pub fn setup<Ops>(&mut self, expr: &PostfixExpr<T, Ops, D>, x_columns: ArrayView2<'_, T>) {
         if self.needs_recompile(expr, x_columns) {
             self.plan = Some(compile_plan::<D>(&expr.nodes, x_columns.nrows(), expr.consts.len()));
             self.plan_nodes_len = expr.nodes.len();
@@ -58,11 +55,7 @@ impl<T: Float, const D: usize> EvalContext<T, D> {
         self.ensure_scratch(n_slots);
     }
 
-    fn needs_recompile<Ops>(&self, expr: &PostfixExpr<T, Ops, D>, x_columns: ArrayView2<'_, T>) -> bool
-    where
-        T: Float,
-        Ops: ScalarOpSet<T>,
-    {
+    fn needs_recompile<Ops>(&self, expr: &PostfixExpr<T, Ops, D>, x_columns: ArrayView2<'_, T>) -> bool {
         if self.plan.is_none()
             || self.plan_nodes_len != expr.nodes.len()
             || self.plan_n_consts != expr.consts.len()
@@ -195,7 +188,7 @@ pub fn eval_tree_array<T, Ops, const D: usize>(
 ) -> (Vec<T>, bool)
 where
     T: Float,
-    Ops: ScalarOpSet<T>,
+    Ops: OperatorSet<T = T>,
 {
     assert!(x_columns.is_standard_layout(), "X must be contiguous");
     let n_rows = x_columns.ncols();
@@ -215,7 +208,7 @@ pub fn eval_plan_array_into<T, Ops, const D: usize>(
 ) -> bool
 where
     T: Float,
-    Ops: ScalarOpSet<T>,
+    Ops: OperatorSet<T = T>,
 {
     assert!(x_columns.is_standard_layout(), "X columns must be contiguous");
     let x_data = x_columns.as_slice().expect("X columns must be contiguous in memory");
@@ -290,7 +283,7 @@ pub fn eval_tree_array_into<T, Ops, const D: usize>(
 ) -> bool
 where
     T: Float,
-    Ops: ScalarOpSet<T>,
+    Ops: OperatorSet<T = T>,
 {
     assert_eq!(out.len(), x_columns.ncols());
     assert_eq!(ctx.n_rows, x_columns.ncols());
@@ -303,12 +296,454 @@ where
     eval_plan_array_into::<T, Ops, D>(out, plan, expr, x_columns, scratch, opts)
 }
 
+#[doc(hidden)]
+pub mod kernels {
+    use num_traits::Float;
+
+    use super::EvalOptions;
+    use crate::dispatch::{GradKernelCtx, GradRef, SrcRef, grad_at};
+    use crate::utils::ZipEq;
+
+    #[inline]
+    fn __src_val<T: Float>(src: SrcRef<'_, T>, row: usize) -> T {
+        match src {
+            SrcRef::Slice(s) => s[row],
+            SrcRef::Const(c) => c,
+        }
+    }
+
+    #[inline]
+    fn __all_finite<T: Float>(out: &[T]) -> bool {
+        out.iter().all(|v| v.is_finite())
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn __maybe_mark_nonfinite<T: Float>(v: T, opts: &EvalOptions, complete: &mut bool) -> bool {
+        if opts.check_finite && !v.is_finite() {
+            *complete = false;
+            if opts.early_exit {
+                return false;
+            }
+        }
+        true
+    }
+
+    #[derive(Clone, Copy)]
+    enum ArgView<'a, T> {
+        Slice(&'a [T]),
+        Const(T),
+    }
+
+    impl<'a, T: Float> From<SrcRef<'a, T>> for ArgView<'a, T> {
+        fn from(value: SrcRef<'a, T>) -> Self {
+            match value {
+                SrcRef::Slice(s) => Self::Slice(s),
+                SrcRef::Const(c) => Self::Const(c),
+            }
+        }
+    }
+
+    impl<'a, T: Float> ArgView<'a, T> {
+        #[inline]
+        fn get(&self, row: usize) -> T {
+            match self {
+                Self::Slice(s) => s[row],
+                Self::Const(c) => *c,
+            }
+        }
+    }
+
+    #[inline]
+    fn vals2<T: Float, const A: usize>(a: T, b: T) -> [T; A] {
+        let mut vals = [T::zero(); A];
+        vals[0] = a;
+        vals[1] = b;
+        vals
+    }
+
+    #[inline]
+    fn vals1<T: Float, const A: usize>(a: T) -> [T; A] {
+        let mut vals = [T::zero(); A];
+        vals[0] = a;
+        vals
+    }
+
+    #[inline]
+    fn grad_dir_view<'a, T: Float>(g: GradRef<'a, T>, dir: usize, n_rows: usize) -> ArgView<'a, T> {
+        match g {
+            GradRef::Slice(s) => ArgView::Slice(&s[dir * n_rows..(dir + 1) * n_rows]),
+            GradRef::Basis(k) => ArgView::Const(if dir == k { T::one() } else { T::zero() }),
+            GradRef::Zero => ArgView::Const(T::zero()),
+        }
+    }
+
+    #[inline]
+    fn grad_unary_loop<T: Float, F, const A: usize>(out: &mut [T], x: ArgView<'_, T>, dx: ArgView<'_, T>, partial: F)
+    where
+        F: Fn(&[T; A], usize) -> T,
+    {
+        match (x, dx) {
+            (_, ArgView::Const(dx_c)) if dx_c.is_zero() => out.fill(T::zero()),
+            (ArgView::Slice(x_s), ArgView::Slice(dx_s)) => {
+                for ((outg, &xv), &dxv) in out.iter_mut().zip_eq(x_s).zip_eq(dx_s) {
+                    let vals = vals1(xv);
+                    *outg = partial(&vals, 0) * dxv;
+                }
+            }
+            (ArgView::Slice(x_s), ArgView::Const(dx_c)) => {
+                for (outg, &xv) in out.iter_mut().zip_eq(x_s) {
+                    let vals = vals1(xv);
+                    *outg = partial(&vals, 0) * dx_c;
+                }
+            }
+            (ArgView::Const(x_c), ArgView::Const(dx_c)) => {
+                let vals = vals1(x_c);
+                let p = partial(&vals, 0);
+                out.fill(p * dx_c);
+            }
+            _ => unreachable!("malformed expression"),
+        }
+    }
+
+    #[inline]
+    fn grad_binary_loop<T: Float, F, const A: usize>(
+        out: &mut [T],
+        x: ArgView<'_, T>,
+        y: ArgView<'_, T>,
+        dx: ArgView<'_, T>,
+        dy: ArgView<'_, T>,
+        partial: F,
+    ) where
+        F: Fn(&[T; A], usize) -> T,
+    {
+        match (x, y, dx, dy) {
+            (ArgView::Slice(x_s), ArgView::Slice(y_s), ArgView::Slice(dx_s), ArgView::Slice(dy_s)) => {
+                let data = (x_s.iter().zip_eq(y_s)).zip_eq(dx_s.iter().zip_eq(dy_s));
+                for (outv, ((&xv, &yv), (&dxv, &dyv))) in out.iter_mut().zip_eq(data) {
+                    let vals = vals2(xv, yv);
+                    *outv = partial(&vals, 0) * dxv + partial(&vals, 1) * dyv;
+                }
+            }
+            (ArgView::Slice(x_s), ArgView::Slice(y_s), ArgView::Slice(dx_s), ArgView::Const(dy_c)) => {
+                let data = x_s.iter().zip_eq(y_s).zip_eq(dx_s);
+                for (outv, ((&xv, &yv), &dxv)) in out.iter_mut().zip_eq(data) {
+                    let vals = vals2(xv, yv);
+                    *outv = partial(&vals, 0) * dxv + partial(&vals, 1) * dy_c;
+                }
+            }
+            (ArgView::Slice(x_s), ArgView::Slice(y_s), ArgView::Const(dx_c), ArgView::Slice(dy_s)) => {
+                let data = x_s.iter().zip_eq(y_s).zip_eq(dy_s);
+                for (outv, ((&xv, &yv), &dyv)) in out.iter_mut().zip_eq(data) {
+                    let vals = vals2(xv, yv);
+                    *outv = partial(&vals, 0) * dx_c + partial(&vals, 1) * dyv;
+                }
+            }
+            (ArgView::Slice(x_s), ArgView::Slice(y_s), ArgView::Const(dx_c), ArgView::Const(dy_c)) => {
+                for (outv, (&xv, &yv)) in out.iter_mut().zip_eq(x_s.iter().zip_eq(y_s)) {
+                    let vals = vals2(xv, yv);
+                    *outv = partial(&vals, 0) * dx_c + partial(&vals, 1) * dy_c;
+                }
+            }
+
+            (ArgView::Slice(x_s), ArgView::Const(y_c), ArgView::Slice(dx_s), ArgView::Const(dy_c)) => {
+                for (outv, (&xv, &dxv)) in out.iter_mut().zip_eq(x_s.iter().zip_eq(dx_s)) {
+                    let vals = vals2(xv, y_c);
+                    *outv = partial(&vals, 0) * dxv + partial(&vals, 1) * dy_c;
+                }
+            }
+            (ArgView::Slice(x_s), ArgView::Const(y_c), ArgView::Const(dx_c), ArgView::Const(dy_c)) => {
+                for (outv, &xv) in out.iter_mut().zip_eq(x_s) {
+                    let vals = vals2(xv, y_c);
+                    *outv = partial(&vals, 0) * dx_c + partial(&vals, 1) * dy_c;
+                }
+            }
+
+            (ArgView::Const(x_c), ArgView::Slice(y_s), ArgView::Const(dx_c), ArgView::Slice(dy_s)) => {
+                for (outv, (&yv, &dyv)) in out.iter_mut().zip_eq(y_s.iter().zip_eq(dy_s)) {
+                    let vals = vals2(x_c, yv);
+                    *outv = partial(&vals, 0) * dx_c + partial(&vals, 1) * dyv;
+                }
+            }
+            (ArgView::Const(x_c), ArgView::Slice(y_s), ArgView::Const(dx_c), ArgView::Const(dy_c)) => {
+                for (outv, &yv) in out.iter_mut().zip_eq(y_s) {
+                    let vals = vals2(x_c, yv);
+                    *outv = partial(&vals, 0) * dx_c + partial(&vals, 1) * dy_c;
+                }
+            }
+            (ArgView::Const(x_c), ArgView::Const(y_c), ArgView::Const(dx_c), ArgView::Const(dy_c)) => {
+                let vals = vals2(x_c, y_c);
+                out.fill(partial(&vals, 0) * dx_c + partial(&vals, 1) * dy_c);
+            }
+            _ => unreachable!("malformed expression"),
+        }
+    }
+
+    #[inline]
+    fn make_arg_views<'a, const A: usize, T: Float>(args: &'a [SrcRef<'a, T>]) -> [ArgView<'a, T>; A] {
+        core::array::from_fn(|j| args[j].into())
+    }
+
+    #[inline]
+    fn eval_unary_loop<T: Float>(out: &mut [T], x: ArgView<'_, T>, eval: impl Copy + Fn(T) -> T) {
+        match x {
+            ArgView::Slice(x_s) => {
+                for (outv, &xv) in out.iter_mut().zip_eq(x_s) {
+                    *outv = eval(xv);
+                }
+            }
+            ArgView::Const(x_c) => out.fill(eval(x_c)),
+        }
+    }
+
+    #[inline]
+    fn eval_binary_loop<T: Float>(
+        out: &mut [T],
+        x: ArgView<'_, T>,
+        y: ArgView<'_, T>,
+        eval: impl Copy + Fn(T, T) -> T,
+    ) {
+        match (x, y) {
+            (ArgView::Slice(x_s), ArgView::Slice(y_s)) => {
+                for (outv, (&xv, &yv)) in out.iter_mut().zip_eq(x_s.iter().zip_eq(y_s)) {
+                    *outv = eval(xv, yv);
+                }
+            }
+            (ArgView::Slice(x_s), ArgView::Const(y_c)) => {
+                for (outv, &xv) in out.iter_mut().zip_eq(x_s) {
+                    *outv = eval(xv, y_c);
+                }
+            }
+            (ArgView::Const(x_c), ArgView::Slice(y_s)) => {
+                for (outv, &yv) in out.iter_mut().zip_eq(y_s) {
+                    *outv = eval(x_c, yv);
+                }
+            }
+            (ArgView::Const(x_c), ArgView::Const(y_c)) => out.fill(eval(x_c, y_c)),
+        }
+    }
+
+    pub fn eval_nary<const A: usize, T: Float, Op: crate::traits::Operator<T, A>>(
+        out: &mut [T],
+        args: &[SrcRef<'_, T>],
+        opts: &EvalOptions,
+    ) -> bool {
+        debug_assert_eq!(args.len(), A);
+        let check_finite = opts.check_finite;
+        let early_exit = opts.early_exit;
+
+        if args.iter().all(|a| matches!(a, SrcRef::Const(_))) {
+            let vals: [T; A] = core::array::from_fn(|j| __src_val(args[j], 0));
+            let v = Op::eval(&vals);
+            out.fill(v);
+            if !check_finite {
+                return true;
+            }
+            let finite = v.is_finite();
+            if !finite && early_exit {
+                out.fill(T::nan());
+            }
+            return finite;
+        }
+
+        let mut complete = true;
+        let arg_views: [ArgView<'_, T>; A] = make_arg_views(args);
+
+        if A == 1 {
+            eval_unary_loop(out, arg_views[0], move |a| Op::eval(&vals1(a)));
+        } else if A == 2 {
+            eval_binary_loop(out, arg_views[0], arg_views[1], move |a, b| Op::eval(&vals2(a, b)));
+        } else {
+            let mut vals: [T; A] = [T::zero(); A];
+            for (row, outv) in out.iter_mut().enumerate() {
+                for (v, view) in vals.iter_mut().zip_eq(arg_views) {
+                    *v = view.get(row);
+                }
+                let v = Op::eval(&vals);
+                *outv = v;
+                if !__maybe_mark_nonfinite(v, opts, &mut complete) {
+                    out.fill(T::nan());
+                    return false;
+                }
+            }
+        }
+
+        if !check_finite {
+            return true;
+        }
+
+        let finite = __all_finite(out);
+        complete &= finite;
+        if !finite && early_exit {
+            out.fill(T::nan());
+            return false;
+        }
+
+        complete
+    }
+
+    pub fn diff_nary<const A: usize, T: Float + core::ops::AddAssign, Op: crate::traits::Operator<T, A>>(
+        out_val: &mut [T],
+        out_der: &mut [T],
+        args: &[SrcRef<'_, T>],
+        dargs: &[SrcRef<'_, T>],
+        opts: &EvalOptions,
+    ) -> bool {
+        debug_assert_eq!(args.len(), A);
+        debug_assert_eq!(dargs.len(), A);
+        let check_finite = opts.check_finite;
+        let early_exit = opts.early_exit;
+        let mut complete = true;
+
+        let arg_views: [ArgView<'_, T>; A] = make_arg_views(args);
+        let darg_views: [ArgView<'_, T>; A] = make_arg_views(dargs);
+
+        if A == 1 {
+            eval_unary_loop(out_val, arg_views[0], move |a| Op::eval(&vals1(a)));
+            grad_unary_loop::<T, _, A>(out_der, arg_views[0], darg_views[0], Op::partial);
+        } else if A == 2 {
+            eval_binary_loop(out_val, arg_views[0], arg_views[1], move |a, b| Op::eval(&vals2(a, b)));
+            grad_binary_loop::<T, _, A>(
+                out_der,
+                arg_views[0],
+                arg_views[1],
+                darg_views[0],
+                darg_views[1],
+                Op::partial,
+            );
+        } else {
+            let mut vals: [T; A] = [T::zero(); A];
+            let mut dvals: [T; A] = [T::zero(); A];
+
+            for (row, (outv, outd)) in out_val.iter_mut().zip_eq(out_der.iter_mut()).enumerate() {
+                for (v, view) in vals.iter_mut().zip_eq(arg_views) {
+                    *v = view.get(row);
+                }
+                for (dv, view) in dvals.iter_mut().zip_eq(darg_views) {
+                    *dv = view.get(row);
+                }
+                let v = Op::eval(&vals);
+                *outv = v;
+
+                let mut dv_out = T::zero();
+                for (j, dvj) in dvals.iter().copied().enumerate() {
+                    dv_out += Op::partial(&vals, j) * dvj;
+                }
+                *outd = dv_out;
+
+                if !__maybe_mark_nonfinite(v, opts, &mut complete) {
+                    out_val.fill(T::nan());
+                    out_der.fill(T::nan());
+                    return false;
+                }
+                if !__maybe_mark_nonfinite(dv_out, opts, &mut complete) {
+                    out_val.fill(T::nan());
+                    out_der.fill(T::nan());
+                    return false;
+                }
+            }
+        }
+
+        if check_finite {
+            let finite = __all_finite(out_val);
+            complete &= finite;
+            if !finite && early_exit {
+                out_val.fill(T::nan());
+                out_der.fill(T::nan());
+                return false;
+            }
+        }
+
+        complete
+    }
+
+    pub fn grad_nary<const A: usize, T: Float + core::ops::AddAssign, Op: crate::traits::Operator<T, A>>(
+        ctx: GradKernelCtx<'_, '_, T>,
+    ) -> bool {
+        debug_assert_eq!(ctx.args.len(), A);
+        debug_assert_eq!(ctx.arg_grads.len(), A);
+
+        let check_finite = ctx.opts.check_finite;
+        let early_exit = ctx.opts.early_exit;
+        let mut complete = true;
+        let arg_views: [ArgView<'_, T>; A] = make_arg_views(ctx.args);
+
+        if A == 1 {
+            eval_unary_loop(ctx.out_val, arg_views[0], move |a| Op::eval(&vals1(a)));
+            let x = arg_views[0];
+            let dx_ref = ctx.arg_grads[0];
+            let n_rows = ctx.n_rows;
+            for dir in 0..ctx.n_dir {
+                let grad_dir = &mut ctx.out_grad[dir * n_rows..(dir + 1) * n_rows];
+                let dx = grad_dir_view(dx_ref, dir, n_rows);
+                grad_unary_loop::<T, _, A>(grad_dir, x, dx, Op::partial);
+            }
+        } else if A == 2 {
+            eval_binary_loop(ctx.out_val, arg_views[0], arg_views[1], move |a, b| {
+                Op::eval(&vals2(a, b))
+            });
+
+            let x = arg_views[0];
+            let y = arg_views[1];
+            let dx_ref = ctx.arg_grads[0];
+            let dy_ref = ctx.arg_grads[1];
+            let n_rows = ctx.n_rows;
+
+            for dir in 0..ctx.n_dir {
+                let grad_dir = &mut ctx.out_grad[dir * n_rows..(dir + 1) * n_rows];
+                let dx = grad_dir_view(dx_ref, dir, n_rows);
+                let dy = grad_dir_view(dy_ref, dir, n_rows);
+                if matches!((dx, dy), (ArgView::Const(dx_c), ArgView::Const(dy_c)) if dx_c.is_zero() && dy_c.is_zero())
+                {
+                    grad_dir.fill(T::zero());
+                    continue;
+                }
+                grad_binary_loop::<T, _, A>(grad_dir, x, y, dx, dy, Op::partial);
+            }
+        } else {
+            let mut vals: [T; A] = [T::zero(); A];
+
+            for (row, outv) in ctx.out_val.iter_mut().enumerate() {
+                for (v, view) in vals.iter_mut().zip_eq(arg_views) {
+                    *v = view.get(row);
+                }
+                *outv = Op::eval(&vals);
+            }
+
+            for (dir, grad_dir) in ctx.out_grad.chunks_mut(ctx.n_rows).enumerate().take(ctx.n_dir) {
+                for (row, outg) in grad_dir.iter_mut().enumerate() {
+                    for (v, view) in vals.iter_mut().zip_eq(arg_views) {
+                        *v = view.get(row);
+                    }
+                    let mut g = T::zero();
+                    for (j, ag) in ctx.arg_grads.iter().copied().enumerate() {
+                        g += Op::partial(&vals, j) * grad_at(ag, dir, row, ctx.n_rows);
+                    }
+                    *outg = g;
+                }
+            }
+        }
+
+        if check_finite {
+            let finite = __all_finite(ctx.out_val);
+            complete &= finite;
+            if !finite && early_exit {
+                ctx.out_val.fill(T::nan());
+                ctx.out_grad.fill(T::nan());
+                return false;
+            }
+        }
+
+        complete
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use ndarray::Array2;
 
     use super::*;
-    use crate::operator_enum::scalar::SrcRef;
+    use crate::dispatch::SrcRef;
 
     #[test]
     fn slot_slice_panics_if_src_references_dst() {

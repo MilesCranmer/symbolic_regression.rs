@@ -4,7 +4,7 @@ mod imp {
     use std::io::IsTerminal;
     use std::time::{Duration, Instant};
 
-    use dynamic_expressions::strings::OpNames;
+    use dynamic_expressions::OperatorSet;
     use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
     use num_traits::Float;
 
@@ -90,7 +90,7 @@ mod imp {
             cycles_remaining: usize,
         ) where
             T: Float + num_traits::ToPrimitive + Display,
-            Ops: OpNames,
+            Ops: OperatorSet,
         {
             if !self.show {
                 return;
@@ -129,7 +129,7 @@ mod imp {
     fn update_progress_msg<T, Ops, const D: usize>(ctx: ProgressMsgCtx<'_, T, Ops, D>)
     where
         T: Float + num_traits::ToPrimitive + Display,
-        Ops: OpNames,
+        Ops: OperatorSet,
     {
         let ProgressMsgCtx {
             pb,
@@ -203,7 +203,7 @@ mod imp {
     ) -> String
     where
         T: Float + num_traits::ToPrimitive + Display,
-        Ops: OpNames,
+        Ops: OperatorSet,
     {
         let terminal_width = terminal_width.max(80);
         let raw_border = "─".repeat(terminal_width.saturating_sub(1));

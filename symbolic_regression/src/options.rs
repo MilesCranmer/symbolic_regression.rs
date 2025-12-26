@@ -178,7 +178,7 @@ macro_rules! __define_options {
 
             pub variable_complexities: Option<Vec<u16>>,
             pub operator_complexity_overrides: std::collections::HashMap<
-                dynamic_expressions::operator_enum::scalar::OpId,
+                dynamic_expressions::OpId,
                 u16,
             >,
             pub op_constraints: crate::check_constraints::OpConstraints<D>,

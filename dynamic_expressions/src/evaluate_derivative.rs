@@ -2,10 +2,11 @@ use ndarray::{Array2, ArrayView2};
 use num_traits::Float;
 
 use crate::compile::{EvalPlan, build_node_hash, compile_plan};
+use crate::dispatch::{DiffKernelCtx, GradKernelCtx, GradRef, SrcRef};
 use crate::evaluate::{EvalOptions, resolve_der_src, resolve_grad_src, resolve_val_src};
 use crate::expression::PostfixExpr;
 use crate::node::Src;
-use crate::operator_enum::scalar::{DiffKernelCtx, GradKernelCtx, GradRef, OpId, ScalarOpSet, SrcRef};
+use crate::traits::{OpId, OperatorSet};
 use crate::utils::ZipEq;
 
 #[derive(Debug)]
@@ -105,7 +106,7 @@ pub fn eval_diff_tree_array<T, Ops, const D: usize>(
 ) -> (Vec<T>, Vec<T>, bool)
 where
     T: Float,
-    Ops: ScalarOpSet<T>,
+    Ops: OperatorSet<T = T>,
 {
     assert!(x_columns.is_standard_layout(), "X must be contiguous");
     assert!(direction < x_columns.nrows());
@@ -233,7 +234,7 @@ pub fn eval_grad_tree_array<T, Ops, const D: usize>(
 ) -> (Vec<T>, GradMatrix<T>, bool)
 where
     T: Float + core::ops::AddAssign,
-    Ops: ScalarOpSet<T>,
+    Ops: OperatorSet<T = T>,
 {
     assert!(x_columns.is_standard_layout(), "X must be contiguous");
     assert_eq!(ctx.n_rows, x_columns.ncols());

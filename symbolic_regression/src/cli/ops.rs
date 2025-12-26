@@ -1,14 +1,14 @@
 // CLI operator list / parsing helpers.
 
 use anyhow::{Context, bail};
-use dynamic_expressions::operator_registry::OpRegistry;
+use dynamic_expressions::{OpId, OperatorSet};
 
 use crate::Operators;
 use crate::cli::args::Cli;
 
 pub fn build_operators<OpsReg, const D: usize>(cli: &Cli) -> anyhow::Result<Operators<D>>
 where
-    OpsReg: OpRegistry,
+    OpsReg: OperatorSet,
 {
     let unary: Vec<&str> = cli
         .unary_operators
@@ -36,23 +36,30 @@ where
     Ok(ops)
 }
 
-pub fn print_operator_list<OpsReg: OpRegistry>() {
-    let mut by_arity: [Vec<&dynamic_expressions::operator_registry::OpInfo>; 3] = [Vec::new(), Vec::new(), Vec::new()];
-    for info in OpsReg::registry() {
-        if (1u8..=3u8).contains(&info.op.arity) {
-            by_arity[(info.op.arity - 1) as usize].push(info);
+pub fn print_operator_list<OpsReg: OperatorSet>() {
+    let max_arity = (OpsReg::MAX_ARITY as usize).min(3);
+    let mut by_arity: [Vec<OpId>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+    for arity in 1..=max_arity {
+        let arity_u8 = arity as u8;
+        for &id in OpsReg::ops_with_arity(arity_u8) {
+            by_arity[arity - 1].push(OpId { arity: arity_u8, id });
         }
     }
 
     let headings = ["--unary-operators", "--binary-operators", "--ternary-operators"];
     for (arity, items) in by_arity.iter_mut().enumerate() {
-        items.sort_by_key(|i| i.name);
+        items.sort_by_key(|op| OpsReg::name(*op));
         println!("{}:", headings[arity]);
         for i in items.iter() {
-            if let Some(infix) = i.infix {
-                println!("  {:<10} display={:<4} infix={}", i.name, i.display, infix);
+            if let Some(infix) = OpsReg::infix(*i) {
+                println!(
+                    "  {:<10} display={:<4} infix={}",
+                    OpsReg::name(*i),
+                    OpsReg::display(*i),
+                    infix
+                );
             } else {
-                println!("  {:<10} display={}", i.name, i.display);
+                println!("  {:<10} display={}", OpsReg::name(*i), OpsReg::display(*i));
             }
         }
         println!();

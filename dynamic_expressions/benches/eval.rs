@@ -4,9 +4,7 @@ use criterion::{criterion_group, criterion_main};
 use dynamic_expressions::evaluate::EvalOptions;
 use dynamic_expressions::expression::PostfixExpr;
 use dynamic_expressions::node::PNode;
-use dynamic_expressions::operator_enum::scalar::ScalarOpSet;
-use dynamic_expressions::operator_registry::OpRegistry;
-use dynamic_expressions::opset;
+use dynamic_expressions::{OperatorSet, opset};
 use fastrand::Rng;
 use ndarray::Array2;
 use num_traits::Float;
@@ -51,7 +49,7 @@ fn random_leaf<T: Float>(rng: &mut Rng, n_features: usize, consts: &mut Vec<T>) 
     }
 }
 
-fn gen_random_tree_fixed_size<T: Float, Ops: OpRegistry, const D: usize>(
+fn gen_random_tree_fixed_size<T: Float, Ops: OperatorSet<T = T>, const D: usize>(
     rng: &mut Rng,
     target_size: usize,
     n_features: usize,
@@ -61,13 +59,9 @@ fn gen_random_tree_fixed_size<T: Float, Ops: OpRegistry, const D: usize>(
     let mut consts: Vec<T> = Vec::new();
     nodes.push(random_leaf(rng, n_features, &mut consts));
 
-    let ops_by_arity: [Vec<_>; D] = core::array::from_fn(|arity_minus_one| {
+    let ops_by_arity: [Vec<u16>; D] = core::array::from_fn(|arity_minus_one| {
         let arity = (arity_minus_one + 1) as u8;
-        Ops::registry()
-            .iter()
-            .filter(|info| info.op.arity == arity)
-            .map(|info| info.op)
-            .collect()
+        Ops::ops_with_arity(arity).to_vec()
     });
 
     while nodes.len() < target_size {
@@ -100,7 +94,7 @@ fn gen_random_tree_fixed_size<T: Float, Ops: OpRegistry, const D: usize>(
         for _ in 0..arity {
             repl.push(random_leaf(rng, n_features, &mut consts));
         }
-        repl.push(PNode::Op { arity, op: op.id });
+        repl.push(PNode::Op { arity, op });
         nodes.splice(pos..=pos, repl);
     }
 
@@ -122,7 +116,7 @@ fn make_data<T: Float>() -> Array2<T> {
 fn bench_eval_group<T, Ops, const D: usize>(c: &mut criterion::Criterion, type_name: &str)
 where
     T: Float + core::ops::AddAssign + Send + Sync,
-    Ops: OpRegistry + ScalarOpSet<T> + Send + Sync,
+    Ops: OperatorSet<T = T> + Send + Sync,
 {
     let mut rng = Rng::with_seed(0);
     let trees: Vec<PostfixExpr<T, Ops, D>> = (0..N_TREES)
@@ -162,7 +156,7 @@ where
 fn bench_utilities<T, Ops, const D: usize>(c: &mut criterion::Criterion, type_name: &str)
 where
     T: Float + Send + Sync,
-    Ops: OpRegistry + ScalarOpSet<T> + Send + Sync,
+    Ops: OperatorSet<T = T> + Send + Sync,
 {
     let mut rng = Rng::with_seed(1);
     let mut trees: Vec<PostfixExpr<T, Ops, D>> = (0..N_TREES)
@@ -221,7 +215,7 @@ where
 fn bench_count_depth_sizes<T, Ops, const D: usize>(c: &mut criterion::Criterion, type_name: &str)
 where
     T: Float + Send + Sync,
-    Ops: OpRegistry + ScalarOpSet<T> + Send + Sync,
+    Ops: OperatorSet<T = T> + Send + Sync,
 {
     let mut rng = Rng::with_seed(2);
     let sizes = [8usize, 20, 64, 128];

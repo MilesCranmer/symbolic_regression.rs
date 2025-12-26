@@ -64,7 +64,7 @@ impl<T: Float, const D: usize> Evaluator<T, D> {
 
 impl<T: Float, Ops, const D: usize> PopMember<T, Ops, D>
 where
-    Ops: dynamic_expressions::operator_enum::scalar::ScalarOpSet<T>,
+    Ops: dynamic_expressions::OperatorSet<T = T>,
 {
     pub fn from_expr(
         id: MemberId,

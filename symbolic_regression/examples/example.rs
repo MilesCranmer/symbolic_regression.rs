@@ -26,7 +26,9 @@ fn main() {
 
     let dataset = Dataset::new(x, y);
 
-    let operators = BuiltinOpsF32::from_names_by_arity(&["cos", "exp", "sin"], &["+", "-", "*", "/"], &[]).unwrap();
+    let operators =
+        Operators::<D>::from_names_by_arity::<BuiltinOpsF32>(&["cos", "exp", "sin"], &["+", "-", "*", "/"], &[])
+            .unwrap();
 
     let options = Options::<f32, D> {
         operators,
@@ -48,7 +50,7 @@ fn main() {
     // .unwrap()
     // .expr
     // .clone();
-    // let _ = eval_tree_array::<f32, BuiltinOpsF32, 2>(
+    // let _ = eval_tree_array::<f32, BuiltinOpsF32, D>(
     // &tree,
     // dataset.x.view(),
     // &EvalOptions::default(),

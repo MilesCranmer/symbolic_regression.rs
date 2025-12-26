@@ -1,6 +1,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 pub mod compile;
+pub mod dispatch;
 pub mod evaluate;
 pub mod evaluate_derivative;
 pub mod expression;
@@ -8,12 +9,12 @@ pub mod expression_algebra;
 pub mod node;
 pub mod node_utils;
 pub mod operator_enum;
-pub mod operator_registry;
 pub mod operators;
 #[cfg(feature = "proptest-utils")]
 pub mod proptest_utils;
 pub mod simplify;
 pub mod strings;
+pub mod traits;
 pub mod utils;
 
 pub use {num_traits, paste};
@@ -31,5 +32,6 @@ pub use crate::node_utils::{
     tree_mapreduce,
 };
 pub use crate::simplify::{combine_operators_in_place, simplify_in_place, simplify_tree_in_place};
-pub use crate::strings::{OpNames, StringTreeOptions, print_tree, string_tree};
+pub use crate::strings::{StringTreeOptions, print_tree, string_tree};
+pub use crate::traits::{HasOp, LookupError, OpId, OpMeta, OpTag, Operator, OperatorSet};
 pub use crate::utils::{ConstRef, compress_constants, get_scalar_constants, set_scalar_constants};

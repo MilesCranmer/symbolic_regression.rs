@@ -2,8 +2,7 @@ use std::collections::HashMap;
 
 use dynamic_expressions::expression::PostfixExpr;
 use dynamic_expressions::node::PNode;
-use dynamic_expressions::node_utils;
-use dynamic_expressions::operator_enum::scalar;
+use dynamic_expressions::{OpId, node_utils};
 use num_traits::Float;
 
 use crate::complexity;
@@ -13,7 +12,7 @@ use crate::options::Options;
 pub struct OpConstraints<const D: usize> {
     /// Per-operator, per-argument complexity limits.
     /// `None` means no constraint for that argument.
-    pub limits: HashMap<scalar::OpId, [Option<u16>; D]>,
+    pub limits: HashMap<OpId, [Option<u16>; D]>,
 }
 
 impl<const D: usize> Default for OpConstraints<D> {
@@ -23,7 +22,7 @@ impl<const D: usize> Default for OpConstraints<D> {
 }
 
 impl<const D: usize> OpConstraints<D> {
-    pub fn set_op_arg_constraint(&mut self, op: scalar::OpId, arg_idx: usize, max_complexity: u16) {
+    pub fn set_op_arg_constraint(&mut self, op: OpId, arg_idx: usize, max_complexity: u16) {
         assert!(arg_idx < D);
         let entry = self.limits.entry(op).or_insert([None; D]);
         entry[arg_idx] = Some(max_complexity);
@@ -33,11 +32,11 @@ impl<const D: usize> OpConstraints<D> {
 #[derive(Clone, Debug, Default)]
 pub struct NestedConstraints {
     /// Root operator -> list of (nested operator, max nestedness).
-    pub limits: HashMap<scalar::OpId, Vec<(scalar::OpId, u8)>>,
+    pub limits: HashMap<OpId, Vec<(OpId, u8)>>,
 }
 
 impl NestedConstraints {
-    pub fn add_nested_constraint(&mut self, root: scalar::OpId, nested: scalar::OpId, max_nestedness: u8) {
+    pub fn add_nested_constraint(&mut self, root: OpId, nested: OpId, max_nestedness: u8) {
         self.limits.entry(root).or_default().push((nested, max_nestedness));
     }
 }
@@ -82,7 +81,7 @@ fn check_default_op_arg_constraints<T: Float, const D: usize>(nodes: &[PNode], o
         let PNode::Op { arity, op } = *n else {
             continue;
         };
-        let oid = scalar::OpId { arity, id: op };
+        let oid = OpId { arity, id: op };
         let Some(lims) = options.op_constraints.limits.get(&oid) else {
             continue;
         };
@@ -107,7 +106,7 @@ fn check_nested_constraints<const D: usize>(nodes: &[PNode], nested: &NestedCons
         return true;
     }
 
-    fn nestedness_vec(nodes: &[PNode], target: scalar::OpId) -> Option<Vec<u16>> {
+    fn nestedness_vec(nodes: &[PNode], target: OpId) -> Option<Vec<u16>> {
         let mut st: Vec<u16> = Vec::with_capacity(nodes.len().min(256));
         let mut out: Vec<u16> = Vec::with_capacity(nodes.len());
         for n in nodes {
@@ -138,7 +137,7 @@ fn check_nested_constraints<const D: usize>(nodes: &[PNode], nested: &NestedCons
         Some(out)
     }
 
-    let mut nested_cache: HashMap<scalar::OpId, Vec<u16>> = HashMap::new();
+    let mut nested_cache: HashMap<OpId, Vec<u16>> = HashMap::new();
     for rules in nested.limits.values() {
         for (nested_op, _max) in rules {
             if !nested_cache.contains_key(nested_op) {
@@ -154,7 +153,7 @@ fn check_nested_constraints<const D: usize>(nodes: &[PNode], nested: &NestedCons
         let PNode::Op { arity, op } = *n else {
             continue;
         };
-        let root = scalar::OpId { arity, id: op };
+        let root = OpId { arity, id: op };
         let Some(rules) = nested.limits.get(&root) else {
             continue;
         };

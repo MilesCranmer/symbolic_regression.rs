@@ -1,49 +1,24 @@
-use dynamic_expressions::operator_enum::{builtin, scalar};
+use dynamic_expressions::operator_enum::builtin;
+use dynamic_expressions::{HasOp, OperatorSet};
 
-use crate::operators::{OpSpec, Operators};
+use crate::operators::Operators;
 
 pub struct OperatorLibrary;
 
 impl OperatorLibrary {
     pub fn sr_default<Ops, const D: usize>() -> Operators<D>
     where
-        Ops: scalar::HasOp<builtin::Add, 2>
-            + scalar::HasOp<builtin::Sub, 2>
-            + scalar::HasOp<builtin::Mul, 2>
-            + scalar::HasOp<builtin::Div, 2>,
+        Ops: HasOp<builtin::Add> + HasOp<builtin::Sub> + HasOp<builtin::Mul> + HasOp<builtin::Div> + OperatorSet,
     {
         let mut ops = Operators::<D>::new();
         if D >= 2 {
-            let list = [
-                scalar::OpId {
-                    arity: 2,
-                    id: <Ops as scalar::HasOp<builtin::Add, 2>>::ID,
-                },
-                scalar::OpId {
-                    arity: 2,
-                    id: <Ops as scalar::HasOp<builtin::Sub, 2>>::ID,
-                },
-                scalar::OpId {
-                    arity: 2,
-                    id: <Ops as scalar::HasOp<builtin::Mul, 2>>::ID,
-                },
-                scalar::OpId {
-                    arity: 2,
-                    id: <Ops as scalar::HasOp<builtin::Div, 2>>::ID,
-                },
-            ];
-            for op in list {
-                ops.push(
-                    2,
-                    OpSpec {
-                        op,
-                        commutative: op.id == <Ops as scalar::HasOp<builtin::Add, 2>>::ID
-                            || op.id == <Ops as scalar::HasOp<builtin::Mul, 2>>::ID,
-                        associative: op.id == <Ops as scalar::HasOp<builtin::Add, 2>>::ID
-                            || op.id == <Ops as scalar::HasOp<builtin::Mul, 2>>::ID,
-                        complexity: 1,
-                    },
-                );
+            for op in [
+                <Ops as HasOp<builtin::Add>>::op_id(),
+                <Ops as HasOp<builtin::Sub>>::op_id(),
+                <Ops as HasOp<builtin::Mul>>::op_id(),
+                <Ops as HasOp<builtin::Div>>::op_id(),
+            ] {
+                ops.push(op);
             }
         }
         ops

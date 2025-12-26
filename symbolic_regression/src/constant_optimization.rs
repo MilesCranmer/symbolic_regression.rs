@@ -1,8 +1,7 @@
 use std::ops::AddAssign;
 
-use dynamic_expressions::operator_enum::scalar;
 use dynamic_expressions::utils::ZipEq;
-use dynamic_expressions::{EvalOptions, GradContext};
+use dynamic_expressions::{EvalOptions, GradContext, OperatorSet};
 use fastrand::Rng;
 use num_traits::{Float, FromPrimitive, ToPrimitive};
 
@@ -49,7 +48,7 @@ impl<'a, T: Float + AddAssign, const D: usize> EvalWorkspace<'a, T, D> {
         expr: &dynamic_expressions::expression::PostfixExpr<T, Ops, D>,
     ) -> Option<f64>
     where
-        Ops: scalar::ScalarOpSet<T>,
+        Ops: OperatorSet<T = T>,
     {
         let ok = dynamic_expressions::eval_plan_array_into(
             &mut self.evaluator.yhat,
@@ -82,7 +81,7 @@ impl<'a, T: Float + AddAssign, const D: usize> EvalWorkspace<'a, T, D> {
         grad_out: &mut [f64],
     ) -> Option<f64>
     where
-        Ops: scalar::ScalarOpSet<T>,
+        Ops: OperatorSet<T = T>,
     {
         let n_params = expr.consts.len();
         let n_rows = self.dataset.n_rows;
@@ -142,7 +141,7 @@ impl<'a, T: Float + AddAssign, const D: usize> EvalWorkspace<'a, T, D> {
     ) -> Option<crate::optim::OptimResult>
     where
         T: FromPrimitive,
-        Ops: scalar::ScalarOpSet<T>,
+        Ops: OperatorSet<T = T>,
     {
         let mut obj = ConstObjective {
             plan: &member.plan,
@@ -167,7 +166,7 @@ struct ConstObjective<'plan, 'expr, 'work, 'data, T: Float + AddAssign, Ops, con
 impl<'plan, 'expr, 'work, 'data, T: Float + FromPrimitive + AddAssign, Ops, const D: usize> Objective
     for ConstObjective<'plan, 'expr, 'work, 'data, T, Ops, D>
 where
-    Ops: scalar::ScalarOpSet<T>,
+    Ops: OperatorSet<T = T>,
 {
     fn f_only(&mut self, x: &[f64], budget: &mut crate::optim::EvalBudget) -> Option<f64> {
         budget.f_calls += 1;
@@ -192,7 +191,7 @@ pub fn optimize_constants<T: Float + FromPrimitive + ToPrimitive + AddAssign, Op
     ctx: OptimizeConstantsCtx<'_, '_, T, D>,
 ) -> (bool, f64)
 where
-    Ops: scalar::ScalarOpSet<T>,
+    Ops: OperatorSet<T = T>,
 {
     let OptimizeConstantsCtx {
         dataset,

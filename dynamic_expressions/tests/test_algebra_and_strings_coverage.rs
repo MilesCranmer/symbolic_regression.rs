@@ -2,9 +2,8 @@ mod common;
 
 use approx::assert_relative_eq;
 use common::{TestOps, make_x};
-use dynamic_expressions::operator_enum::scalar::OpId;
-use dynamic_expressions::strings::{OpNames, StringTreeOptions, string_tree};
-use dynamic_expressions::{EvalOptions, eval_tree_array, lit, operators};
+use dynamic_expressions::strings::{StringTreeOptions, string_tree};
+use dynamic_expressions::{EvalOptions, OpId, OperatorSet, eval_tree_array, lit, operators};
 
 #[test]
 fn algebra_overloads_and_string_paths_are_exercised() {
@@ -73,8 +72,8 @@ fn algebra_overloads_and_string_paths_are_exercised() {
     let display = format!("{}", a.clone() + b.clone());
     assert_eq!(display, "a + b");
 
-    assert_eq!(<TestOps as OpNames>::op_name(OpId { arity: 9, id: 0 }), "unknown_op");
-    assert_eq!(<TestOps as OpNames>::op_name(OpId { arity: 1, id: 999 }), "unknown_op");
+    assert_eq!(TestOps::name(OpId { arity: 9, id: 0 }), "unknown_op");
+    assert_eq!(TestOps::name(OpId { arity: 1, id: 999 }), "unknown_op");
 
     // Sanity check unary "-" does not add parentheses for a leaf.
     let s = string_tree(&(-a.clone()), StringTreeOptions::default());

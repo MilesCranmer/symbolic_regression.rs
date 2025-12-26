@@ -1,9 +1,10 @@
 use std::collections::HashSet;
 
+use dynamic_expressions::HasOp;
 use dynamic_expressions::expression::PostfixExpr;
 use dynamic_expressions::node::PNode;
+use dynamic_expressions::operator_enum::builtin;
 use dynamic_expressions::operator_enum::presets::BuiltinOpsF64;
-use dynamic_expressions::operator_enum::{builtin, scalar};
 use fastrand::Rng;
 use ndarray::{Array1, Array2};
 
@@ -92,14 +93,8 @@ fn constraints_op_arg_and_nested_constraints_work() {
     type Ops = BuiltinOpsF64;
     const D: usize = 3;
 
-    let add = scalar::OpId {
-        arity: 2,
-        id: <Ops as scalar::HasOp<builtin::Add, 2>>::ID,
-    };
-    let cos = scalar::OpId {
-        arity: 1,
-        id: <Ops as scalar::HasOp<builtin::Cos, 1>>::ID,
-    };
+    let add = <Ops as HasOp<builtin::Add>>::op_id();
+    let cos = <Ops as HasOp<builtin::Cos>>::op_id();
 
     // expr = (x0 + x1) + x2
     let expr_add = PostfixExpr::<f64, Ops, D>::new(
@@ -152,14 +147,8 @@ fn compute_complexity_respects_custom_weights_and_rounding() {
     type Ops = BuiltinOpsF64;
     const D: usize = 3;
 
-    let add = scalar::OpId {
-        arity: 2,
-        id: <Ops as scalar::HasOp<builtin::Add, 2>>::ID,
-    };
-    let sin = scalar::OpId {
-        arity: 1,
-        id: <Ops as scalar::HasOp<builtin::Sin, 1>>::ID,
-    };
+    let add = <Ops as HasOp<builtin::Add>>::op_id();
+    let sin = <Ops as HasOp<builtin::Sin>>::op_id();
 
     // expr = sin(x0) + c0
     let expr = PostfixExpr::<f64, Ops, D>::new(

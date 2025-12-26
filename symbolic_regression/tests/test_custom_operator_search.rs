@@ -1,79 +1,12 @@
-use dynamic_expressions::operator_enum::scalar;
-use dynamic_expressions::operator_registry::{OpInfo, OpRegistry};
-use dynamic_expressions::strings::OpNames;
 use ndarray::{Array1, Array2};
 use symbolic_regression::{Dataset, MutationWeights, Operators, Options, equation_search};
 
-#[derive(Copy, Clone, Debug, Default)]
-struct CustomOps;
+symbolic_regression::custom_opset! {
+    struct CustomOps<T = f64>;
 
-const SQUARE: scalar::OpId = scalar::OpId { arity: 1, id: 0 };
-
-const CUSTOM_REGISTRY: [OpInfo; 1] = [OpInfo {
-    op: SQUARE,
-    name: "square",
-    display: "square",
-    infix: None,
-    commutative: false,
-    associative: false,
-    complexity: 1,
-}];
-
-fn square_eval(args: &[f64; 1]) -> f64 {
-    args[0] * args[0]
-}
-
-fn square_partial(args: &[f64; 1], idx: usize) -> f64 {
-    match idx {
-        0 => 2.0 * args[0],
-        _ => unreachable!(),
-    }
-}
-
-impl scalar::ScalarOpSet<f64> for CustomOps {
-    fn eval(op: scalar::OpId, ctx: scalar::EvalKernelCtx<'_, '_, f64>) -> bool {
-        match (op.arity, op.id) {
-            (1, 0) => scalar::eval_nary::<1, f64>(square_eval, ctx.out, ctx.args, ctx.opts),
-            _ => panic!("unknown op id {} for arity {}", op.id, op.arity),
-        }
-    }
-
-    fn diff(op: scalar::OpId, ctx: scalar::DiffKernelCtx<'_, '_, f64>) -> bool {
-        match (op.arity, op.id) {
-            (1, 0) => scalar::diff_nary::<1, f64>(
-                square_eval,
-                square_partial,
-                ctx.out_val,
-                ctx.out_der,
-                ctx.args,
-                ctx.dargs,
-                ctx.opts,
-            ),
-            _ => panic!("unknown op id {} for arity {}", op.id, op.arity),
-        }
-    }
-
-    fn grad(op: scalar::OpId, ctx: scalar::GradKernelCtx<'_, '_, f64>) -> bool {
-        match (op.arity, op.id) {
-            (1, 0) => scalar::grad_nary::<1, f64>(square_eval, square_partial, ctx),
-            _ => panic!("unknown op id {} for arity {}", op.id, op.arity),
-        }
-    }
-}
-
-impl OpRegistry for CustomOps {
-    fn registry() -> &'static [OpInfo] {
-        &CUSTOM_REGISTRY
-    }
-}
-
-impl OpNames for CustomOps {
-    fn op_name(op: scalar::OpId) -> &'static str {
-        match (op.arity, op.id) {
-            (1, 0) => "square",
-            _ => "unknown_op",
-        }
-    }
+    1 => {
+        square { eval: |[x]| x * x, partial: |[x]| 2.0 * x },
+    },
 }
 
 #[test]

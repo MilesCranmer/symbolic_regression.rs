@@ -1,9 +1,10 @@
 use core::marker::PhantomData;
 
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
+use dynamic_expressions::operator_enum::builtin;
 use dynamic_expressions::operator_enum::presets::BuiltinOpsF32;
-use dynamic_expressions::operator_enum::{builtin, scalar};
 use dynamic_expressions::utils::ZipEq;
+use dynamic_expressions::{HasOp, OpId};
 use fastrand::Rng;
 use ndarray::{Array1, Array2};
 use symbolic_regression::{
@@ -322,26 +323,11 @@ fn bench_utils(c: &mut Criterion) {
         options.maxsize = 30;
         options.maxdepth = 20;
 
-        let add = scalar::OpId {
-            arity: 2,
-            id: <Ops as scalar::HasOp<builtin::Add, 2>>::ID,
-        };
-        let sub = scalar::OpId {
-            arity: 2,
-            id: <Ops as scalar::HasOp<builtin::Sub, 2>>::ID,
-        };
-        let div = scalar::OpId {
-            arity: 2,
-            id: <Ops as scalar::HasOp<builtin::Div, 2>>::ID,
-        };
-        let sin = scalar::OpId {
-            arity: 1,
-            id: <Ops as scalar::HasOp<builtin::Sin, 1>>::ID,
-        };
-        let cos = scalar::OpId {
-            arity: 1,
-            id: <Ops as scalar::HasOp<builtin::Cos, 1>>::ID,
-        };
+        let add: OpId = <Ops as HasOp<builtin::Add>>::op_id();
+        let sub: OpId = <Ops as HasOp<builtin::Sub>>::op_id();
+        let div: OpId = <Ops as HasOp<builtin::Div>>::op_id();
+        let sin: OpId = <Ops as HasOp<builtin::Sin>>::op_id();
+        let cos: OpId = <Ops as HasOp<builtin::Cos>>::op_id();
 
         options.op_constraints.set_op_arg_constraint(add, 1, 10);
         options.op_constraints.set_op_arg_constraint(div, 0, 10);
