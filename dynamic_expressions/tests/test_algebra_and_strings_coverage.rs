@@ -77,7 +77,10 @@ fn algebra_overloads_and_string_paths_are_exercised() {
 
     // Sanity check unary "-" does not add parentheses for a leaf.
     let s = string_tree(&(-a.clone()), StringTreeOptions::default());
-    assert_eq!(s, "-a");
+    assert_eq!(s, "-(a)");
+
+    let s = string_tree(&(-operators::cos(a.clone() + b.clone())), StringTreeOptions::default());
+    assert_eq!(s, "-(cos(a + b))");
 
     // Exercise default variable naming when metadata doesn't provide names.
     let anon = common::var(0) + common::var(1);
