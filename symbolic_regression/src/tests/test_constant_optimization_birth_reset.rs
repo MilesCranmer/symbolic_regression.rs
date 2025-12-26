@@ -1,8 +1,7 @@
 use dynamic_expressions::expression::{Metadata, PostfixExpr};
 use dynamic_expressions::node::PNode;
+use fastrand::Rng;
 use ndarray::{Array1, Array2};
-use rand::SeedableRng;
-use rand::rngs::StdRng;
 
 use super::common::{D, T, TestOps};
 use crate::Options;
@@ -52,10 +51,10 @@ fn optimize_constants_resets_birth_on_improvement() {
     let full_dataset = TaggedDataset::new(&dataset, baseline_loss);
     let _ = member.evaluate(&full_dataset, &options, &mut evaluator);
 
-    let mut rng = StdRng::seed_from_u64(0);
+    let mut rng = Rng::with_seed(0);
     let mut next_birth = 1000u64;
     let birth_before = member.birth;
-    let (improved, _) = optimize_constants::<T, TestOps, D, _>(
+    let (improved, _) = optimize_constants::<T, TestOps, D>(
         &mut rng,
         &mut member,
         OptimizeConstantsCtx {

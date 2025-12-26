@@ -1,8 +1,7 @@
 use dynamic_expressions::expression::{Metadata, PostfixExpr};
 use dynamic_expressions::node::PNode;
+use fastrand::Rng;
 use num_traits::One;
-use rand::SeedableRng;
-use rand::rngs::StdRng;
 
 use super::common::{D, T, TestOps};
 use crate::Options;
@@ -26,7 +25,7 @@ fn tournament_penalizes_frequent_sizes_when_enabled() {
         adaptive_parsimony_scaling: 100.0,
         ..Default::default()
     };
-    let mut rng = StdRng::seed_from_u64(0);
+    let mut rng = Rng::with_seed(0);
 
     let mut a = PopMember::from_expr(MemberId(1), None, 0, leaf_expr(), 1);
     let mut b = PopMember::from_expr(MemberId(2), None, 0, leaf_expr(), 1);
@@ -45,7 +44,7 @@ fn tournament_penalizes_frequent_sizes_when_enabled() {
     stats.update_frequencies(3);
     stats.normalize();
 
-    let chosen = best_of_sample::<T, TestOps, D, _>(&mut rng, &pop, &stats, &options);
+    let chosen = best_of_sample::<T, TestOps, D>(&mut rng, &pop, &stats, &options);
 
     // If frequency is used in tournament, the rare (larger) member should be favored here.
     assert_eq!(chosen.id, MemberId(2));

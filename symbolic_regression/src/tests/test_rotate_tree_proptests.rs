@@ -3,9 +3,8 @@ use std::collections::BTreeMap;
 use dynamic_expressions::expression::{Metadata, PostfixExpr};
 use dynamic_expressions::node::PNode;
 use dynamic_expressions::proptest_utils;
+use fastrand::Rng;
 use proptest::prelude::*;
-use rand::SeedableRng;
-use rand::rngs::StdRng;
 
 use crate::mutation_functions::rotate_tree_in_place;
 
@@ -102,7 +101,7 @@ fn rotate_tree_supports_non_binary_arity() {
         Metadata::default(),
     );
 
-    let mut rng = StdRng::seed_from_u64(0);
+    let mut rng = Rng::with_seed(0);
     assert!(rotate_tree_in_place(&mut rng, &mut expr));
     assert_eq!(
         expr.nodes,
@@ -132,7 +131,7 @@ proptest! {
         let before_consts = expr.consts.clone();
         let before_meta = expr.meta.clone();
 
-        let mut rng = StdRng::seed_from_u64(rng_seed);
+        let mut rng = Rng::with_seed(rng_seed);
         prop_assert!(rotate_tree_in_place(&mut rng, &mut expr));
 
         let after = &expr.nodes;

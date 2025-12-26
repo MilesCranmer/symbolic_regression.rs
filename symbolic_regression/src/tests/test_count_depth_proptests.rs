@@ -2,9 +2,8 @@ use dynamic_expressions::expression::{Metadata, PostfixExpr};
 use dynamic_expressions::node::PNode;
 use dynamic_expressions::operator_enum::builtin;
 use dynamic_expressions::{HasOp, node_utils, proptest_utils};
+use fastrand::Rng;
 use proptest::prelude::*;
-use rand::SeedableRng;
-use rand::rngs::StdRng;
 
 use super::common::{D, T, TestOps};
 use crate::mutation_functions::prepend_random_op_in_place;
@@ -38,7 +37,7 @@ proptest! {
         let before = node_utils::count_depth(&expr.nodes);
 
         let ops = OperatorLibrary::sr_default::<TestOps, D>();
-        let mut rng = StdRng::seed_from_u64(rng_seed);
+        let mut rng = Rng::with_seed(rng_seed);
         prop_assert!(prepend_random_op_in_place(&mut rng, &mut expr, &ops, N_FEATURES));
 
         let after = node_utils::count_depth(&expr.nodes);

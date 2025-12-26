@@ -3,9 +3,8 @@ use std::ops::AddAssign;
 pub use dynamic_expressions::compress_constants;
 use dynamic_expressions::expression::PostfixExpr;
 use dynamic_expressions::node::PNode;
+use fastrand::Rng;
 use num_traits::Float;
-use rand::Rng;
-use rand::distr::{self, Distribution};
 
 use crate::adaptive_parsimony::RunningSearchStatistics;
 use crate::check_constraints::check_constraints;
@@ -16,6 +15,8 @@ use crate::loss_functions::loss_to_cost;
 use crate::mutation_functions;
 use crate::options::{MutationWeights, Options};
 use crate::pop_member::{Evaluator, MemberId, PopMember};
+use crate::random::usize_range_inclusive;
+use crate::selection::weighted_index;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum MutationChoice {
@@ -33,8 +34,8 @@ pub enum MutationChoice {
     Optimize,
 }
 
-pub struct NextGenerationCtx<'a, T: Float + AddAssign, Ops, const D: usize, R: Rng> {
-    pub rng: &'a mut R,
+pub struct NextGenerationCtx<'a, T: Float + AddAssign, Ops, const D: usize> {
+    pub rng: &'a mut Rng,
     pub dataset: TaggedDataset<'a, T>,
     pub temperature: f64,
     pub curmaxsize: usize,
@@ -46,8 +47,8 @@ pub struct NextGenerationCtx<'a, T: Float + AddAssign, Ops, const D: usize, R: R
     pub _ops: core::marker::PhantomData<Ops>,
 }
 
-pub struct CrossoverCtx<'a, T: Float, Ops, const D: usize, R: Rng> {
-    pub rng: &'a mut R,
+pub struct CrossoverCtx<'a, T: Float, Ops, const D: usize> {
+    pub rng: &'a mut Rng,
     pub dataset: TaggedDataset<'a, T>,
     pub curmaxsize: usize,
     pub options: &'a Options<T, D>,
@@ -117,7 +118,7 @@ pub fn condition_mutation_weights<T: Float + AddAssign, Ops, const D: usize>(
     }
 }
 
-pub fn sample_mutation<R: Rng>(rng: &mut R, weights: &MutationWeights) -> MutationChoice {
+pub fn sample_mutation(rng: &mut Rng, weights: &MutationWeights) -> MutationChoice {
     let choices = [
         (MutationChoice::MutateConstant, weights.mutate_constant),
         (MutationChoice::MutateOperator, weights.mutate_operator),
@@ -133,8 +134,8 @@ pub fn sample_mutation<R: Rng>(rng: &mut R, weights: &MutationWeights) -> Mutati
         (MutationChoice::Optimize, weights.optimize),
     ];
     let w: Vec<f64> = choices.iter().map(|(_, v)| *v).collect();
-    let dist = distr::weighted::WeightedIndex::new(w).expect("at least one mutation weight must be > 0");
-    choices[dist.sample(rng)].0
+    let idx = weighted_index(rng, &w);
+    choices[idx].0
 }
 
 struct MutationOutcome<T: Float + AddAssign, Ops, const D: usize> {
@@ -144,8 +145,8 @@ struct MutationOutcome<T: Float + AddAssign, Ops, const D: usize> {
     return_immediately: bool,
 }
 
-struct MutationApplyCtx<'a, 'd, T: Float + AddAssign, Ops, const D: usize, R: Rng> {
-    rng: &'a mut R,
+struct MutationApplyCtx<'a, 'd, T: Float + AddAssign, Ops, const D: usize> {
+    rng: &'a mut Rng,
     member: &'a PopMember<T, Ops, D>,
     expr: PostfixExpr<T, Ops, D>,
     dataset: TaggedDataset<'d, T>,
@@ -157,9 +158,9 @@ struct MutationApplyCtx<'a, 'd, T: Float + AddAssign, Ops, const D: usize, R: Rn
 
 impl MutationChoice {
     #[allow(clippy::too_many_arguments)]
-    fn apply<T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + AddAssign, Ops, const D: usize, R: Rng>(
+    fn apply<T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + AddAssign, Ops, const D: usize>(
         self,
-        ctx: MutationApplyCtx<'_, '_, T, Ops, D, R>,
+        ctx: MutationApplyCtx<'_, '_, T, Ops, D>,
     ) -> MutationOutcome<T, Ops, D>
     where
         Ops: dynamic_expressions::OperatorSet<T = T>,
@@ -236,7 +237,7 @@ impl MutationChoice {
             MutationChoice::Randomize => {
                 // Match SymbolicRegression.jl: sample a *uniform* random size in 1:curmaxsize.
                 let max_size = curmaxsize.max(1).min(options.maxsize.max(1));
-                let target_size = rng.random_range(1..=max_size);
+                let target_size = usize_range_inclusive(rng, 1..=max_size);
                 MutationOutcome {
                     mutated: true,
                     expr: mutation_functions::random_expr(rng, &options.operators, n_features, target_size),
@@ -293,10 +294,9 @@ pub fn next_generation<
     T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + AddAssign,
     Ops,
     const D: usize,
-    R: Rng,
 >(
     member: &PopMember<T, Ops, D>,
-    ctx: NextGenerationCtx<'_, T, Ops, D, R>,
+    ctx: NextGenerationCtx<'_, T, Ops, D>,
 ) -> (PopMember<T, Ops, D>, bool, f64)
 where
     Ops: dynamic_expressions::OperatorSet<T = T>,
@@ -415,7 +415,7 @@ where
         prob *= old_f / new_f;
     }
 
-    if prob < rng.random::<f64>() {
+    if prob < rng.f64() {
         let mut reject = PopMember::from_expr(id, Some(member.id), birth, member.expr.clone(), n_features);
         reject.complexity = member.complexity;
         reject.loss = member.loss;
@@ -426,10 +426,10 @@ where
     (baby, true, evals)
 }
 
-pub fn crossover_generation<T: Float + AddAssign, Ops, const D: usize, R: Rng>(
+pub fn crossover_generation<T: Float + AddAssign, Ops, const D: usize>(
     member1: &PopMember<T, Ops, D>,
     member2: &PopMember<T, Ops, D>,
-    ctx: CrossoverCtx<'_, T, Ops, D, R>,
+    ctx: CrossoverCtx<'_, T, Ops, D>,
 ) -> (PopMember<T, Ops, D>, PopMember<T, Ops, D>, bool, f64)
 where
     Ops: dynamic_expressions::OperatorSet<T = T>,

@@ -1,8 +1,7 @@
 use dynamic_expressions::expression::{Metadata, PostfixExpr};
 use dynamic_expressions::node::PNode;
+use fastrand::Rng;
 use ndarray::{Array1, Array2};
-use rand::SeedableRng;
-use rand::rngs::StdRng;
 
 use super::common::{D, T, TestOps};
 use crate::adaptive_parsimony::RunningSearchStatistics;
@@ -62,13 +61,13 @@ fn next_generation_fails_constraints_after_retries() {
     let full_dataset = TaggedDataset::new(&dataset, baseline_loss);
     let _ = member.evaluate(&full_dataset, &options, &mut evaluator);
 
-    let mut rng = StdRng::seed_from_u64(0);
+    let mut rng = Rng::with_seed(0);
     let mut stats = RunningSearchStatistics::new(options.maxsize, 1000);
     stats.normalize();
 
     let mut next_id = 1u64;
     let mut next_birth = 1u64;
-    let (_baby, accepted, _evals) = mutate::next_generation::<T, TestOps, D, _>(
+    let (_baby, accepted, _evals) = mutate::next_generation::<T, TestOps, D>(
         &member,
         mutate::NextGenerationCtx {
             rng: &mut rng,
@@ -132,13 +131,13 @@ fn reg_evol_cycle_skips_replacement_when_configured() {
     let member = PopMember::from_expr(MemberId(0), None, 0, leaf_expr(), dataset.n_features);
     let mut pop = Population::new(vec![member]);
 
-    let mut rng = StdRng::seed_from_u64(0);
+    let mut rng = Rng::with_seed(0);
     let mut stats = RunningSearchStatistics::new(options.maxsize, 1000);
     stats.normalize();
 
     let mut next_id = 1u64;
     let mut next_birth = 1u64;
-    let ctx = regularized_evolution::RegEvolCtx::<T, TestOps, D, _> {
+    let ctx = regularized_evolution::RegEvolCtx::<T, TestOps, D> {
         rng: &mut rng,
         dataset: full_dataset,
         stats: &stats,
@@ -151,6 +150,6 @@ fn reg_evol_cycle_skips_replacement_when_configured() {
         _ops: core::marker::PhantomData,
     };
 
-    regularized_evolution::reg_evol_cycle::<T, TestOps, D, _>(&mut pop, ctx);
+    regularized_evolution::reg_evol_cycle::<T, TestOps, D>(&mut pop, ctx);
     assert_eq!(pop.members.len(), 1);
 }

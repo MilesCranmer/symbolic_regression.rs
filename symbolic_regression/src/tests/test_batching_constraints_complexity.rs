@@ -5,9 +5,8 @@ use dynamic_expressions::expression::PostfixExpr;
 use dynamic_expressions::node::PNode;
 use dynamic_expressions::operator_enum::builtin;
 use dynamic_expressions::operator_enum::presets::BuiltinOpsF64;
+use fastrand::Rng;
 use ndarray::{Array1, Array2};
-use rand::SeedableRng;
-use rand::rngs::StdRng;
 
 use crate::check_constraints::{NestedConstraints, OpConstraints, check_constraints};
 use crate::dataset::Dataset;
@@ -27,7 +26,7 @@ fn batch_resample_copies_rows_and_weights() {
     let full_dataset = Dataset::with_weights_and_names(x, y, Some(w), vec!["x0".into(), "x1".into()]);
 
     let mut batch = Dataset::make_batch_buffer(&full_dataset, 3);
-    let mut rng = StdRng::seed_from_u64(123);
+    let mut rng = Rng::with_seed(123);
     batch.resample_from(&full_dataset, &mut rng);
 
     assert_eq!(batch.n_rows, 3);
@@ -76,7 +75,7 @@ fn batch_size_can_exceed_full_rows_with_replacement() {
     let mut batch = Dataset::make_batch_buffer(&full_dataset, 50);
     assert_eq!(batch.n_rows, 50);
 
-    let mut rng = StdRng::seed_from_u64(0);
+    let mut rng = Rng::with_seed(0);
     batch.resample_from(&full_dataset, &mut rng);
 
     let mut uniq: HashSet<(u64, u64, u64)> = HashSet::new();

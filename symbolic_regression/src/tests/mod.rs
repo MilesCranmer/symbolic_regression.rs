@@ -11,4 +11,5 @@ mod test_mutate_constant_regressions;
 mod test_mutation_regressions;
 mod test_next_generation_retry_and_skip;
 mod test_population_replacement;
+mod test_random_distributions;
 mod test_rotate_tree_proptests;

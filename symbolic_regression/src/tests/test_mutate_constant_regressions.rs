@@ -1,7 +1,6 @@
 use dynamic_expressions::expression::{Metadata, PostfixExpr};
 use dynamic_expressions::node::PNode;
-use rand::SeedableRng;
-use rand::rngs::StdRng;
+use fastrand::Rng;
 
 use crate::Options;
 
@@ -14,7 +13,7 @@ fn constant_mutation_is_bounded_with_floor_at_zero_temperature() {
         ..Default::default()
     };
 
-    let mut rng = StdRng::seed_from_u64(0);
+    let mut rng = Rng::with_seed(0);
     for _ in 0..256 {
         let before = expr.consts[0];
         assert!(crate::mutation_functions::mutate_constant_in_place(
@@ -37,7 +36,7 @@ fn constant_mutation_uses_inverted_sign_flip_probability() {
         ..Default::default()
     };
 
-    let mut rng = StdRng::seed_from_u64(1);
+    let mut rng = Rng::with_seed(1);
     let mut saw_negative = false;
     for _ in 0..32 {
         assert!(crate::mutation_functions::mutate_constant_in_place(

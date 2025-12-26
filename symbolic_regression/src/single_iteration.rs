@@ -1,7 +1,7 @@
 use std::ops::AddAssign;
 
+use fastrand::Rng;
 use num_traits::{Float, FromPrimitive, ToPrimitive};
-use rand::Rng;
 
 use crate::adaptive_parsimony::RunningSearchStatistics;
 use crate::constant_optimization::{OptimizeConstantsCtx, optimize_constants};
@@ -12,8 +12,8 @@ use crate::pop_member::Evaluator;
 use crate::population::Population;
 use crate::regularized_evolution::{RegEvolCtx, reg_evol_cycle};
 
-pub struct IterationCtx<'a, T: Float + AddAssign, Ops, const D: usize, R: Rng> {
-    pub rng: &'a mut R,
+pub struct IterationCtx<'a, T: Float + AddAssign, Ops, const D: usize> {
+    pub rng: &'a mut Rng,
     pub full_dataset: TaggedDataset<'a, T>,
     pub curmaxsize: usize,
     pub stats: &'a RunningSearchStatistics,
@@ -25,9 +25,9 @@ pub struct IterationCtx<'a, T: Float + AddAssign, Ops, const D: usize, R: Rng> {
     pub _ops: core::marker::PhantomData<Ops>,
 }
 
-pub fn s_r_cycle<T, Ops, const D: usize, R: Rng>(
+pub fn s_r_cycle<T, Ops, const D: usize>(
     pop: &mut Population<T, Ops, D>,
-    ctx: &mut IterationCtx<'_, T, Ops, D, R>,
+    ctx: &mut IterationCtx<'_, T, Ops, D>,
     eval_dataset: TaggedDataset<'_, T>,
 ) -> (f64, HallOfFame<T, Ops, D>)
 where
@@ -68,9 +68,9 @@ where
     (num_evals, best_seen)
 }
 
-pub fn optimize_and_simplify_population<T, Ops, const D: usize, R: Rng>(
+pub fn optimize_and_simplify_population<T, Ops, const D: usize>(
     pop: &mut Population<T, Ops, D>,
-    ctx: &mut IterationCtx<'_, T, Ops, D, R>,
+    ctx: &mut IterationCtx<'_, T, Ops, D>,
     opt_dataset: TaggedDataset<'_, T>,
 ) -> f64
 where
@@ -92,7 +92,7 @@ where
         ctx.evaluator.ensure_n_rows(opt_dataset.n_rows);
         ctx.grad_ctx.n_rows = opt_dataset.n_rows;
         for m in &mut pop.members {
-            if ctx.rng.random::<f64>() < ctx.options.optimizer_probability {
+            if ctx.rng.f64() < ctx.options.optimizer_probability {
                 let (improved, evals) = optimize_constants(
                     ctx.rng,
                     m,

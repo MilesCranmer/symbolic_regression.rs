@@ -1,11 +1,9 @@
 use std::fmt::Display;
 use std::ops::AddAssign;
 
+use fastrand::Rng;
 use num_traits::Float;
 use progress_bars::SearchProgress;
-use rand::SeedableRng;
-use rand::rngs::StdRng;
-use rand::seq::SliceRandom;
 
 use crate::adaptive_parsimony::RunningSearchStatistics;
 use crate::check_constraints::check_constraints;
@@ -15,6 +13,7 @@ use crate::loss_functions::baseline_loss_from_zero_expression;
 use crate::options::Options;
 use crate::pop_member::{Evaluator, MemberId, PopMember};
 use crate::population::Population;
+use crate::random::shuffle;
 use crate::{migration, progress_bars, single_iteration, warmup};
 
 pub struct SearchResult<T: Float + AddAssign, Ops, const D: usize> {
@@ -58,7 +57,7 @@ pub(crate) struct PopState<T: Float + AddAssign, Ops, const D: usize> {
     pub(crate) pop: Population<T, Ops, D>,
     pub(crate) evaluator: Evaluator<T, D>,
     pub(crate) grad_ctx: dynamic_expressions::GradContext<T, D>,
-    pub(crate) rng: StdRng,
+    pub(crate) rng: Rng,
     pub(crate) batch_dataset: Option<Dataset<T>>,
     pub(crate) next_id: u64,
     pub(crate) next_birth: u64,
@@ -76,7 +75,7 @@ impl<T: Float + AddAssign, Ops, const D: usize> PopState<T, Ops, D> {
     where
         F: FnOnce(
             &mut Population<T, Ops, D>,
-            &mut single_iteration::IterationCtx<'a, T, Ops, D, StdRng>,
+            &mut single_iteration::IterationCtx<'a, T, Ops, D>,
             TaggedDataset<'a, T>,
         ) -> Ret,
     {
@@ -136,7 +135,7 @@ struct EquationSearchState<'a, T: Float + AddAssign, Ops, const D: usize> {
     hall: HallOfFame<T, Ops, D>,
     progress: SearchProgress,
     pools: PopPools<T, Ops, D>,
-    order_rng: StdRng,
+    order_rng: Rng,
 }
 
 pub fn equation_search<T, Ops, const D: usize>(dataset: &Dataset<T>, options: &Options<T, D>) -> SearchResult<T, Ops, D>
@@ -176,7 +175,7 @@ where
     let pools = init_populations(full_dataset, options, &mut hall);
     progress.set_initial_evals(pools.total_evals);
 
-    let order_rng = StdRng::seed_from_u64(options.seed ^ 0x9e37_79b9_7f4a_7c15);
+    let order_rng = Rng::with_seed(options.seed ^ 0x9e37_79b9_7f4a_7c15);
 
     let pool_threads = rayon::current_num_threads();
     // If we're already running inside Rayon, reserve the current worker thread for orchestration.
@@ -227,7 +226,7 @@ pub struct SearchEngine<T: Float + AddAssign, Ops, const D: usize> {
     hall: HallOfFame<T, Ops, D>,
     progress: SearchProgress,
     pools: PopPools<T, Ops, D>,
-    order_rng: StdRng,
+    order_rng: Rng,
     cur_iter: usize,
     task_order: Vec<usize>,
     next_task: usize,
@@ -260,7 +259,7 @@ where
         let pools = init_populations(full_dataset, &options, &mut hall);
         progress.set_initial_evals(pools.total_evals);
 
-        let order_rng = StdRng::seed_from_u64(options.seed ^ 0x9e37_79b9_7f4a_7c15);
+        let order_rng = Rng::with_seed(options.seed ^ 0x9e37_79b9_7f4a_7c15);
 
         Self {
             dataset,
@@ -398,7 +397,7 @@ where
         }
 
         self.task_order = (0..self.pools.pops.len()).collect();
-        self.task_order.shuffle(&mut self.order_rng);
+        shuffle(&mut self.order_rng, &mut self.task_order);
         self.next_task = 0;
         self.cur_iter += 1;
     }
@@ -520,7 +519,7 @@ fn run_scoped_search<'scope, 'env, T, Ops, const D: usize>(
 
     for _iter in 0..options.niterations {
         let mut task_order: Vec<usize> = (0..state.pools.pops.len()).collect();
-        task_order.shuffle(&mut state.order_rng);
+        shuffle(&mut state.order_rng, &mut task_order);
 
         let mut next_task = 0usize;
         let mut in_flight = 0usize;
@@ -576,7 +575,7 @@ where
     let mut pops: Vec<Option<PopState<T, Ops, D>>> = Vec::with_capacity(options.populations);
 
     for pop_i in 0..options.populations {
-        let mut rng = StdRng::seed_from_u64(options.seed.wrapping_add(pop_i as u64));
+        let mut rng = Rng::with_seed(options.seed.wrapping_add(pop_i as u64));
         let mut evaluator = Evaluator::new(dataset.n_rows);
         let grad_ctx = dynamic_expressions::GradContext::new(dataset.n_rows);
 

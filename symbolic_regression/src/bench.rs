@@ -3,9 +3,8 @@ use dynamic_expressions::expression::{Metadata, PostfixExpr};
 use dynamic_expressions::node::PNode;
 use dynamic_expressions::operator_enum::presets::BuiltinOpsF64;
 use dynamic_expressions::utils::ZipEq;
+use fastrand::Rng;
 use ndarray::{Array1, Array2};
-use rand::SeedableRng;
-use rand::rngs::StdRng;
 
 use crate::constant_optimization::{OptimizeConstantsCtx, optimize_constants};
 use crate::dataset::TaggedDataset;
@@ -133,7 +132,7 @@ pub fn run_constant_opt_linear(env: &ConstantOptLinearEnv) -> (bool, f64, Vec<f6
     let full_dataset = TaggedDataset::new(&env.dataset, baseline_loss);
     let _ = member.evaluate(&full_dataset, &env.options, &mut evaluator);
 
-    let mut rng = StdRng::seed_from_u64(0);
+    let mut rng = Rng::with_seed(0);
     let mut next_birth = 1000u64;
 
     let (improved, evals) = optimize_constants(

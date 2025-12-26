@@ -1,12 +1,11 @@
 use std::cmp::Ordering;
 
+use fastrand::Rng;
 use num_traits::Float;
-use rand::Rng;
-use rand::seq::IndexedRandom;
-use rand_distr::{self, Distribution};
 
 use crate::pop_member::{MemberId, PopMember};
 use crate::population::Population;
+use crate::random::{choose, poisson_sample, usize_range};
 
 pub fn best_sub_pop<T: Float, Ops, const D: usize>(
     pop: &Population<T, Ops, D>,
@@ -23,19 +22,11 @@ pub fn best_sub_pop<T: Float, Ops, const D: usize>(
     idxs.into_iter().map(|i| pop.members[i].clone()).collect()
 }
 
-fn poisson_sample<R: Rng + ?Sized>(rng: &mut R, mean: f64) -> usize {
-    if !mean.is_finite() || mean <= 0.0 {
-        return 0;
-    }
-    let dist = rand_distr::Poisson::new(mean).expect("invalid poisson mean");
-    dist.sample(rng) as usize
-}
-
-pub fn migrate_into<T: Float, Ops, const D: usize, R: Rng + ?Sized>(
+pub fn migrate_into<T: Float, Ops, const D: usize>(
     dst: &mut Population<T, Ops, D>,
     migrants: &[PopMember<T, Ops, D>],
     frac: f64,
-    rng: &mut R,
+    rng: &mut Rng,
     next_id: &mut u64,
     next_birth: &mut u64,
 ) {
@@ -50,6 +41,9 @@ pub fn migrate_into<T: Float, Ops, const D: usize, R: Rng + ?Sized>(
     }
 
     let mean = (dst.len() as f64) * frac;
+    if !mean.is_finite() {
+        return;
+    }
     let mut n_replace = poisson_sample(rng, mean);
     n_replace = n_replace.min(dst.len()).min(migrants.len());
     if n_replace == 0 {
@@ -57,8 +51,8 @@ pub fn migrate_into<T: Float, Ops, const D: usize, R: Rng + ?Sized>(
     }
 
     for _ in 0..n_replace {
-        let loc = rng.random_range(0..dst.len());
-        let src = migrants.choose(rng).expect("migrants is non-empty");
+        let loc = usize_range(rng, 0..dst.len());
+        let src = choose(rng, migrants).expect("migrants is non-empty");
         let mut m = src.clone();
         m.parent = Some(src.id);
         m.id = MemberId(*next_id);

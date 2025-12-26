@@ -2,14 +2,14 @@ use std::ops::AddAssign;
 
 use dynamic_expressions::utils::ZipEq;
 use dynamic_expressions::{EvalOptions, GradContext, OperatorSet};
+use fastrand::Rng;
 use num_traits::{Float, FromPrimitive, ToPrimitive};
-use rand::Rng;
-use rand_distr::Distribution;
 
 use crate::dataset::{Dataset, TaggedDataset};
 use crate::optim::{BackTracking, Objective, OptimOptions, bfgs_minimize, newton_1d_minimize};
 use crate::options::Options;
 use crate::pop_member::{Evaluator, PopMember};
+use crate::random::standard_normal;
 
 struct EvalWorkspace<'a, T: Float + AddAssign, const D: usize> {
     dataset: &'a Dataset<T>,
@@ -185,8 +185,8 @@ where
     }
 }
 
-pub fn optimize_constants<T: Float + FromPrimitive + ToPrimitive + AddAssign, Ops, const D: usize, R: Rng>(
-    rng: &mut R,
+pub fn optimize_constants<T: Float + FromPrimitive + ToPrimitive + AddAssign, Ops, const D: usize>(
+    rng: &mut Rng,
     member: &mut PopMember<T, Ops, D>,
     ctx: OptimizeConstantsCtx<'_, '_, T, D>,
 ) -> (bool, f64)
@@ -251,7 +251,7 @@ where
     for _ in 0..options.optimizer_nrestarts {
         let mut xt = x0.clone();
         for v in &mut xt {
-            let eps: f64 = rand_distr::StandardNormal.sample(rng);
+            let eps: f64 = standard_normal(rng);
             *v *= 1.0 + 0.5 * eps;
         }
 

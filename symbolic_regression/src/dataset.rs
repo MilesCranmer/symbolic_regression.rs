@@ -1,7 +1,9 @@
 use dynamic_expressions::utils::ZipEq;
+use fastrand::Rng;
 use ndarray::{Array1, Array2};
 use num_traits::Float;
-use rand::Rng;
+
+use crate::random::usize_range;
 
 #[derive(Copy, Clone, Debug)]
 pub struct TaggedDataset<'a, T: Float> {
@@ -118,7 +120,7 @@ impl<T: Float> Dataset<T> {
         Self::build_dataset(x, y, weights, full.variable_names.clone(), Some(full.avg_y))
     }
 
-    pub fn resample_from(&mut self, full: &Dataset<T>, rng: &mut impl Rng) {
+    pub fn resample_from(&mut self, full: &Dataset<T>, rng: &mut Rng) {
         if full.n_rows == 0 {
             panic!("Cannot batch from an empty dataset (n_rows = 0).");
         }
@@ -133,7 +135,7 @@ impl<T: Float> Dataset<T> {
             assert!(full.weights.is_none());
         }
 
-        for (dst_col, src_idx) in (0..self.n_rows).map(|i| (i, rng.random_range(0..full.n_rows))) {
+        for (dst_col, src_idx) in (0..self.n_rows).map(|i| (i, usize_range(rng, 0..full.n_rows))) {
             self.x.column_mut(dst_col).assign(&full.x.column(src_idx));
             self.y[dst_col] = full.y[src_idx];
             if let (Some(dst), Some(src)) = (self.weights.as_mut(), full.weights.as_ref()) {

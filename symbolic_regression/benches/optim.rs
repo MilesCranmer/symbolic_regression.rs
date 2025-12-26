@@ -1,10 +1,13 @@
 use core::marker::PhantomData;
 
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
+use dynamic_expressions::expression::PostfixExpr;
+use dynamic_expressions::node::PNode;
 use dynamic_expressions::operator_enum::builtin;
 use dynamic_expressions::operator_enum::presets::BuiltinOpsF32;
 use dynamic_expressions::utils::ZipEq;
 use dynamic_expressions::{HasOp, OpId};
+use fastrand::Rng as FastRand;
 use ndarray::{Array1, Array2};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -12,13 +15,78 @@ use rand_distr::StandardNormal;
 use symbolic_regression::{
     Dataset, Evaluator, MemberId, NextGenerationCtx, Operators, OptimizeConstantsCtx, Options, PopMember, Population,
     RunningSearchStatistics, TaggedDataset, best_of_sample, check_constraints, equation_search,
-    insert_random_op_in_place, next_generation, optimize_constants, random_expr, rotate_tree_in_place,
+    insert_random_op_in_place, next_generation, optimize_constants, rotate_tree_in_place,
 };
 
 type T = f32;
 const D: usize = 3;
 type Ops = BuiltinOpsF32;
 const POP_SIZE: usize = 100;
+
+fn random_leaf<R: Rng>(rng: &mut R, n_features: usize, consts: &mut Vec<T>) -> PNode {
+    if rng.random_bool(0.5) {
+        let val: T = rng.sample(StandardNormal);
+        let idx: u16 = consts.len().try_into().expect("too many constants");
+        consts.push(val);
+        PNode::Const { idx }
+    } else {
+        let feature: u16 = rng
+            .random_range(0..n_features)
+            .try_into()
+            .unwrap_or_else(|_| panic!("too many features to index in u16"));
+        PNode::Var { feature }
+    }
+}
+
+fn random_expr<Ops2, const D2: usize, R: Rng>(
+    rng: &mut R,
+    operators: &Operators<D2>,
+    n_features: usize,
+    target_size: usize,
+) -> PostfixExpr<T, Ops2, D2> {
+    assert!(target_size >= 1);
+    let mut nodes: Vec<PNode> = Vec::with_capacity(target_size);
+    let mut consts: Vec<T> = Vec::new();
+    nodes.push(random_leaf(rng, n_features, &mut consts));
+
+    while nodes.len() < target_size && operators.total_ops_up_to(D2.min(target_size - nodes.len())) > 0 {
+        let rem = target_size - nodes.len();
+        let max_arity = rem.min(D2);
+        let total: usize = (1..=max_arity).map(|a| operators.nops(a)).sum();
+        let mut r = rng.random_range(0..total);
+        let mut arity = 1usize;
+        for a in 1..=max_arity {
+            let n = operators.nops(a);
+            if r < n {
+                arity = a;
+                break;
+            }
+            r -= n;
+        }
+
+        let choices = &operators.ops_by_arity[arity - 1];
+        let op = choices[rng.random_range(0..choices.len())];
+
+        let leaf_positions: Vec<usize> = nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(i, n)| matches!(n, PNode::Var { .. } | PNode::Const { .. }).then_some(i))
+            .collect();
+        let leaf_idx = leaf_positions[rng.random_range(0..leaf_positions.len())];
+
+        let mut repl: Vec<PNode> = Vec::with_capacity(arity + 1);
+        for _ in 0..arity {
+            repl.push(random_leaf(rng, n_features, &mut consts));
+        }
+        repl.push(PNode::Op {
+            arity: arity as u8,
+            op: op.id,
+        });
+        nodes.splice(leaf_idx..=leaf_idx, repl);
+    }
+
+    PostfixExpr::new(nodes, consts, Default::default())
+}
 
 fn make_ops_search() -> Operators<D> {
     Operators::<D>::from_names_by_arity::<Ops>(&["exp", "abs"], &["+", "-", "*", "/"], &[]).expect("search operators")
@@ -107,7 +175,7 @@ fn make_population(
 
     let mut members = Vec::with_capacity(pop_size);
     for i in 0..pop_size {
-        let expr = random_expr::<T, Ops, D, _>(&mut rng, &options.operators, dataset.n_features, tree_size);
+        let expr = random_expr::<Ops, D, _>(&mut rng, &options.operators, dataset.n_features, tree_size);
         let mut member = PopMember::from_expr(MemberId(i as u64), None, i as u64, expr, dataset.n_features);
         let _ = member.evaluate(&tagged, options, &mut evaluator);
         members.push(member);
@@ -145,7 +213,7 @@ fn bench_utils(c: &mut Criterion) {
         let options = make_utils_options();
         let dataset = make_random_dataset(0, 32, 1);
         let (population, stats) = make_population(5, &dataset, &options, POP_SIZE, 20);
-        let mut rng = StdRng::seed_from_u64(99);
+        let mut rng = FastRand::with_seed(99);
 
         group.bench_function("best_of_sample", |b| {
             b.iter(|| {
@@ -179,7 +247,7 @@ fn bench_utils(c: &mut Criterion) {
                 || {
                     let tagged = TaggedDataset::new(&dataset, None);
                     let evaluator = Evaluator::new(dataset.n_rows);
-                    let rng = StdRng::seed_from_u64(6);
+                    let rng = FastRand::with_seed(6);
                     let next_id = population.len() as u64;
                     let next_birth = population.len() as u64;
                     (tagged, evaluator, rng, next_id, next_birth)
@@ -210,10 +278,11 @@ fn bench_utils(c: &mut Criterion) {
     {
         let dataset = make_random_dataset(9, 512, 1);
         let options = make_utils_options();
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = FastRand::with_seed(42);
+        let mut expr_rng = StdRng::seed_from_u64(42);
         let mut members = Vec::with_capacity(10);
         for i in 0..10 {
-            let expr = random_expr::<T, Ops, D, _>(&mut rng, &options.operators, dataset.n_features, 20);
+            let expr = random_expr::<Ops, D, _>(&mut expr_rng, &options.operators, dataset.n_features, 20);
             let member = PopMember::from_expr(MemberId(i as u64), None, i as u64, expr, dataset.n_features);
             members.push(member);
         }
@@ -244,7 +313,7 @@ fn bench_utils(c: &mut Criterion) {
         let options = make_utils_options();
         let mut rng = StdRng::seed_from_u64(7);
         let trees: Vec<_> = (0..10)
-            .map(|_| random_expr::<T, Ops, D, _>(&mut rng, &options.operators, 3, 20))
+            .map(|_| random_expr::<Ops, D, _>(&mut rng, &options.operators, 3, 20))
             .collect();
 
         group.bench_function(BenchmarkId::new("compute_complexity_x10", "u16"), |b| {
@@ -262,9 +331,10 @@ fn bench_utils(c: &mut Criterion) {
         group.bench_function("randomly_rotate_tree_x10", |b| {
             b.iter_batched(
                 || {
-                    let mut rng = StdRng::seed_from_u64(11);
+                    let mut expr_rng = StdRng::seed_from_u64(11);
+                    let rng = FastRand::with_seed(11);
                     let trees: Vec<_> = (0..10)
-                        .map(|_| random_expr::<T, Ops, D, _>(&mut rng, &options.operators, 3, 20))
+                        .map(|_| random_expr::<Ops, D, _>(&mut expr_rng, &options.operators, 3, 20))
                         .collect();
                     (rng, trees)
                 },
@@ -284,9 +354,10 @@ fn bench_utils(c: &mut Criterion) {
         group.bench_function("insert_random_op_x10", |b| {
             b.iter_batched(
                 || {
-                    let mut rng = StdRng::seed_from_u64(12);
+                    let mut expr_rng = StdRng::seed_from_u64(12);
+                    let rng = FastRand::with_seed(12);
                     let trees: Vec<_> = (0..10)
-                        .map(|_| random_expr::<T, Ops, D, _>(&mut rng, &options.operators, 3, 20))
+                        .map(|_| random_expr::<Ops, D, _>(&mut expr_rng, &options.operators, 3, 20))
                         .collect();
                     (rng, trees)
                 },
@@ -329,7 +400,7 @@ fn bench_utils(c: &mut Criterion) {
 
         let mut rng = StdRng::seed_from_u64(13);
         let trees: Vec<_> = (0..10)
-            .map(|_| random_expr::<T, Ops, D, _>(&mut rng, &options.operators, 3, 20))
+            .map(|_| random_expr::<Ops, D, _>(&mut rng, &options.operators, 3, 20))
             .collect();
 
         group.bench_function("check_constraints_x10", |b| {

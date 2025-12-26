@@ -36,11 +36,11 @@ fn random_leaf<T: Float, R: Rng>(rng: &mut R, n_features: usize, consts: &mut Ve
         consts.push(val);
         PNode::Const { idx }
     } else {
-        let f: u16 = rng
+        let feature: u16 = rng
             .random_range(0..n_features)
             .try_into()
             .expect("feature index overflow");
-        PNode::Var { feature: f }
+        PNode::Var { feature }
     }
 }
 
@@ -62,10 +62,10 @@ fn gen_random_tree_fixed_size<T: Float, Ops: OperatorSet<T = T>, const D: usize,
     while nodes.len() < target_size {
         let rem = target_size - nodes.len();
         let max_arity = rem.min(D);
-        let arity = match 1..=max_arity {
-            range if range.is_empty() => break,
-            range => rng.random_range(range),
-        } as u8;
+        if max_arity == 0 {
+            break;
+        }
+        let arity = rng.random_range(1..=max_arity) as u8;
 
         let Some(choices) = ops_by_arity.get(usize::from(arity) - 1) else {
             break;
@@ -117,8 +117,8 @@ where
     let trees: Vec<PostfixExpr<T, Ops, D>> = (0..N_TREES)
         .map(|_| gen_random_tree_fixed_size(&mut rng, TREE_SIZE, N_FEATURES))
         .collect();
-    let x = make_data::<T>();
-    let x_view = x.view();
+    let data = make_data::<T>();
+    let x_view = data.view();
     let opts = EvalOptions {
         check_finite: false,
         early_exit: false,

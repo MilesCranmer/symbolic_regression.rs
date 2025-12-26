@@ -2,9 +2,8 @@ use dynamic_expressions::HasOp;
 use dynamic_expressions::expression::{Metadata, PostfixExpr};
 use dynamic_expressions::node::PNode;
 use dynamic_expressions::operator_enum::builtin;
+use fastrand::Rng;
 use ndarray::{Array1, Array2};
-use rand::SeedableRng;
-use rand::rngs::StdRng;
 
 use super::common::{D, T, TestOps};
 use crate::adaptive_parsimony::RunningSearchStatistics;
@@ -60,11 +59,11 @@ fn randomize_mutation_can_succeed_below_size_3() {
     let mut parent = PopMember::from_expr(MemberId(0), None, 0, leaf_expr(0), dataset.n_features);
     assert!(parent.evaluate(&full_dataset, &options, &mut evaluator));
 
-    let mut rng = StdRng::seed_from_u64(0);
+    let mut rng = Rng::with_seed(0);
     let mut next_id = 1u64;
     let mut next_birth = 0u64;
 
-    let (child, ok, _) = mutate::next_generation::<T, TestOps, D, _>(
+    let (child, ok, _) = mutate::next_generation::<T, TestOps, D>(
         &parent,
         mutate::NextGenerationCtx {
             rng: &mut rng,
@@ -204,7 +203,7 @@ fn add_node_includes_append_at_leaf_move() {
     let mut parent = PopMember::from_expr(MemberId(0), None, 0, expr, dataset.n_features);
     assert!(parent.evaluate(&full_dataset, &options, &mut evaluator));
 
-    let mut rng = StdRng::seed_from_u64(0);
+    let mut rng = Rng::with_seed(0);
     let mut next_id = 1u64;
     let mut next_birth = 0u64;
 
@@ -213,7 +212,7 @@ fn add_node_includes_append_at_leaf_move() {
     let mut saw_append = false;
 
     for _ in 0..64 {
-        let (child, ok, _) = mutate::next_generation::<T, TestOps, D, _>(
+        let (child, ok, _) = mutate::next_generation::<T, TestOps, D>(
             &parent,
             mutate::NextGenerationCtx {
                 rng: &mut rng,
@@ -304,11 +303,11 @@ fn mutate_operator_can_be_a_noop_and_still_succeeds() {
     let mut parent = PopMember::from_expr(MemberId(0), None, 0, expr, dataset.n_features);
     assert!(parent.evaluate(&full_dataset, &options, &mut evaluator));
 
-    let mut rng = StdRng::seed_from_u64(0);
+    let mut rng = Rng::with_seed(0);
     let mut next_id = 1u64;
     let mut next_birth = 0u64;
 
-    let (child, ok, _) = mutate::next_generation::<T, TestOps, D, _>(
+    let (child, ok, _) = mutate::next_generation::<T, TestOps, D>(
         &parent,
         mutate::NextGenerationCtx {
             rng: &mut rng,

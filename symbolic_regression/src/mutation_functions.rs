@@ -1,16 +1,16 @@
 use dynamic_expressions::expression::PostfixExpr;
 use dynamic_expressions::node::PNode;
 use dynamic_expressions::node_utils;
+use fastrand::Rng;
 use num_traits::Float;
-use rand::Rng;
-use rand_distr::{self, Distribution};
 
 use crate::operators::Operators;
 use crate::options::Options;
+use crate::random::{standard_normal, usize_range};
 
-fn random_leaf<T: Float, R: Rng>(rng: &mut R, n_features: usize, consts: &mut Vec<T>) -> PNode {
-    if rng.random::<bool>() {
-        let val_f64: f64 = rand_distr::StandardNormal.sample(rng);
+fn random_leaf<T: Float>(rng: &mut Rng, n_features: usize, consts: &mut Vec<T>) -> PNode {
+    if rng.bool() {
+        let val_f64: f64 = standard_normal(rng);
         let val = T::from(val_f64).unwrap();
         let idx: u16 = consts
             .len()
@@ -19,16 +19,15 @@ fn random_leaf<T: Float, R: Rng>(rng: &mut R, n_features: usize, consts: &mut Ve
         consts.push(val);
         PNode::Const { idx }
     } else {
-        let f: u16 = rng
-            .random_range(0..n_features)
+        let f: u16 = usize_range(rng, 0..n_features)
             .try_into()
             .unwrap_or_else(|_| panic!("too many features to index in u16"));
         PNode::Var { feature: f }
     }
 }
 
-pub fn random_expr<T: Float, Ops, const D: usize, R: Rng>(
-    rng: &mut R,
+pub fn random_expr<T: Float, Ops, const D: usize>(
+    rng: &mut Rng,
     operators: &Operators<D>,
     n_features: usize,
     target_size: usize,
@@ -49,7 +48,7 @@ pub fn random_expr<T: Float, Ops, const D: usize, R: Rng>(
             .enumerate()
             .filter_map(|(i, n)| matches!(n, PNode::Var { .. } | PNode::Const { .. }).then_some(i))
             .collect();
-        let leaf_idx = leaf_positions[rng.random_range(0..leaf_positions.len())];
+        let leaf_idx = leaf_positions[usize_range(rng, 0..leaf_positions.len())];
 
         let mut repl: Vec<PNode> = Vec::with_capacity(arity + 1);
         for _ in 0..arity {
@@ -71,8 +70,8 @@ pub fn random_expr<T: Float, Ops, const D: usize, R: Rng>(
 /// by replacing it with an operator node and fresh random leaf children.
 ///
 /// Note: final node count is generally larger than `n_append_ops`.
-pub fn random_expr_append_ops<T: Float, Ops, const D: usize, R: Rng>(
-    rng: &mut R,
+pub fn random_expr_append_ops<T: Float, Ops, const D: usize>(
+    rng: &mut Rng,
     operators: &Operators<D>,
     n_features: usize,
     n_append_ops: usize,
@@ -102,7 +101,7 @@ pub fn random_expr_append_ops<T: Float, Ops, const D: usize, R: Rng>(
         if leaf_positions.is_empty() {
             break;
         }
-        let leaf_idx = leaf_positions[rng.random_range(0..leaf_positions.len())];
+        let leaf_idx = leaf_positions[usize_range(rng, 0..leaf_positions.len())];
 
         let mut repl: Vec<PNode> = Vec::with_capacity(arity + 1);
         for _ in 0..arity {
@@ -156,8 +155,8 @@ fn child_ranges(sizes: &[usize], root_idx: usize, arity: usize) -> Vec<(usize, u
     out
 }
 
-pub(crate) fn mutate_constant_in_place<T: Float, Ops, const D: usize, R: Rng>(
-    rng: &mut R,
+pub(crate) fn mutate_constant_in_place<T: Float, Ops, const D: usize>(
+    rng: &mut Rng,
     expr: &mut PostfixExpr<T, Ops, D>,
     temperature: f64,
     options: &Options<T, D>,
@@ -166,7 +165,7 @@ pub(crate) fn mutate_constant_in_place<T: Float, Ops, const D: usize, R: Rng>(
     if idxs.is_empty() {
         return false;
     }
-    let node_i = idxs[rng.random_range(0..idxs.len())];
+    let node_i = idxs[usize_range(rng, 0..idxs.len())];
     let PNode::Const { idx } = expr.nodes[node_i] else {
         return false;
     };
@@ -175,19 +174,19 @@ pub(crate) fn mutate_constant_in_place<T: Float, Ops, const D: usize, R: Rng>(
     // Follows SymbolicRegression.jl's `mutate_factor`.
     let pf = options.perturbation_factor * temperature.max(0.0);
     let max_change = pf + 1.1;
-    let exponent: f64 = rng.random::<f64>();
+    let exponent: f64 = rng.f64();
     let mut mul = max_change.powf(exponent);
-    let make_const_bigger: bool = rng.random();
+    let make_const_bigger: bool = rng.bool();
     mul = if make_const_bigger { mul } else { 1.0 / mul };
-    if rng.random::<f64>() > options.probability_negate_constant {
+    if rng.f64() > options.probability_negate_constant {
         mul = -mul;
     }
     expr.consts[ci] = expr.consts[ci] * T::from(mul).unwrap();
     true
 }
 
-pub(crate) fn mutate_operator_in_place<T, Ops, const D: usize, R: Rng>(
-    rng: &mut R,
+pub(crate) fn mutate_operator_in_place<T, Ops, const D: usize>(
+    rng: &mut Rng,
     expr: &mut PostfixExpr<T, Ops, D>,
     operators: &Operators<D>,
 ) -> bool {
@@ -195,7 +194,7 @@ pub(crate) fn mutate_operator_in_place<T, Ops, const D: usize, R: Rng>(
     if idxs.is_empty() {
         return false;
     }
-    let i = idxs[rng.random_range(0..idxs.len())];
+    let i = idxs[usize_range(rng, 0..idxs.len())];
     let PNode::Op { arity, .. } = expr.nodes[i] else {
         return false;
     };
@@ -211,8 +210,8 @@ pub(crate) fn mutate_operator_in_place<T, Ops, const D: usize, R: Rng>(
     true
 }
 
-pub(crate) fn mutate_feature_in_place<T, Ops, const D: usize, R: Rng>(
-    rng: &mut R,
+pub(crate) fn mutate_feature_in_place<T, Ops, const D: usize>(
+    rng: &mut Rng,
     expr: &mut PostfixExpr<T, Ops, D>,
     n_features: usize,
 ) -> bool {
@@ -223,7 +222,7 @@ pub(crate) fn mutate_feature_in_place<T, Ops, const D: usize, R: Rng>(
     if idxs.is_empty() {
         return false;
     }
-    let node_i = idxs[rng.random_range(0..idxs.len())];
+    let node_i = idxs[usize_range(rng, 0..idxs.len())];
     let PNode::Var { feature } = expr.nodes[node_i] else {
         return false;
     };
@@ -233,7 +232,7 @@ pub(crate) fn mutate_feature_in_place<T, Ops, const D: usize, R: Rng>(
     }
 
     for _ in 0..8 {
-        let new_feature = rng.random_range(0..n_features);
+        let new_feature = usize_range(rng, 0..n_features);
         if new_feature != old {
             let new_u16: u16 = new_feature
                 .try_into()
@@ -245,10 +244,7 @@ pub(crate) fn mutate_feature_in_place<T, Ops, const D: usize, R: Rng>(
     false
 }
 
-pub(crate) fn swap_operands_in_place<T, Ops, const D: usize, R: Rng>(
-    rng: &mut R,
-    expr: &mut PostfixExpr<T, Ops, D>,
-) -> bool {
+pub(crate) fn swap_operands_in_place<T, Ops, const D: usize>(rng: &mut Rng, expr: &mut PostfixExpr<T, Ops, D>) -> bool {
     let idxs: Vec<usize> = expr
         .nodes
         .iter()
@@ -259,7 +255,7 @@ pub(crate) fn swap_operands_in_place<T, Ops, const D: usize, R: Rng>(
         return false;
     }
     let sizes = node_utils::subtree_sizes(&expr.nodes);
-    let root_idx = idxs[rng.random_range(0..idxs.len())];
+    let root_idx = idxs[usize_range(rng, 0..idxs.len())];
     let PNode::Op { op, .. } = expr.nodes[root_idx] else {
         return false;
     };
@@ -273,7 +269,7 @@ pub(crate) fn swap_operands_in_place<T, Ops, const D: usize, R: Rng>(
     true
 }
 
-pub fn rotate_tree_in_place<T, Ops, const D: usize, R: Rng>(rng: &mut R, expr: &mut PostfixExpr<T, Ops, D>) -> bool {
+pub fn rotate_tree_in_place<T, Ops, const D: usize>(rng: &mut Rng, expr: &mut PostfixExpr<T, Ops, D>) -> bool {
     // Match SymbolicRegression.jl's `randomly_rotate_tree!`:
     // pick a random rotation root where some child is an operator, then
     // rotate along a random internal edge (root -> pivot) using a random grandchild.
@@ -296,7 +292,7 @@ pub fn rotate_tree_in_place<T, Ops, const D: usize, R: Rng>(rng: &mut R, expr: &
         return false;
     }
 
-    let root_idx = valid_roots[rng.random_range(0..valid_roots.len())];
+    let root_idx = valid_roots[usize_range(rng, 0..valid_roots.len())];
     let PNode::Op {
         arity: root_arity_u8,
         op: op_root,
@@ -319,7 +315,7 @@ pub fn rotate_tree_in_place<T, Ops, const D: usize, R: Rng>(rng: &mut R, expr: &
         return false;
     }
 
-    let pivot_pos = pivot_positions[rng.random_range(0..pivot_positions.len())];
+    let pivot_pos = pivot_positions[usize_range(rng, 0..pivot_positions.len())];
     let pivot_root_idx = root_children[pivot_pos].1;
     let PNode::Op {
         arity: pivot_arity_u8,
@@ -334,7 +330,7 @@ pub fn rotate_tree_in_place<T, Ops, const D: usize, R: Rng>(rng: &mut R, expr: &
     }
     let pivot_children = child_ranges(&sizes, pivot_root_idx, pivot_arity);
 
-    let grandchild_pos = rng.random_range(0..pivot_arity);
+    let grandchild_pos = usize_range(rng, 0..pivot_arity);
     let grandchild = pivot_children[grandchild_pos];
 
     let (sub_start, sub_end) = node_utils::subtree_range(&sizes, root_idx);
@@ -371,8 +367,8 @@ pub fn rotate_tree_in_place<T, Ops, const D: usize, R: Rng>(rng: &mut R, expr: &
     true
 }
 
-pub fn insert_random_op_in_place<T: Float, Ops, const D: usize, R: Rng>(
-    rng: &mut R,
+pub fn insert_random_op_in_place<T: Float, Ops, const D: usize>(
+    rng: &mut Rng,
     expr: &mut PostfixExpr<T, Ops, D>,
     operators: &Operators<D>,
     n_features: usize,
@@ -383,14 +379,14 @@ pub fn insert_random_op_in_place<T: Float, Ops, const D: usize, R: Rng>(
     if operators.total_ops_up_to(D) == 0 {
         return false;
     }
-    let root_idx = rng.random_range(0..expr.nodes.len());
+    let root_idx = usize_range(rng, 0..expr.nodes.len());
     let sizes = node_utils::subtree_sizes(&expr.nodes);
     let (start, end) = node_utils::subtree_range(&sizes, root_idx);
     let old_sub: Vec<PNode> = expr.nodes[start..=end].to_vec();
 
     let arity = operators.sample_arity(rng, D);
     let op_id = operators.sample_op(rng, arity).id;
-    let carry_pos = rng.random_range(0..arity);
+    let carry_pos = usize_range(rng, 0..arity);
 
     let mut new_sub: Vec<PNode> = Vec::new();
     for j in 0..arity {
@@ -409,8 +405,8 @@ pub fn insert_random_op_in_place<T: Float, Ops, const D: usize, R: Rng>(
     true
 }
 
-pub(crate) fn prepend_random_op_in_place<T: Float, Ops, const D: usize, R: Rng>(
-    rng: &mut R,
+pub(crate) fn prepend_random_op_in_place<T: Float, Ops, const D: usize>(
+    rng: &mut Rng,
     expr: &mut PostfixExpr<T, Ops, D>,
     operators: &Operators<D>,
     n_features: usize,
@@ -423,7 +419,7 @@ pub(crate) fn prepend_random_op_in_place<T: Float, Ops, const D: usize, R: Rng>(
     }
     let arity = operators.sample_arity(rng, D);
     let op_id = operators.sample_op(rng, arity).id;
-    let carry_pos = rng.random_range(0..arity);
+    let carry_pos = usize_range(rng, 0..arity);
 
     let old = expr.nodes.clone();
     let mut new_nodes: Vec<PNode> = Vec::new();
@@ -443,8 +439,8 @@ pub(crate) fn prepend_random_op_in_place<T: Float, Ops, const D: usize, R: Rng>(
     true
 }
 
-pub(crate) fn append_random_op_in_place<T: Float, Ops, const D: usize, R: Rng>(
-    rng: &mut R,
+pub(crate) fn append_random_op_in_place<T: Float, Ops, const D: usize>(
+    rng: &mut Rng,
     expr: &mut PostfixExpr<T, Ops, D>,
     operators: &Operators<D>,
     n_features: usize,
@@ -465,7 +461,7 @@ pub(crate) fn append_random_op_in_place<T: Float, Ops, const D: usize, R: Rng>(
     if leaf_positions.is_empty() {
         return false;
     }
-    let leaf_idx = leaf_positions[rng.random_range(0..leaf_positions.len())];
+    let leaf_idx = leaf_positions[usize_range(rng, 0..leaf_positions.len())];
 
     let arity = operators.sample_arity(rng, D);
     let op_id = operators.sample_op(rng, arity).id;
@@ -484,28 +480,28 @@ pub(crate) fn append_random_op_in_place<T: Float, Ops, const D: usize, R: Rng>(
     true
 }
 
-pub(crate) fn add_node_in_place<T: Float, Ops, const D: usize, R: Rng>(
-    rng: &mut R,
+pub(crate) fn add_node_in_place<T: Float, Ops, const D: usize>(
+    rng: &mut Rng,
     expr: &mut PostfixExpr<T, Ops, D>,
     operators: &Operators<D>,
     n_features: usize,
 ) -> bool {
-    if rng.random::<bool>() {
+    if rng.bool() {
         append_random_op_in_place(rng, expr, operators, n_features)
     } else {
         prepend_random_op_in_place(rng, expr, operators, n_features)
     }
 }
 
-pub(crate) fn delete_random_op_in_place<T: Clone, Ops, const D: usize, R: Rng>(
-    rng: &mut R,
+pub(crate) fn delete_random_op_in_place<T: Clone, Ops, const D: usize>(
+    rng: &mut Rng,
     expr: &mut PostfixExpr<T, Ops, D>,
 ) -> bool {
     let idxs = op_indices(&expr.nodes);
     if idxs.is_empty() {
         return false;
     }
-    let root_idx = idxs[rng.random_range(0..idxs.len())];
+    let root_idx = idxs[usize_range(rng, 0..idxs.len())];
     let PNode::Op { arity, .. } = expr.nodes[root_idx] else {
         return false;
     };
@@ -519,15 +515,15 @@ pub(crate) fn delete_random_op_in_place<T: Clone, Ops, const D: usize, R: Rng>(
         return false;
     }
     let child = child_ranges(&sizes, root_idx, a);
-    let keep = child[rng.random_range(0..a)];
+    let keep = child[usize_range(rng, 0..a)];
     let kept_nodes: Vec<PNode> = expr.nodes[keep.0..=keep.1].to_vec();
     expr.nodes.splice(sub_start..=sub_end, kept_nodes);
     dynamic_expressions::compress_constants(expr);
     true
 }
 
-pub(crate) fn crossover_trees<T: Clone, Ops, const D: usize, R: Rng>(
-    rng: &mut R,
+pub(crate) fn crossover_trees<T: Clone, Ops, const D: usize>(
+    rng: &mut Rng,
     a: &PostfixExpr<T, Ops, D>,
     b: &PostfixExpr<T, Ops, D>,
 ) -> (PostfixExpr<T, Ops, D>, PostfixExpr<T, Ops, D>) {
@@ -565,8 +561,8 @@ pub(crate) fn crossover_trees<T: Clone, Ops, const D: usize, R: Rng>(
 
     let a_sizes = node_utils::subtree_sizes(&a.nodes);
     let b_sizes = node_utils::subtree_sizes(&b.nodes);
-    let a_root = rng.random_range(0..a.nodes.len());
-    let b_root = rng.random_range(0..b.nodes.len());
+    let a_root = usize_range(rng, 0..a.nodes.len());
+    let b_root = usize_range(rng, 0..b.nodes.len());
     let (a_start, a_end) = node_utils::subtree_range(&a_sizes, a_root);
     let (b_start, b_end) = node_utils::subtree_range(&b_sizes, b_root);
 

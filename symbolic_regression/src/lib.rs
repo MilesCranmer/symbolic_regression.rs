@@ -22,6 +22,7 @@ pub(crate) mod pop_member;
 pub(crate) mod population;
 pub mod prelude;
 pub(crate) mod progress_bars;
+pub(crate) mod random;
 pub(crate) mod regularized_evolution;
 pub(crate) mod search_utils;
 pub(crate) mod selection;

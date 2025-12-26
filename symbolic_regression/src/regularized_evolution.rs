@@ -1,7 +1,7 @@
 use std::ops::AddAssign;
 
+use fastrand::Rng;
 use num_traits::{Float, FromPrimitive, ToPrimitive};
-use rand::Rng;
 
 use crate::adaptive_parsimony::RunningSearchStatistics;
 use crate::dataset::TaggedDataset;
@@ -11,8 +11,8 @@ use crate::pop_member::Evaluator;
 use crate::population::Population;
 use crate::selection::best_of_sample;
 
-pub struct RegEvolCtx<'a, T: Float + AddAssign, Ops, const D: usize, R: Rng> {
-    pub rng: &'a mut R,
+pub struct RegEvolCtx<'a, T: Float + AddAssign, Ops, const D: usize> {
+    pub rng: &'a mut Rng,
     pub dataset: TaggedDataset<'a, T>,
     pub temperature: f64,
     pub curmaxsize: usize,
@@ -24,10 +24,7 @@ pub struct RegEvolCtx<'a, T: Float + AddAssign, Ops, const D: usize, R: Rng> {
     pub _ops: core::marker::PhantomData<Ops>,
 }
 
-pub fn reg_evol_cycle<T, Ops, const D: usize, R: Rng>(
-    pop: &mut Population<T, Ops, D>,
-    ctx: RegEvolCtx<'_, T, Ops, D, R>,
-) -> f64
+pub fn reg_evol_cycle<T, Ops, const D: usize>(pop: &mut Population<T, Ops, D>, ctx: RegEvolCtx<'_, T, Ops, D>) -> f64
 where
     T: Float + FromPrimitive + ToPrimitive + AddAssign,
     Ops: dynamic_expressions::OperatorSet<T = T>,
@@ -36,7 +33,7 @@ where
     let n_evol_cycles = ((pop.len() as f64) / (ctx.options.tournament_selection_n as f64)).ceil() as usize;
 
     for _ in 0..n_evol_cycles {
-        if ctx.rng.random::<f64>() > ctx.options.crossover_probability {
+        if ctx.rng.f64() > ctx.options.crossover_probability {
             let allstar = best_of_sample(ctx.rng, pop, ctx.stats, ctx.options);
             let (baby, accepted, tmp) = mutate::next_generation(
                 &allstar,

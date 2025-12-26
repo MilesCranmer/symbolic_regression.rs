@@ -4,7 +4,9 @@ use std::marker::PhantomData;
 
 use dynamic_expressions::operator_enum::builtin;
 use dynamic_expressions::{HasOp, OpId, OperatorSet};
-use rand::Rng;
+use fastrand::Rng;
+
+use crate::random::usize_range;
 
 #[derive(Clone, Debug)]
 pub struct Operators<const D: usize> {
@@ -152,11 +154,11 @@ impl<const D: usize> Operators<D> {
         (1..=max_arity).map(|a| self.nops(a)).sum()
     }
 
-    pub fn sample_arity<R: Rng>(&self, rng: &mut R, max_arity: usize) -> usize {
+    pub fn sample_arity(&self, rng: &mut Rng, max_arity: usize) -> usize {
         let max_arity = max_arity.min(D);
         let total: usize = (1..=max_arity).map(|a| self.nops(a)).sum();
         assert!(total > 0, "no operators available up to arity={max_arity}");
-        let mut r = rng.random_range(0..total);
+        let mut r = usize_range(rng, 0..total);
         for arity in 1..=max_arity {
             let n = self.nops(arity);
             if r < n {
@@ -167,9 +169,9 @@ impl<const D: usize> Operators<D> {
         unreachable!()
     }
 
-    pub fn sample_op<R: Rng>(&self, rng: &mut R, arity: usize) -> OpId {
+    pub fn sample_op(&self, rng: &mut Rng, arity: usize) -> OpId {
         let v = &self.ops_by_arity[arity - 1];
-        let i = rng.random_range(0..v.len());
+        let i = usize_range(rng, 0..v.len());
         v[i]
     }
 
