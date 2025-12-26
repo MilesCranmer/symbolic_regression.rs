@@ -1,14 +1,15 @@
 #![cfg(feature = "proptest-utils")]
 
+use dynamic_expressions::dispatch::{GradKernelCtx, GradRef, SrcRef};
+use dynamic_expressions::evaluate::kernels::grad_nary;
 use dynamic_expressions::expression::{Metadata, PostfixExpr};
 use dynamic_expressions::node::{PNode, Src};
 use dynamic_expressions::operator_enum::builtin;
 use dynamic_expressions::operator_enum::presets::BuiltinOpsF64;
-use dynamic_expressions::operator_enum::scalar::{GradKernelCtx, GradRef, SrcRef, grad_nary};
 use dynamic_expressions::utils::ZipEq;
 use dynamic_expressions::{
-    EvalOptions, EvalPlan, GradContext, HasOp, Operator, OperatorSet, compile_plan, eval_grad_tree_array,
-    eval_tree_array, proptest_utils,
+    EvalOptions, EvalPlan, GradContext, HasOp, OperatorSet, compile_plan, eval_grad_tree_array, eval_tree_array,
+    proptest_utils,
 };
 use ndarray::Array2;
 use proptest::prelude::*;
@@ -522,9 +523,9 @@ proptest! {
         };
 
         let ok = match op {
-            BinaryOp::Add => grad_nary::<2, f64>(builtin::Add::eval, builtin::Add::partial, ctx),
-            BinaryOp::Sub => grad_nary::<2, f64>(builtin::Sub::eval, builtin::Sub::partial, ctx),
-            BinaryOp::Mul => grad_nary::<2, f64>(builtin::Mul::eval, builtin::Mul::partial, ctx),
+            BinaryOp::Add => grad_nary::<2, f64, builtin::Add>(ctx),
+            BinaryOp::Sub => grad_nary::<2, f64, builtin::Sub>(ctx),
+            BinaryOp::Mul => grad_nary::<2, f64, builtin::Mul>(ctx),
         };
         prop_assert!(ok);
 
@@ -594,8 +595,8 @@ proptest! {
         };
 
         let ok = match op {
-            UnaryOp::Sin => grad_nary::<1, f64>(builtin::Sin::eval, builtin::Sin::partial, ctx),
-            UnaryOp::Cos => grad_nary::<1, f64>(builtin::Cos::eval, builtin::Cos::partial, ctx),
+            UnaryOp::Sin => grad_nary::<1, f64, builtin::Sin>(ctx),
+            UnaryOp::Cos => grad_nary::<1, f64, builtin::Cos>(ctx),
         };
         prop_assert!(ok);
 

@@ -317,8 +317,9 @@ pub mod kernels {
         out.iter().all(|v| v.is_finite())
     }
 
+    #[doc(hidden)]
     #[inline]
-    fn __maybe_mark_nonfinite<T: Float>(v: T, opts: &EvalOptions, complete: &mut bool) -> bool {
+    pub fn __maybe_mark_nonfinite<T: Float>(v: T, opts: &EvalOptions, complete: &mut bool) -> bool {
         if opts.check_finite && !v.is_finite() {
             *complete = false;
             if opts.early_exit {

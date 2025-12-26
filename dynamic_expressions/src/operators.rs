@@ -8,10 +8,10 @@ mod macros {
                     x: crate::expression::PostfixExpr<T, Ops, D>,
                 ) -> crate::expression::PostfixExpr<T, Ops, D>
                 where
-                    Ops: crate::operator_enum::scalar::HasOp<$Op, 1>,
+                    Ops: crate::traits::HasOp<$Op>,
                 {
                     crate::expression_algebra::__apply_postfix::<T, Ops, D, 1>(
-                        <Ops as crate::operator_enum::scalar::HasOp<$Op, 1>>::ID,
+                        <Ops as crate::traits::HasOp<$Op>>::ID,
                         [x],
                     )
                 }
@@ -29,10 +29,10 @@ mod macros {
                     y: crate::expression::PostfixExpr<T, Ops, D>,
                 ) -> crate::expression::PostfixExpr<T, Ops, D>
                 where
-                    Ops: crate::operator_enum::scalar::HasOp<$Op, 2>,
+                    Ops: crate::traits::HasOp<$Op>,
                 {
                     crate::expression_algebra::__apply_postfix::<T, Ops, D, 2>(
-                        <Ops as crate::operator_enum::scalar::HasOp<$Op, 2>>::ID,
+                        <Ops as crate::traits::HasOp<$Op>>::ID,
                         [x, y],
                     )
                 }
@@ -51,10 +51,10 @@ mod macros {
                     z: crate::expression::PostfixExpr<T, Ops, D>,
                 ) -> crate::expression::PostfixExpr<T, Ops, D>
                 where
-                    Ops: crate::operator_enum::scalar::HasOp<$Op, 3>,
+                    Ops: crate::traits::HasOp<$Op>,
                 {
                     crate::expression_algebra::__apply_postfix::<T, Ops, D, 3>(
-                        <Ops as crate::operator_enum::scalar::HasOp<$Op, 3>>::ID,
+                        <Ops as crate::traits::HasOp<$Op>>::ID,
                         [x, y, z],
                     )
                 }

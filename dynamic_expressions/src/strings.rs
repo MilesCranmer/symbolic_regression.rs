@@ -55,37 +55,41 @@ fn strip_outer_parens(mut s: &str) -> &str {
     }
 }
 
-fn is_infix_op_name(name: &str) -> bool {
-    matches!(
-        name,
-        "+" | "-" | "*" | "/" | "^" | "==" | "!=" | "<" | "<=" | ">" | ">="
-    )
+enum OpStyle<'a> {
+    Prefix(&'a str),
+    Infix(&'a str),
+    Call(&'a str),
 }
 
-fn combine(opname: &str, args: &[String]) -> String {
-    if args.len() == 1 && opname == "-" {
-        let a = strip_outer_parens(&args[0]);
-        if a.contains(' ') {
-            return format!("-({a})");
+fn combine(style: OpStyle<'_>, args: &[String]) -> String {
+    match style {
+        OpStyle::Prefix(tok) => {
+            debug_assert_eq!(args.len(), 1);
+            let a = strip_outer_parens(&args[0]);
+            if a.contains(' ') {
+                format!("{tok}({a})")
+            } else {
+                format!("{tok}{a}")
+            }
         }
-        return format!("-{a}");
-    }
-
-    if args.len() == 2 && is_infix_op_name(opname) {
-        return format!("({} {} {})", args[0], opname, args[1]);
-    }
-
-    let mut out = String::new();
-    out.push_str(opname);
-    out.push('(');
-    for (i, a) in args.iter().enumerate() {
-        if i > 0 {
-            out.push_str(", ");
+        OpStyle::Infix(tok) => {
+            debug_assert_eq!(args.len(), 2);
+            format!("({} {} {})", args[0], tok, args[1])
         }
-        out.push_str(strip_outer_parens(a));
+        OpStyle::Call(opname) => {
+            let mut out = String::new();
+            out.push_str(opname);
+            out.push('(');
+            for (i, a) in args.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                out.push_str(strip_outer_parens(a));
+            }
+            out.push(')');
+            out
+        }
     }
-    out.push(')');
-    out
 }
 
 pub fn string_tree<T, Ops, const D: usize>(expr: &PostfixExpr<T, Ops, D>, opts: StringTreeOptions<'_>) -> String
@@ -114,13 +118,24 @@ where
                 let a = arity as usize;
                 let start = stack.len() - a;
                 let op = OpId { arity, id: op };
-                let opname = if opts.pretty {
-                    Ops::display(op)
-                } else {
-                    Ops::infix(op).unwrap_or_else(|| Ops::name(op))
+
+                let infix = Ops::infix(op);
+                let style = match (arity, infix) {
+                    (1, Some(tok)) => {
+                        let tok = if opts.pretty { Ops::display(op) } else { tok };
+                        OpStyle::Prefix(tok)
+                    }
+                    (2, Some(tok)) => {
+                        let tok = if opts.pretty { Ops::display(op) } else { tok };
+                        OpStyle::Infix(tok)
+                    }
+                    _ => {
+                        let name = if opts.pretty { Ops::display(op) } else { Ops::name(op) };
+                        OpStyle::Call(name)
+                    }
                 };
 
-                let out = combine(opname, &stack[start..]);
+                let out = combine(style, &stack[start..]);
                 stack.truncate(start);
                 stack.push(out);
             }

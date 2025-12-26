@@ -1,7 +1,7 @@
 use dynamic_expressions::expression::{Metadata, PostfixExpr};
 use dynamic_expressions::node::PNode;
-use dynamic_expressions::operator_enum::{builtin, scalar};
-use dynamic_expressions::{node_utils, proptest_utils};
+use dynamic_expressions::operator_enum::builtin;
+use dynamic_expressions::{HasOp, node_utils, proptest_utils};
 use proptest::prelude::*;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -15,10 +15,10 @@ const N_CONSTS: usize = 3;
 
 fn arb_postfix_nodes() -> impl Strategy<Value = Vec<PNode>> {
     let binary_ops = vec![
-        <TestOps as scalar::HasOp<builtin::Add, 2>>::ID,
-        <TestOps as scalar::HasOp<builtin::Sub, 2>>::ID,
-        <TestOps as scalar::HasOp<builtin::Mul, 2>>::ID,
-        <TestOps as scalar::HasOp<builtin::Div, 2>>::ID,
+        <TestOps as HasOp<builtin::Add>>::ID,
+        <TestOps as HasOp<builtin::Sub>>::ID,
+        <TestOps as HasOp<builtin::Mul>>::ID,
+        <TestOps as HasOp<builtin::Div>>::ID,
     ];
     proptest_utils::arb_postfix_nodes(N_FEATURES, N_CONSTS, Vec::new(), binary_ops, Vec::new(), 4, 32, 6)
 }

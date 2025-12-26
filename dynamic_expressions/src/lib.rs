@@ -33,5 +33,5 @@ pub use crate::node_utils::{
 };
 pub use crate::simplify::{combine_operators_in_place, simplify_in_place, simplify_tree_in_place};
 pub use crate::strings::{StringTreeOptions, print_tree, string_tree};
-pub use crate::traits::{HasOp, LookupError, OpId, OpTag, Operator, OperatorSet};
+pub use crate::traits::{HasOp, LookupError, OpId, OpMeta, OpTag, Operator, OperatorSet};
 pub use crate::utils::{ConstRef, compress_constants, get_scalar_constants, set_scalar_constants};

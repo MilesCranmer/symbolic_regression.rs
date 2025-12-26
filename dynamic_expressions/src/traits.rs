@@ -18,10 +18,23 @@ pub struct OpId {
     pub id: u16,
 }
 
+/// Each operator-set implementation generates a `&'static [OpMeta]` per arity and does
+/// `META.get(op.id as usize)`.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct OpMeta {
+    pub arity: u8,
+    pub id: u16,
+    pub name: &'static str,
+    pub display: &'static str,
+    pub infix: Option<&'static str>,
+    pub commutative: bool,
+    pub associative: bool,
+    pub complexity: u16,
+}
+
 /// Associate a fixed arity with an operator marker type.
 ///
-/// Rust can't (in general) recover `A` from `Tag: Operator<T, A>`, so we attach arity directly to
-/// the marker type for ergonomic typed ID lookup (e.g. `<Ops as HasOp<Add>>::ID`).
+/// Rust can't (in general) infer `A` from `Tag: Operator<T, A>`, so we attach arity directly.
 pub trait OpTag {
     const ARITY: u8;
 }
@@ -47,48 +60,60 @@ pub enum LookupError {
     },
 }
 
-/// An active set of operators.
+/// Operator-set abstraction.
 ///
-/// Design goals:
-/// - **Static:** the set is known at compile time (no runtime registration).
-/// - **Inlinable:** implementations are expected to use `match (arity, id)`-style dispatch to retrieve operator
-///   metadata and (elsewhere) to dispatch evaluation.
-/// - **Single entry point:** this trait is the place to ask "what operators exist?" and "what are their
-///   names/tokens/metadata?".
+/// - "What ops exist?" -> `ops_with_arity`
+/// - "What are their tokens / properties?" -> `meta` (plus default helpers)
+/// - "How do I eval/diff/grad?" -> `eval/diff/grad` (dispatch to kernels)
 pub trait OperatorSet: Sized {
     type T: Float;
 
-    /// Maximum arity supported by this set. (Typically small, e.g. 1–3.)
     const MAX_ARITY: u8;
 
-    /// List the active operator IDs for a given arity.
     fn ops_with_arity(arity: u8) -> &'static [u16];
 
-    /// Canonical operator name. Implementations typically forward to `<Op as Operator<T, A>>::NAME`
-    /// for the operator corresponding to `(op.arity, op.id)`.
-    fn name(op: OpId) -> &'static str;
+    /// The only required metadata entrypoint.
+    fn meta(op: OpId) -> Option<&'static OpMeta>;
 
-    /// Display name (for pretty-printing). Typically `<Op as Operator<T, A>>::DISPLAY`.
-    fn display(op: OpId) -> &'static str;
+    // ---- Convenience defaults derived from meta() ----
 
-    /// Optional infix token, e.g. `"+"` or `"-"`. Typically `<Op as Operator<T, A>>::INFIX`.
-    fn infix(op: OpId) -> Option<&'static str>;
-    fn commutative(op: OpId) -> bool;
-    fn associative(op: OpId) -> bool;
-    fn complexity(op: OpId) -> u16;
+    #[inline]
+    fn name(op: OpId) -> &'static str {
+        Self::meta(op).map(|m| m.name).unwrap_or("unknown_op")
+    }
 
-    /// Evaluate `op` elementwise over rows, writing into `ctx.out`.
-    ///
-    /// Returns `true` if evaluation completed without encountering non-finite values (subject to
-    /// `EvalOptions` in `ctx.opts`).
+    #[inline]
+    fn display(op: OpId) -> &'static str {
+        Self::meta(op).map(|m| m.display).unwrap_or("unknown_op")
+    }
+
+    #[inline]
+    fn infix(op: OpId) -> Option<&'static str> {
+        Self::meta(op).and_then(|m| m.infix)
+    }
+
+    #[inline]
+    fn commutative(op: OpId) -> bool {
+        Self::meta(op).is_some_and(|m| m.commutative)
+    }
+
+    #[inline]
+    fn associative(op: OpId) -> bool {
+        Self::meta(op).is_some_and(|m| m.associative)
+    }
+
+    #[inline]
+    fn complexity(op: OpId) -> u16 {
+        Self::meta(op).map(|m| m.complexity).unwrap_or(0)
+    }
+
+    // ---- Kernel dispatch ----
+
     fn eval(op: OpId, ctx: crate::dispatch::EvalKernelCtx<'_, '_, Self::T>) -> bool;
-
-    /// Compute value and directional derivative elementwise, writing into `ctx.out_val` and
-    /// `ctx.out_der`.
     fn diff(op: OpId, ctx: crate::dispatch::DiffKernelCtx<'_, '_, Self::T>) -> bool;
-
-    /// Compute value and gradients elementwise, writing into `ctx.out_val` and `ctx.out_grad`.
     fn grad(op: OpId, ctx: crate::dispatch::GradKernelCtx<'_, '_, Self::T>) -> bool;
+
+    // ---- Token lookup ----
 
     #[inline]
     fn matches_token(op: OpId, tok: &str) -> bool {
@@ -120,24 +145,10 @@ pub trait OperatorSet: Sized {
         match matches.as_slice() {
             [] => Err(LookupError::Unknown(token.trim().to_string())),
             [single] => Ok(*single),
-            _ => {
-                // Common CLI ambiguity: "-" can be unary neg or binary sub. Prefer binary sub.
-                let t = token.trim();
-                if t == "-" {
-                    if let Some(op) = matches
-                        .iter()
-                        .copied()
-                        .find(|op| op.arity == 2 && Self::name(*op).eq_ignore_ascii_case("sub"))
-                    {
-                        return Ok(op);
-                    }
-                }
-
-                Err(LookupError::Ambiguous {
-                    token: t.to_string(),
-                    candidates: matches.iter().map(|op| Self::name(*op)).collect(),
-                })
-            }
+            _ => Err(LookupError::Ambiguous {
+                token: token.trim().to_string(),
+                candidates: matches.iter().map(|op| Self::name(*op)).collect(),
+            }),
         }
     }
 
