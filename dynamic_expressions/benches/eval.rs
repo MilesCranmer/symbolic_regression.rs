@@ -218,12 +218,40 @@ where
     group.finish();
 }
 
+fn bench_count_depth_sizes<T, Ops, const D: usize>(c: &mut criterion::Criterion, type_name: &str)
+where
+    T: Float + Send + Sync,
+    Ops: OpRegistry + ScalarOpSet<T> + Send + Sync,
+{
+    let mut rng = StdRng::seed_from_u64(2);
+    let sizes = [8usize, 20, 64, 128];
+    let mut group = c.benchmark_group(format!("utilities/{type_name}/count_depth_sizes"));
+
+    for size in sizes {
+        let trees: Vec<PostfixExpr<T, Ops, D>> = (0..N_TREES)
+            .map(|_| gen_random_tree_fixed_size(&mut rng, size, N_FEATURES))
+            .collect();
+
+        group.bench_function(criterion::BenchmarkId::from_parameter(size), |b| {
+            b.iter(|| {
+                for tree in &trees {
+                    let _ = dynamic_expressions::node_utils::count_depth(&tree.nodes);
+                }
+            })
+        });
+    }
+
+    group.finish();
+}
+
 fn criterion_benchmark(c: &mut criterion::Criterion) {
     bench_eval_group::<f32, BenchOpsF32, 2>(c, "Float32");
     bench_eval_group::<f64, BenchOpsF64, 2>(c, "Float64");
 
     bench_utilities::<f32, BenchOpsF32, 2>(c, "Float32");
     bench_utilities::<f64, BenchOpsF64, 2>(c, "Float64");
+    bench_count_depth_sizes::<f32, BenchOpsF32, 2>(c, "Float32");
+    bench_count_depth_sizes::<f64, BenchOpsF64, 2>(c, "Float64");
 
     // Builtin opsets include ternary operators; benchmark them as well.
     bench_eval_group::<f32, dynamic_expressions::operator_enum::presets::BuiltinOpsF32, 3>(c, "BuiltinF32");

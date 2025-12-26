@@ -1,31 +1,42 @@
+use std::cell::RefCell;
+
 use crate::node::PNode;
 
-pub fn count_depth(nodes: &[PNode]) -> usize {
-    let mut stack: Vec<usize> = Vec::with_capacity(nodes.len());
-    for n in nodes {
-        match *n {
-            PNode::Var { .. } | PNode::Const { .. } => stack.push(1),
-            PNode::Op { arity, .. } => {
-                let a = arity as usize;
-                let mut m = 0usize;
-                for _ in 0..a {
-                    m = m.max(stack.pop().expect("invalid postfix (stack underflow)"));
-                }
-                stack.push(m + 1);
-            }
-        }
-    }
-    assert_eq!(stack.len(), 1, "invalid postfix (did not reduce to one root)");
-    stack[0]
+pub fn tree_mapreduce<R>(
+    nodes: &[PNode],
+    f_leaf: impl FnMut(&PNode) -> R,
+    f_branch: impl FnMut(&PNode) -> R,
+    op: impl FnMut(R, &[R]) -> R,
+) -> R {
+    tree_mapreduce_with_stack(nodes, f_leaf, f_branch, op, None)
 }
 
-pub fn tree_mapreduce<R>(
+pub fn tree_mapreduce_with_stack<R>(
     nodes: &[PNode],
     mut f_leaf: impl FnMut(&PNode) -> R,
     mut f_branch: impl FnMut(&PNode) -> R,
     mut op: impl FnMut(R, &[R]) -> R,
+    reusable_stack: Option<&mut Vec<R>>,
 ) -> R {
-    let mut stack: Vec<R> = Vec::with_capacity(nodes.len());
+    match reusable_stack {
+        Some(stack) => {
+            stack.clear();
+            tree_mapreduce_impl(nodes, stack, &mut f_leaf, &mut f_branch, &mut op)
+        }
+        None => {
+            let mut stack = Vec::with_capacity(nodes.len());
+            tree_mapreduce_impl(nodes, &mut stack, &mut f_leaf, &mut f_branch, &mut op)
+        }
+    }
+}
+
+fn tree_mapreduce_impl<R>(
+    nodes: &[PNode],
+    stack: &mut Vec<R>,
+    f_leaf: &mut impl FnMut(&PNode) -> R,
+    f_branch: &mut impl FnMut(&PNode) -> R,
+    op: &mut impl FnMut(R, &[R]) -> R,
+) -> R {
     for n in nodes {
         match *n {
             PNode::Var { .. } | PNode::Const { .. } => stack.push(f_leaf(n)),
@@ -41,6 +52,23 @@ pub fn tree_mapreduce<R>(
     }
     assert_eq!(stack.len(), 1, "invalid postfix (did not reduce to one root)");
     stack.pop().expect("non-empty stack")
+}
+
+thread_local! {
+    static COUNT_DEPTH_STACK: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
+}
+
+pub fn count_depth(nodes: &[PNode]) -> usize {
+    COUNT_DEPTH_STACK.with(|stack| {
+        let mut stack = stack.borrow_mut();
+        tree_mapreduce_with_stack(
+            nodes,
+            |_| 1usize,
+            |_| 0usize,
+            |_, children| children.iter().copied().max().unwrap_or(0) + 1,
+            Some(&mut stack),
+        )
+    })
 }
 
 pub fn count_nodes(nodes: &[PNode]) -> usize {
