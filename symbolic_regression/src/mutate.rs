@@ -59,10 +59,6 @@ fn count_constants(nodes: &[PNode]) -> usize {
     nodes.iter().filter(|n| matches!(n, PNode::Const { .. })).count()
 }
 
-fn has_binary_op(nodes: &[PNode]) -> bool {
-    nodes.iter().any(|n| matches!(n, PNode::Op { arity: 2, .. }))
-}
-
 pub fn condition_mutation_weights<T: Float + AddAssign, Ops, const D: usize>(
     weights: &mut MutationWeights,
     member: &PopMember<T, Ops, D>,
@@ -89,7 +85,7 @@ pub fn condition_mutation_weights<T: Float + AddAssign, Ops, const D: usize>(
         return;
     }
 
-    if !has_binary_op(&member.expr.nodes) {
+    if !member.expr.nodes.iter().any(mutation_functions::is_swappable_op) {
         weights.swap_operands = 0.0;
     }
 

@@ -232,27 +232,40 @@ pub(crate) fn mutate_feature_in_place<T, Ops, const D: usize>(
     *feature = new_feature as u16;
 }
 
+pub(crate) fn is_swappable_op(node: &PNode) -> bool {
+    matches!(node, PNode::Op { arity, .. } if *arity > 1)
+}
+
 pub(crate) fn swap_operands_in_place<T, Ops, const D: usize>(rng: &mut Rng, expr: &mut PostfixExpr<T, Ops, D>) -> bool {
     let idxs: Vec<usize> = expr
         .nodes
         .iter()
         .enumerate()
-        .filter_map(|(i, n)| matches!(n, PNode::Op { arity: 2, .. }).then_some(i))
+        .filter_map(|(i, n)| is_swappable_op(n).then_some(i))
         .collect();
     if idxs.is_empty() {
         return false;
     }
     let sizes = node_utils::subtree_sizes(&expr.nodes);
-    let root_idx = idxs[usize_range(rng, 0..idxs.len())];
-    let PNode::Op { op, .. } = expr.nodes[root_idx] else {
-        return false;
+    let root_idx = rng.choice(idxs).unwrap();
+    let PNode::Op { op, arity: arity_u8 } = expr.nodes[root_idx] else {
+        unreachable!("expected swappable op");
     };
+    let arity = arity_u8 as usize;
     let (sub_start, sub_end) = node_utils::subtree_range(&sizes, root_idx);
-    let child = child_ranges(&sizes, root_idx, 2);
+    let child = child_ranges(&sizes, root_idx, arity);
+
+    // Choose two distinct child slots uniformly and swap them.
+    let i = usize_range(rng, 0..arity);
+    let j = usize_range_excl(rng, 0..arity, i);
+
+    let mut positions: Vec<usize> = (0..arity).collect();
+    positions.swap(i, j);
     let mut new_sub: Vec<PNode> = Vec::with_capacity(sub_end + 1 - sub_start);
-    new_sub.extend_from_slice(&expr.nodes[child[1].0..=child[1].1]);
-    new_sub.extend_from_slice(&expr.nodes[child[0].0..=child[0].1]);
-    new_sub.push(PNode::Op { arity: 2, op });
+    for pos in positions {
+        new_sub.extend_from_slice(&expr.nodes[child[pos].0..=child[pos].1]);
+    }
+    new_sub.push(PNode::Op { arity: arity as u8, op });
     expr.nodes.splice(sub_start..=sub_end, new_sub);
     true
 }
