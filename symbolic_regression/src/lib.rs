@@ -29,9 +29,6 @@ pub(crate) mod selection;
 pub(crate) mod single_iteration;
 pub(crate) mod warmup;
 
-#[cfg(feature = "cli")]
-pub mod cli;
-
 #[cfg(feature = "bench")]
 pub mod bench;
 
