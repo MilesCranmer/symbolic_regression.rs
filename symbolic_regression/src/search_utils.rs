@@ -137,35 +137,6 @@ impl<T: Float + AddAssign, Ops, const D: usize> ResultHandling<T, Ops, D> {
     }
 }
 
-fn apply_ready_results<T, Ops, const D: usize>(
-    result_handling: &mut ResultHandling<T, Ops, D>,
-    task_order: &[usize],
-    next_task: usize,
-    options: &Options<T, D>,
-    controller: &StopController,
-    counters: &mut SearchCounters,
-    stats: &mut RunningSearchStatistics,
-    hall: &mut HallOfFame<T, Ops, D>,
-    progress: &mut SearchProgress,
-    pools: &mut PopPools<T, Ops, D>,
-) -> usize
-where
-    T: Float + AddAssign + num_traits::FromPrimitive + num_traits::ToPrimitive + Display,
-    Ops: dynamic_expressions::OperatorSet<T = T>,
-{
-    result_handling.release_in_task_order(task_order, next_task);
-    let mut applied = 0usize;
-    while let Some(res) = result_handling.pop_ready() {
-        apply_task_result(options, counters, stats, hall, progress, pools, res);
-        applied += 1;
-
-        if controller.should_stop(pools.total_evals) {
-            controller.cancel();
-        }
-    }
-    applied
-}
-
 fn usable_rayon_threads() -> usize {
     let pool_threads = rayon::current_num_threads();
     let in_rayon_pool = rayon::current_thread_index().is_some();
@@ -383,6 +354,33 @@ where
     T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + AddAssign + Send + Sync,
     Ops: dynamic_expressions::OperatorSet<T = T> + Send + Sync,
 {
+    fn apply_ready_results(
+        &mut self,
+        result_handling: &mut ResultHandling<T, Ops, D>,
+        options: &Options<T, D>,
+        controller: &StopController,
+    ) -> usize {
+        result_handling.release_in_task_order(&self.task_order, self.next_task);
+        let mut applied = 0usize;
+        while let Some(res) = result_handling.pop_ready() {
+            apply_task_result(
+                options,
+                &mut self.counters,
+                &mut self.stats,
+                &mut self.hall,
+                &mut self.progress,
+                &mut self.pools,
+                res,
+            );
+            applied += 1;
+
+            if controller.should_stop(self.pools.total_evals) {
+                controller.cancel();
+            }
+        }
+        applied
+    }
+
     fn step(
         &mut self,
         dataset: &Dataset<T>,
@@ -520,18 +518,7 @@ where
                     in_flight += 1;
                 }
 
-                completed_total += apply_ready_results(
-                    &mut result_handling,
-                    &self.task_order,
-                    self.next_task,
-                    options,
-                    controller,
-                    &mut self.counters,
-                    &mut self.stats,
-                    &mut self.hall,
-                    &mut self.progress,
-                    &mut self.pools,
-                );
+                completed_total += self.apply_ready_results(&mut result_handling, options, controller);
 
                 if in_flight == 0 {
                     if stop_dispatching {
@@ -543,18 +530,7 @@ where
                 let res = result_rx.recv().expect("worker result channel closed early");
                 in_flight -= 1;
                 result_handling.on_result(res, &self.task_order, self.next_task);
-                completed_total += apply_ready_results(
-                    &mut result_handling,
-                    &self.task_order,
-                    self.next_task,
-                    options,
-                    controller,
-                    &mut self.counters,
-                    &mut self.stats,
-                    &mut self.hall,
-                    &mut self.progress,
-                    &mut self.pools,
-                );
+                completed_total += self.apply_ready_results(&mut result_handling, options, controller);
 
                 if controller.should_stop(self.pools.total_evals) {
                     stop_dispatching = true;
@@ -562,18 +538,7 @@ where
                 }
             }
 
-            completed_total += apply_ready_results(
-                &mut result_handling,
-                &self.task_order,
-                self.next_task,
-                options,
-                controller,
-                &mut self.counters,
-                &mut self.stats,
-                &mut self.hall,
-                &mut self.progress,
-                &mut self.pools,
-            );
+            completed_total += self.apply_ready_results(&mut result_handling, options, controller);
 
             if options.deterministic {
                 result_handling.assert_fully_applied(self.next_task);
