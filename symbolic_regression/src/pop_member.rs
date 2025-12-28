@@ -1,10 +1,13 @@
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dynamic_expressions::expression::PostfixExpr;
 use dynamic_expressions::{EvalOptions, EvalPlan};
 use num_traits::Float;
+#[cfg(target_arch = "wasm32")]
+use web_time::{SystemTime, UNIX_EPOCH};
 
 use crate::complexity::compute_complexity;
 use crate::dataset::TaggedDataset;

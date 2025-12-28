@@ -15,4 +15,4 @@ pub use crate::custom_opset;
 pub use crate::dataset::Dataset;
 pub use crate::operators::Operators;
 pub use crate::options::{MutationWeights, Options};
-pub use crate::search_utils::{SearchResult, equation_search};
+pub use crate::search_utils::{SearchEngine, SearchResult, equation_search};

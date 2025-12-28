@@ -1,8 +1,11 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
 use num_traits::Float;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 
 use crate::options::Options;
 

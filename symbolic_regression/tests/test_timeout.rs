@@ -8,7 +8,7 @@ symbolic_regression::custom_opset! {
 
     1 => {
         slow_id {
-            eval: |[x]| { std::thread::sleep(Duration::from_millis(2)); x },
+            eval: |[x]| x,
             partial: |[_x]| 1.0
         },
     },
@@ -28,13 +28,15 @@ fn test_timeout_under_max_iterations() {
         timeout_in_seconds: 0.05,
         niterations: 1_000_000_000,
         operators,
+        ncycles_per_iteration: 1,
         ..Default::default()
     };
 
+    // Start the wall-clock timer before constructing the engine, since the timeout clock starts in
+    // `StopController::from_options(...)` during `SearchEngine::new(...)`.
+    let start = Instant::now();
     let mut engine = SearchEngine::<f64, SlowOps, D>::new(dataset, options);
     let total_cycles = engine.total_cycles();
-
-    let start = Instant::now();
     while engine.step(1) > 0 {}
     let elapsed = start.elapsed();
 

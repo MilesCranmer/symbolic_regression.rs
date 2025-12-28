@@ -4,7 +4,6 @@ use std::ops::AddAssign;
 
 use fastrand::Rng;
 use num_traits::Float;
-use progress_bars::SearchProgress;
 
 use crate::adaptive_parsimony::RunningSearchStatistics;
 use crate::check_constraints::check_constraints;
@@ -14,9 +13,10 @@ use crate::loss_functions::baseline_loss_from_zero_expression;
 use crate::options::Options;
 use crate::pop_member::{Evaluator, MemberId, PopMember};
 use crate::population::Population;
+use crate::progress_bars::SearchProgress;
 use crate::random::shuffle;
 use crate::stop_controller::StopController;
-use crate::{migration, progress_bars, single_iteration, warmup};
+use crate::{migration, single_iteration, warmup};
 
 pub struct SearchResult<T: Float + AddAssign, Ops, const D: usize> {
     pub hall_of_fame: HallOfFame<T, Ops, D>,
@@ -48,6 +48,17 @@ impl<T: Float + AddAssign, Ops, const D: usize> ResultHandling<T, Ops, D> {
             Self::ApplyAsCompleted {
                 ready_to_commit: VecDeque::new(),
             }
+        }
+    }
+
+    fn backlog_count(&self) -> usize {
+        match self {
+            Self::ApplyAsCompleted { ready_to_commit } => ready_to_commit.len(),
+            Self::WaitUntilInTaskOrder {
+                pending,
+                ready_to_commit,
+                ..
+            } => pending.iter().filter(|p| p.is_some()).count() + ready_to_commit.len(),
         }
     }
 
@@ -132,26 +143,36 @@ fn apply_ready_results<T, Ops, const D: usize>(
     next_task: usize,
     options: &Options<T, D>,
     controller: &StopController,
-    state: &mut EquationSearchState<'_, T, Ops, D>,
-) where
+    counters: &mut SearchCounters,
+    stats: &mut RunningSearchStatistics,
+    hall: &mut HallOfFame<T, Ops, D>,
+    progress: &mut SearchProgress,
+    pools: &mut PopPools<T, Ops, D>,
+) -> usize
+where
     T: Float + AddAssign + num_traits::FromPrimitive + num_traits::ToPrimitive + Display,
     Ops: dynamic_expressions::OperatorSet<T = T>,
 {
     result_handling.release_in_task_order(task_order, next_task);
+    let mut applied = 0usize;
     while let Some(res) = result_handling.pop_ready() {
-        apply_task_result(
-            options,
-            &mut state.counters,
-            &mut state.stats,
-            &mut state.hall,
-            &mut state.progress,
-            &mut state.pools,
-            res,
-        );
+        apply_task_result(options, counters, stats, hall, progress, pools, res);
+        applied += 1;
 
-        if controller.should_stop(state.pools.total_evals) {
+        if controller.should_stop(pools.total_evals) {
             controller.cancel();
         }
+    }
+    applied
+}
+
+fn usable_rayon_threads() -> usize {
+    let pool_threads = rayon::current_num_threads();
+    let in_rayon_pool = rayon::current_thread_index().is_some();
+    if in_rayon_pool {
+        pool_threads.saturating_sub(1)
+    } else {
+        pool_threads
     }
 }
 
@@ -260,31 +281,7 @@ struct PopPools<T: Float + AddAssign, Ops, const D: usize> {
     total_evals: u64,
 }
 
-struct EquationSearchState<'a, T: Float + AddAssign, Ops, const D: usize> {
-    full_dataset: TaggedDataset<'a, T>,
-    options: &'a Options<T, D>,
-    n_workers: usize,
-    counters: SearchCounters,
-    stats: RunningSearchStatistics,
-    hall: HallOfFame<T, Ops, D>,
-    progress: SearchProgress,
-    pools: PopPools<T, Ops, D>,
-    order_rng: Rng,
-    controller: StopController,
-}
-
 pub fn equation_search<T, Ops, const D: usize>(dataset: &Dataset<T>, options: &Options<T, D>) -> SearchResult<T, Ops, D>
-where
-    T: Float + AddAssign + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + Send + Sync,
-    Ops: dynamic_expressions::OperatorSet<T = T> + Send + Sync,
-{
-    equation_search_parallel(dataset, options)
-}
-
-pub fn equation_search_parallel<T, Ops, const D: usize>(
-    dataset: &Dataset<T>,
-    options: &Options<T, D>,
-) -> SearchResult<T, Ops, D>
 where
     T: Float + AddAssign + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + Send + Sync,
     Ops: dynamic_expressions::OperatorSet<T = T> + Send + Sync,
@@ -296,69 +293,49 @@ where
     };
     let full_dataset = TaggedDataset::new(dataset, baseline_loss);
 
-    let counters = SearchCounters {
-        total_cycles: options.niterations * options.populations,
-        cycles_started: 0,
-        cycles_completed: 0,
-    };
+    let controller = StopController::from_options(options);
 
     let stats = RunningSearchStatistics::new(options.maxsize, 100_000);
     let mut hall = HallOfFame::new(options.maxsize);
 
-    let mut progress = SearchProgress::new(options, counters.total_cycles);
-
-    let pools = init_populations(full_dataset, options, &mut hall);
-    progress.set_initial_evals(pools.total_evals);
-
-    let order_rng = Rng::with_seed(options.seed ^ 0x9e37_79b9_7f4a_7c15);
-
-    let pool_threads = rayon::current_num_threads();
-    // If we're already running inside Rayon, reserve the current worker thread for orchestration.
-    // (Blocking it on `result_rx.recv()` would otherwise reduce the pool capacity by one.)
-    let in_rayon_pool = rayon::current_thread_index().is_some();
-    let usable_threads = if in_rayon_pool {
-        pool_threads.saturating_sub(1)
-    } else {
-        pool_threads
+    let pools = init_populations(full_dataset, options, &controller, &mut hall);
+    let counters = SearchCounters {
+        total_cycles: options.niterations * pools.pops.len(),
+        cycles_started: 0,
+        cycles_completed: 0,
     };
 
-    assert!(
-        usable_threads > 0,
-        "equation_search_parallel requires at least 2 Rayon threads when called from inside the Rayon pool"
-    );
+    let mut progress = SearchProgress::new(options, counters.total_cycles);
+    progress.set_initial_evals(pools.total_evals);
 
-    let n_workers = usable_threads.min(pools.pops.len()).max(1);
-
-    let mut state = EquationSearchState {
-        full_dataset,
-        options,
-        n_workers,
+    let mut core = SearchCore {
         counters,
         stats,
+        iter_stats_snapshot: None,
         hall,
         progress,
         pools,
-        order_rng,
-        controller: StopController::from_options(options),
+        order_rng: Rng::with_seed(options.seed ^ 0x9e37_79b9_7f4a_7c15),
+        cur_iter: 0,
+        task_order: Vec::new(),
+        next_task: 0,
+        progress_finished: false,
     };
 
-    rayon::scope(|scope| {
-        run_scoped_search(scope, &mut state);
-    });
-    state.progress.finish();
+    let _ = core.step(dataset, baseline_loss, options, &controller, usize::MAX);
+    core.finish_progress_if_needed();
 
+    let SearchCore { hall, pools, .. } = core;
     SearchResult {
-        hall_of_fame: state.hall,
-        best: state.pools.best,
+        hall_of_fame: hall,
+        best: pools.best,
     }
 }
 
-pub struct SearchEngine<T: Float + AddAssign, Ops, const D: usize> {
-    dataset: Dataset<T>,
-    baseline_loss: Option<T>,
-    options: Options<T, D>,
+struct SearchCore<T: Float + AddAssign, Ops, const D: usize> {
     counters: SearchCounters,
     stats: RunningSearchStatistics,
+    iter_stats_snapshot: Option<RunningSearchStatistics>,
     hall: HallOfFame<T, Ops, D>,
     progress: SearchProgress,
     pools: PopPools<T, Ops, D>,
@@ -367,7 +344,258 @@ pub struct SearchEngine<T: Float + AddAssign, Ops, const D: usize> {
     task_order: Vec<usize>,
     next_task: usize,
     progress_finished: bool,
+}
+
+impl<T: Float + AddAssign, Ops, const D: usize> SearchCore<T, Ops, D> {
+    fn prepare_iteration_state(&mut self, options: &Options<T, D>) {
+        if self.cur_iter >= options.niterations {
+            return;
+        }
+        if !self.task_order.is_empty() && self.next_task < self.task_order.len() {
+            return;
+        }
+
+        self.task_order = (0..self.pools.pops.len()).collect();
+        shuffle(&mut self.order_rng, &mut self.task_order);
+        self.next_task = 0;
+        self.cur_iter += 1;
+
+        if options.deterministic {
+            let mut snapshot = self.stats.clone();
+            snapshot.normalize();
+            self.iter_stats_snapshot = Some(snapshot);
+        } else {
+            self.iter_stats_snapshot = None;
+        }
+    }
+
+    #[inline]
+    fn finish_progress_if_needed(&mut self) {
+        if !self.progress_finished {
+            self.progress.finish();
+            self.progress_finished = true;
+        }
+    }
+}
+
+impl<T, Ops, const D: usize> SearchCore<T, Ops, D>
+where
+    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + AddAssign + Send + Sync,
+    Ops: dynamic_expressions::OperatorSet<T = T> + Send + Sync,
+{
+    fn step(
+        &mut self,
+        dataset: &Dataset<T>,
+        baseline_loss: Option<T>,
+        options: &Options<T, D>,
+        controller: &StopController,
+        n_cycles: usize,
+    ) -> usize {
+        if n_cycles == 0 {
+            return 0;
+        }
+
+        let is_finished = |counters: &SearchCounters| counters.cycles_remaining() == 0 || controller.is_cancelled();
+
+        if is_finished(&self.counters) {
+            self.finish_progress_if_needed();
+            return 0;
+        }
+
+        let usable_threads = usable_rayon_threads();
+        let need_inline = usable_threads == 0;
+        let n_workers = usable_threads.min(self.pools.pops.len()).max(1);
+
+        let completed_total = rayon::scope(|scope| {
+            let (result_tx, result_rx) = std::sync::mpsc::channel::<SearchTaskResult<T, Ops, D>>();
+            let mut result_handling =
+                ResultHandling::<T, Ops, D>::new(options.deterministic, self.pools.pops.len(), self.task_order.len());
+            let mut in_flight = 0usize;
+            let mut completed_total = 0usize;
+            let mut stop_dispatching = false;
+
+            while completed_total < n_cycles
+                && (!stop_dispatching || in_flight > 0 || result_handling.backlog_count() > 0)
+            {
+                if is_finished(&self.counters) {
+                    stop_dispatching = true;
+                }
+
+                if controller.should_stop(self.pools.total_evals) {
+                    stop_dispatching = true;
+                    controller.cancel();
+                }
+
+                if !stop_dispatching
+                    && in_flight == 0
+                    && result_handling.backlog_count() == 0
+                    && self.next_task >= self.task_order.len()
+                {
+                    if options.deterministic {
+                        result_handling.assert_fully_applied(self.next_task);
+                    }
+
+                    self.prepare_iteration_state(options);
+                    result_handling = ResultHandling::<T, Ops, D>::new(
+                        options.deterministic,
+                        self.pools.pops.len(),
+                        self.task_order.len(),
+                    );
+                    if self.next_task >= self.task_order.len() {
+                        stop_dispatching = true;
+                    }
+                }
+
+                while !stop_dispatching
+                    && in_flight < n_workers
+                    && completed_total + in_flight + result_handling.backlog_count() < n_cycles
+                    && self.next_task < self.task_order.len()
+                {
+                    if is_finished(&self.counters) {
+                        stop_dispatching = true;
+                        break;
+                    }
+
+                    if controller.should_stop(self.pools.total_evals) {
+                        stop_dispatching = true;
+                        controller.cancel();
+                        break;
+                    }
+
+                    let task_pos = self.next_task;
+                    let pop_idx = self.task_order[task_pos];
+                    self.next_task += 1;
+
+                    let Some(pop_state) = self.pools.pops[pop_idx].take() else {
+                        continue;
+                    };
+
+                    let cycles_remaining_start = self.counters.cycles_remaining_start_for_next_dispatch();
+                    let curmaxsize =
+                        warmup::get_cur_maxsize(options, self.counters.total_cycles, cycles_remaining_start);
+                    let stats_snapshot = match &self.iter_stats_snapshot {
+                        Some(snapshot) => snapshot.clone(),
+                        None => {
+                            let mut snapshot = self.stats.clone();
+                            snapshot.normalize();
+                            snapshot
+                        }
+                    };
+
+                    result_handling.note_task_spawned(task_pos);
+
+                    if need_inline {
+                        // Inline exec avoids deadlock in 1-thread pools, while preserving the same
+                        // "send -> recv -> apply" completion-driven semantics as the parallel path.
+                        let full_dataset = TaggedDataset::new(dataset, baseline_loss);
+                        let res = execute_task(
+                            full_dataset,
+                            options,
+                            pop_idx,
+                            curmaxsize,
+                            stats_snapshot,
+                            pop_state,
+                            controller,
+                        );
+                        let _ = result_tx.send(res);
+                    } else {
+                        let result_tx = result_tx.clone();
+                        scope.spawn(move |_| {
+                            #[cfg(test)]
+                            let _task_guard = test_hooks::active_task_guard();
+
+                            let full_dataset = TaggedDataset::new(dataset, baseline_loss);
+                            let res = execute_task(
+                                full_dataset,
+                                options,
+                                pop_idx,
+                                curmaxsize,
+                                stats_snapshot,
+                                pop_state,
+                                controller,
+                            );
+                            let _ = result_tx.send(res);
+                        });
+                    }
+                    in_flight += 1;
+                }
+
+                completed_total += apply_ready_results(
+                    &mut result_handling,
+                    &self.task_order,
+                    self.next_task,
+                    options,
+                    controller,
+                    &mut self.counters,
+                    &mut self.stats,
+                    &mut self.hall,
+                    &mut self.progress,
+                    &mut self.pools,
+                );
+
+                if in_flight == 0 {
+                    if stop_dispatching {
+                        break;
+                    }
+                    continue;
+                }
+
+                let res = result_rx.recv().expect("worker result channel closed early");
+                in_flight -= 1;
+                result_handling.on_result(res, &self.task_order, self.next_task);
+                completed_total += apply_ready_results(
+                    &mut result_handling,
+                    &self.task_order,
+                    self.next_task,
+                    options,
+                    controller,
+                    &mut self.counters,
+                    &mut self.stats,
+                    &mut self.hall,
+                    &mut self.progress,
+                    &mut self.pools,
+                );
+
+                if controller.should_stop(self.pools.total_evals) {
+                    stop_dispatching = true;
+                    controller.cancel();
+                }
+            }
+
+            completed_total += apply_ready_results(
+                &mut result_handling,
+                &self.task_order,
+                self.next_task,
+                options,
+                controller,
+                &mut self.counters,
+                &mut self.stats,
+                &mut self.hall,
+                &mut self.progress,
+                &mut self.pools,
+            );
+
+            if options.deterministic {
+                result_handling.assert_fully_applied(self.next_task);
+            }
+
+            completed_total
+        });
+
+        if is_finished(&self.counters) {
+            self.finish_progress_if_needed();
+        }
+
+        completed_total
+    }
+}
+
+pub struct SearchEngine<T: Float + AddAssign, Ops, const D: usize> {
+    dataset: Dataset<T>,
+    baseline_loss: Option<T>,
+    options: Options<T, D>,
     controller: StopController,
+    core: SearchCore<T, Ops, D>,
 }
 
 impl<T, Ops, const D: usize> SearchEngine<T, Ops, D>
@@ -381,30 +609,29 @@ where
         } else {
             None
         };
-        let counters = SearchCounters {
-            total_cycles: options.niterations * options.populations,
-            cycles_started: 0,
-            cycles_completed: 0,
-        };
+
+        let controller = StopController::from_options(&options);
 
         let stats = RunningSearchStatistics::new(options.maxsize, 100_000);
         let mut hall = HallOfFame::new(options.maxsize);
 
-        let mut progress = SearchProgress::new(&options, counters.total_cycles);
-
         let full_dataset = TaggedDataset::new(&dataset, baseline_loss);
-        let pools = init_populations(full_dataset, &options, &mut hall);
+        let pools = init_populations(full_dataset, &options, &controller, &mut hall);
+        let counters = SearchCounters {
+            total_cycles: options.niterations * pools.pops.len(),
+            cycles_started: 0,
+            cycles_completed: 0,
+        };
+
+        let mut progress = SearchProgress::new(&options, counters.total_cycles);
         progress.set_initial_evals(pools.total_evals);
 
         let order_rng = Rng::with_seed(options.seed ^ 0x9e37_79b9_7f4a_7c15);
-        let controller = StopController::from_options(&options);
 
-        Self {
-            dataset,
-            baseline_loss,
-            options,
+        let core = SearchCore {
             counters,
             stats,
+            iter_stats_snapshot: None,
             hall,
             progress,
             pools,
@@ -413,36 +640,39 @@ where
             task_order: Vec::new(),
             next_task: 0,
             progress_finished: false,
+        };
+
+        Self {
+            dataset,
+            baseline_loss,
+            options,
             controller,
+            core,
         }
     }
 
-    fn full_dataset_tagged(&self) -> TaggedDataset<'_, T> {
-        TaggedDataset::new(&self.dataset, self.baseline_loss)
-    }
-
     pub fn total_cycles(&self) -> usize {
-        self.counters.total_cycles
+        self.core.counters.total_cycles
     }
 
     pub fn cycles_completed(&self) -> usize {
-        self.counters.cycles_completed
+        self.core.counters.cycles_completed
     }
 
     pub fn total_evals(&self) -> u64 {
-        self.pools.total_evals
+        self.core.pools.total_evals
     }
 
     pub fn is_finished(&self) -> bool {
-        self.counters.cycles_remaining() == 0 || self.controller.is_cancelled()
+        self.core.counters.cycles_remaining() == 0 || self.controller.is_cancelled()
     }
 
     pub fn hall_of_fame(&self) -> &HallOfFame<T, Ops, D> {
-        &self.hall
+        &self.core.hall
     }
 
     pub fn best(&self) -> &PopMember<T, Ops, D> {
-        &self.pools.best
+        &self.core.pools.best
     }
 
     pub fn dataset(&self) -> &Dataset<T> {
@@ -453,102 +683,32 @@ where
         &self.options
     }
 
-    pub fn step(&mut self, n_cycles: usize) -> usize {
-        let mut completed = 0usize;
-        for _ in 0..n_cycles {
-            if !self.step_one_cycle() {
-                break;
-            }
-            completed += 1;
-        }
-        completed
-    }
-
-    pub fn run_to_completion(mut self) -> SearchResult<T, Ops, D> {
-        while self.step_one_cycle() {}
-        SearchResult {
-            hall_of_fame: self.hall,
-            best: self.pools.best,
-        }
-    }
-
-    fn step_one_cycle(&mut self) -> bool {
-        if self.is_finished() {
-            if !self.progress_finished {
-                self.progress.finish();
-                self.progress_finished = true;
-            }
-            return false;
-        }
-
-        if self.controller.should_stop(self.pools.total_evals) {
-            self.controller.cancel();
-            if !self.progress_finished {
-                self.progress.finish();
-                self.progress_finished = true;
-            }
-            return false;
-        }
-
-        self.prepare_iteration();
-        if self.is_finished() {
-            return false;
-        }
-
-        // `prepare_iteration` guarantees `next_task < task_order.len()` unless we're finished.
-        let pop_idx = self.task_order[self.next_task];
-        self.next_task += 1;
-
-        let Some(pop_state) = self.pools.pops[pop_idx].take() else {
-            return true;
-        };
-
-        let cycles_remaining_start = self.counters.cycles_remaining_start_for_next_dispatch();
-        let curmaxsize = warmup::get_cur_maxsize(&self.options, self.counters.total_cycles, cycles_remaining_start);
-
-        let mut stats_snapshot = self.stats.clone();
-        stats_snapshot.normalize();
-
-        let full_dataset = self.full_dataset_tagged();
-        let res = execute_task(
-            full_dataset,
+    pub fn step(&mut self, n_cycles: usize) -> usize
+    where
+        T: Send + Sync,
+        Ops: Send + Sync,
+    {
+        self.core.step(
+            &self.dataset,
+            self.baseline_loss,
             &self.options,
-            pop_idx,
-            curmaxsize,
-            stats_snapshot,
-            pop_state,
             &self.controller,
-        );
-        apply_task_result(
-            &self.options,
-            &mut self.counters,
-            &mut self.stats,
-            &mut self.hall,
-            &mut self.progress,
-            &mut self.pools,
-            res,
-        );
-
-        if self.is_finished() && !self.progress_finished {
-            self.progress.finish();
-            self.progress_finished = true;
-        }
-
-        true
+            n_cycles,
+        )
     }
 
-    fn prepare_iteration(&mut self) {
-        if self.cur_iter >= self.options.niterations {
-            return;
-        }
-        if !self.task_order.is_empty() && self.next_task < self.task_order.len() {
-            return;
-        }
+    pub fn run_to_completion(mut self) -> SearchResult<T, Ops, D>
+    where
+        T: Send + Sync,
+        Ops: Send + Sync,
+    {
+        while self.step(usize::MAX) > 0 {}
 
-        self.task_order = (0..self.pools.pops.len()).collect();
-        shuffle(&mut self.order_rng, &mut self.task_order);
-        self.next_task = 0;
-        self.cur_iter += 1;
+        let SearchCore { hall, pools, .. } = self.core;
+        SearchResult {
+            hall_of_fame: hall,
+            best: pools.best,
+        }
     }
 }
 
@@ -681,116 +841,10 @@ fn apply_task_result<T, Ops, const D: usize>(
     progress.on_cycle_complete(hall, pools.total_evals, cycles_remaining);
 }
 
-fn run_scoped_search<'scope, 'env, T, Ops, const D: usize>(
-    scope: &rayon::Scope<'scope>,
-    state: &mut EquationSearchState<'env, T, Ops, D>,
-) where
-    'env: 'scope,
-    T: Float + AddAssign + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + Send + Sync + 'scope,
-    Ops: dynamic_expressions::OperatorSet<T = T> + Send + Sync + 'scope,
-{
-    let full_dataset = state.full_dataset;
-    let options = state.options;
-    let controller = state.controller.clone();
-
-    let (result_tx, result_rx) = std::sync::mpsc::channel::<SearchTaskResult<T, Ops, D>>();
-
-    'iters: for _iter in 0..options.niterations {
-        if controller.should_stop(state.pools.total_evals) {
-            controller.cancel();
-            break 'iters;
-        }
-        let mut task_order: Vec<usize> = (0..state.pools.pops.len()).collect();
-        shuffle(&mut state.order_rng, &mut task_order);
-
-        let iter_stats_snapshot = if options.deterministic {
-            let mut snapshot = state.stats.clone();
-            snapshot.normalize();
-            Some(snapshot)
-        } else {
-            None
-        };
-
-        let mut commit_mode =
-            ResultHandling::<T, Ops, D>::new(options.deterministic, state.pools.pops.len(), task_order.len());
-        let mut next_task = 0usize;
-        let mut in_flight = 0usize;
-
-        while next_task < task_order.len() || in_flight > 0 {
-            while !controller.is_cancelled() && in_flight < state.n_workers && next_task < task_order.len() {
-                if controller.should_stop(state.pools.total_evals) {
-                    controller.cancel();
-                    break;
-                }
-
-                let task_pos = next_task;
-                let pop_idx = task_order[task_pos];
-                next_task += 1;
-
-                let Some(st) = state.pools.pops[pop_idx].take() else {
-                    continue;
-                };
-
-                let cycles_remaining_start = state.counters.cycles_remaining_start_for_next_dispatch();
-                let curmaxsize = warmup::get_cur_maxsize(options, state.counters.total_cycles, cycles_remaining_start);
-
-                let stats_snapshot = match &iter_stats_snapshot {
-                    Some(s) => s.clone(),
-                    None => {
-                        let mut s = state.stats.clone();
-                        s.normalize();
-                        s
-                    }
-                };
-
-                commit_mode.note_task_spawned(task_pos);
-                let result_tx = result_tx.clone();
-                let controller = controller.clone();
-                scope.spawn(move |_| {
-                    #[cfg(test)]
-                    let _task_guard = test_hooks::active_task_guard();
-
-                    let res = execute_task(
-                        full_dataset,
-                        options,
-                        pop_idx,
-                        curmaxsize,
-                        stats_snapshot,
-                        st,
-                        &controller,
-                    );
-                    let _ = result_tx.send(res);
-                });
-                in_flight += 1;
-            }
-
-            apply_ready_results(&mut commit_mode, &task_order, next_task, options, &controller, state);
-
-            if in_flight == 0 {
-                break;
-            }
-
-            let res = result_rx.recv().expect("worker result channel closed early");
-            in_flight -= 1;
-            commit_mode.on_result(res, &task_order, next_task);
-            apply_ready_results(&mut commit_mode, &task_order, next_task, options, &controller, state);
-        }
-
-        apply_ready_results(&mut commit_mode, &task_order, next_task, options, &controller, state);
-
-        if options.deterministic {
-            commit_mode.assert_fully_applied(next_task);
-        }
-
-        if controller.is_cancelled() {
-            break 'iters;
-        }
-    }
-}
-
 fn init_populations<T, Ops, const D: usize>(
     full_dataset: TaggedDataset<'_, T>,
     options: &Options<T, D>,
+    controller: &StopController,
     hall: &mut HallOfFame<T, Ops, D>,
 ) -> PopPools<T, Ops, D>
 where
@@ -802,6 +856,9 @@ where
     let mut pops: Vec<Option<PopState<T, Ops, D>>> = Vec::with_capacity(options.populations);
 
     for pop_i in 0..options.populations {
+        if controller.is_cancelled() {
+            break;
+        }
         let mut rng = Rng::with_seed(options.seed.wrapping_add(pop_i as u64));
         let mut evaluator = Evaluator::new(dataset.n_rows);
         let grad_ctx = dynamic_expressions::GradContext::new(dataset.n_rows);
@@ -811,6 +868,9 @@ where
         let nlength = 3usize;
         let mut members = Vec::with_capacity(options.population_size);
         for _ in 0..options.population_size {
+            if controller.is_cancelled() {
+                break;
+            }
             let expr = crate::mutation_functions::random_expr_append_ops(
                 &mut rng,
                 &options.operators,
@@ -826,6 +886,9 @@ where
             members.push(m);
         }
 
+        if members.is_empty() {
+            break;
+        }
         pops.push(Some(PopState {
             pop: Population::new(members),
             evaluator,
@@ -944,5 +1007,104 @@ pub(crate) mod test_hooks {
         fn drop(&mut self) {
             ACTIVE_TASKS.fetch_sub(1, Ordering::Relaxed);
         }
+    }
+}
+
+#[cfg(test)]
+mod batching_search_tests {
+    use dynamic_expressions::operator_enum::presets::BuiltinOpsF64;
+    use ndarray::{Array1, Array2};
+
+    use super::SearchEngine;
+    use crate::dataset::Dataset;
+    use crate::{Operators, Options};
+
+    #[test]
+    fn search_engine_allocates_batch_buffer_when_batching_enabled() {
+        type T = f64;
+        type Ops = BuiltinOpsF64;
+        const D: usize = 3;
+
+        let n_rows = 20;
+        let n_features = 2;
+        let mut x = Array2::<T>::zeros((n_features, n_rows));
+        for row in 0..n_rows {
+            x[(0, row)] = row as T;
+            x[(1, row)] = (row as T) + 100.0;
+        }
+        let y = Array1::from_iter((0..n_rows).map(|i| i as T));
+        let dataset = Dataset::new(x, y);
+
+        let operators = Operators::<D>::from_names_by_arity::<Ops>(&["sin"], &["+", "*"], &[]).expect("valid opset");
+        let options: Options<T, D> = Options {
+            operators,
+            batching: true,
+            batch_size: 5,
+            niterations: 1,
+            ncycles_per_iteration: 1,
+            populations: 1,
+            population_size: 6,
+            progress: false,
+            should_optimize_constants: false,
+            should_simplify: false,
+            deterministic: true,
+            ..Default::default()
+        };
+
+        let mut engine = SearchEngine::<T, Ops, D>::new(dataset, options.clone());
+        assert!(
+            engine.core.pools.pops[0]
+                .as_ref()
+                .expect("pop exists")
+                .batch_dataset
+                .is_none(),
+            "batch buffer should be allocated lazily"
+        );
+
+        let _ = engine.step(1);
+
+        let pop_state = engine.core.pools.pops[0].as_ref().expect("pop exists");
+        let batch = pop_state.batch_dataset.as_ref().expect("batch buffer created");
+        assert_eq!(batch.n_rows, options.batch_size.max(1));
+        assert_eq!(batch.n_features, engine.dataset.n_features);
+    }
+
+    #[test]
+    fn search_engine_does_not_allocate_batch_buffer_when_batching_disabled() {
+        type T = f64;
+        type Ops = BuiltinOpsF64;
+        const D: usize = 3;
+
+        let n_rows = 20;
+        let n_features = 2;
+        let mut x = Array2::<T>::zeros((n_features, n_rows));
+        for row in 0..n_rows {
+            x[(0, row)] = row as T;
+            x[(1, row)] = (row as T) + 100.0;
+        }
+        let y = Array1::from_iter((0..n_rows).map(|i| i as T));
+        let dataset = Dataset::new(x, y);
+
+        let operators = Operators::<D>::from_names_by_arity::<Ops>(&["sin"], &["+", "*"], &[]).expect("valid opset");
+        let options: Options<T, D> = Options {
+            operators,
+            batching: false,
+            batch_size: 5,
+            niterations: 1,
+            ncycles_per_iteration: 1,
+            populations: 1,
+            population_size: 6,
+            progress: false,
+            should_optimize_constants: false,
+            should_simplify: false,
+            deterministic: true,
+            ..Default::default()
+        };
+
+        let mut engine = SearchEngine::<T, Ops, D>::new(dataset, options);
+        let _ = engine.step(1);
+
+        let pop_state = engine.core.pools.pops[0].as_ref().expect("pop exists");
+        assert!(pop_state.batch_dataset.is_none());
     }
 }

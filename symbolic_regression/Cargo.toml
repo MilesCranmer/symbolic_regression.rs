@@ -31,6 +31,9 @@ serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 rayon = "1"
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-time = "1"
+
 [features]
 default = ["progress"]
 progress = ["dep:indicatif", "dep:console"]
