@@ -24,10 +24,14 @@ pub struct RegEvolCtx<'a, T: Float + AddAssign, Ops, const D: usize> {
     pub _ops: core::marker::PhantomData<Ops>,
 }
 
-pub fn reg_evol_cycle<T, Ops, const D: usize>(pop: &mut Population<T, Ops, D>, ctx: RegEvolCtx<'_, T, Ops, D>) -> f64
+pub fn reg_evol_cycle<T, Ops, const D: usize, E>(
+    pop: &mut Population<T, Ops, D, E>,
+    ctx: RegEvolCtx<'_, T, Ops, D>,
+) -> f64
 where
     T: Float + FromPrimitive + ToPrimitive + AddAssign,
     Ops: dynamic_expressions::OperatorSet<T = T>,
+    E: crate::expression::SRExpression<T, Ops, D>,
 {
     let mut num_evals = 0.0;
     let n_evol_cycles = ((pop.len() as f64) / (ctx.options.tournament_selection_n as f64)).ceil() as usize;

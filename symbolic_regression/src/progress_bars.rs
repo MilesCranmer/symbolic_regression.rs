@@ -8,6 +8,7 @@ mod imp {
     use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
     use num_traits::Float;
 
+    use crate::expression::SRExpression;
     use crate::hall_of_fame::HallOfFame;
     use crate::options::{Options, OutputStyle};
 
@@ -83,14 +84,15 @@ mod imp {
             self.tracking.last_speed_time = Instant::now();
         }
 
-        pub(crate) fn on_cycle_complete<T, Ops, const D: usize>(
+        pub(crate) fn on_cycle_complete<T, Ops, const D: usize, E>(
             &mut self,
-            hall: &HallOfFame<T, Ops, D>,
+            hall: &HallOfFame<T, Ops, D, E>,
             total_evals: u64,
             cycles_remaining: usize,
         ) where
             T: Float + num_traits::ToPrimitive + Display,
-            Ops: OperatorSet,
+            Ops: OperatorSet<T = T>,
+            E: SRExpression<T, Ops, D> + Display,
         {
             if !self.show {
                 return;
@@ -115,9 +117,13 @@ mod imp {
         }
     }
 
-    struct ProgressMsgCtx<'a, T: Float, Ops, const D: usize> {
+    struct ProgressMsgCtx<'a, T: Float, Ops, const D: usize, E>
+    where
+        Ops: OperatorSet<T = T>,
+        E: SRExpression<T, Ops, D> + Display,
+    {
         pb: &'a ProgressBar,
-        hall: &'a HallOfFame<T, Ops, D>,
+        hall: &'a HallOfFame<T, Ops, D, E>,
         start_time: Instant,
         msg_min_interval: Duration,
         progress: &'a mut ProgressTracking,
@@ -126,10 +132,11 @@ mod imp {
         cycles_remaining: usize,
     }
 
-    fn update_progress_msg<T, Ops, const D: usize>(ctx: ProgressMsgCtx<'_, T, Ops, D>)
+    fn update_progress_msg<T, Ops, const D: usize, E>(ctx: ProgressMsgCtx<'_, T, Ops, D, E>)
     where
         T: Float + num_traits::ToPrimitive + Display,
-        Ops: OperatorSet,
+        Ops: OperatorSet<T = T>,
+        E: SRExpression<T, Ops, D> + Display,
     {
         let ProgressMsgCtx {
             pb,
@@ -195,15 +202,16 @@ mod imp {
         progress.last_msg_update = now;
     }
 
-    fn format_hall_of_fame<T, Ops, const D: usize>(
-        hall: &HallOfFame<T, Ops, D>,
+    fn format_hall_of_fame<T, Ops, const D: usize, E>(
+        hall: &HallOfFame<T, Ops, D, E>,
         terminal_width: usize,
         max_entries: usize,
         render: RenderOptions,
     ) -> String
     where
         T: Float + num_traits::ToPrimitive + Display,
-        Ops: OperatorSet,
+        Ops: OperatorSet<T = T>,
+        E: SRExpression<T, Ops, D> + Display,
     {
         let terminal_width = terminal_width.max(80);
         let raw_border = "─".repeat(terminal_width.saturating_sub(1));
@@ -371,9 +379,9 @@ mod imp {
 
         pub(crate) fn set_initial_evals(&mut self, _total_evals: u64) {}
 
-        pub(crate) fn on_cycle_complete<T: Float, Ops, const D: usize>(
+        pub(crate) fn on_cycle_complete<T: Float, Ops, const D: usize, E>(
             &mut self,
-            _hall: &HallOfFame<T, Ops, D>,
+            _hall: &HallOfFame<T, Ops, D, E>,
             _total_evals: u64,
             _cycles_remaining: usize,
         ) {

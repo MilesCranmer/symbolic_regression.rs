@@ -1,22 +1,26 @@
 use std::ops::AddAssign;
 
-pub use dynamic_expressions::compress_constants;
-use dynamic_expressions::expression::PostfixExpr;
-use dynamic_expressions::node::PNode;
 use fastrand::Rng;
 use num_traits::Float;
 
 use crate::adaptive_parsimony::RunningSearchStatistics;
-use crate::check_constraints::check_constraints;
-use crate::complexity::compute_complexity;
 use crate::constant_optimization::{OptimizeConstantsCtx, optimize_constants};
 use crate::dataset::TaggedDataset;
+use crate::expression::SRExpression;
 use crate::loss_functions::loss_to_cost;
 use crate::mutation_functions;
 use crate::options::{MutationWeights, Options};
 use crate::pop_member::{Evaluator, MemberId, PopMember};
 use crate::random::usize_range_inclusive;
 use crate::selection::weighted_index;
+
+pub type CrossoverGenerationResult<T, Ops, const D: usize, E> =
+    (PopMember<T, Ops, D, E>, PopMember<T, Ops, D, E>, bool, f64);
+
+#[cfg(test)]
+pub fn compress_constants<T: Clone, Ops, const D: usize>(expr: &mut dynamic_expressions::PostfixExpr<T, Ops, D>) {
+    dynamic_expressions::compress_constants(expr);
+}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum MutationChoice {
@@ -58,32 +62,22 @@ pub struct CrossoverCtx<'a, T: Float, Ops, const D: usize> {
     pub _ops: core::marker::PhantomData<Ops>,
 }
 
-fn count_constants(nodes: &[PNode]) -> usize {
-    nodes.iter().filter(|n| matches!(n, PNode::Const { .. })).count()
-}
-
-fn has_binary_op(nodes: &[PNode]) -> bool {
-    nodes.iter().any(|n| matches!(n, PNode::Op { arity: 2, .. }))
-}
-
-pub fn condition_mutation_weights<T: Float + AddAssign, Ops, const D: usize>(
+pub fn condition_mutation_weights<T: Float + AddAssign, Ops, const D: usize, E>(
     weights: &mut MutationWeights,
-    member: &PopMember<T, Ops, D>,
+    member: &PopMember<T, Ops, D, E>,
     options: &Options<T, D>,
     curmaxsize: usize,
     nfeatures: usize,
-) {
-    let tree_is_leaf = member
-        .expr
-        .nodes
-        .iter()
-        .all(|n| matches!(n, PNode::Var { .. } | PNode::Const { .. }));
-    if tree_is_leaf {
+) where
+    Ops: dynamic_expressions::OperatorSet<T = T>,
+    E: SRExpression<T, Ops, D>,
+{
+    if member.expr.is_leaf() {
         weights.mutate_operator = 0.0;
         weights.swap_operands = 0.0;
         weights.delete_node = 0.0;
         weights.simplify = 0.0;
-        if member.expr.consts.is_empty() {
+        if member.expr.count_scalar_constants() == 0 {
             weights.optimize = 0.0;
             weights.mutate_constant = 0.0;
         } else {
@@ -92,14 +86,14 @@ pub fn condition_mutation_weights<T: Float + AddAssign, Ops, const D: usize>(
         return;
     }
 
-    if !has_binary_op(&member.expr.nodes) {
+    if !member.expr.has_binary_op() {
         weights.swap_operands = 0.0;
     }
 
-    let nconst = count_constants(&member.expr.nodes);
+    let nconst = member.expr.count_constant_nodes();
     weights.mutate_constant *= (nconst.min(8) as f64) / 8.0;
 
-    if nfeatures <= 1 {
+    if !member.expr.feature_mutation_possible(nfeatures) {
         weights.mutate_feature = 0.0;
     }
 
@@ -113,7 +107,10 @@ pub fn condition_mutation_weights<T: Float + AddAssign, Ops, const D: usize>(
         weights.simplify = 0.0;
     }
 
-    if !options.should_optimize_constants || options.optimizer_probability == 0.0 || member.expr.consts.is_empty() {
+    if !options.should_optimize_constants
+        || options.optimizer_probability == 0.0
+        || member.expr.count_scalar_constants() == 0
+    {
         weights.optimize = 0.0;
     }
 }
@@ -138,17 +135,21 @@ pub fn sample_mutation(rng: &mut Rng, weights: &MutationWeights) -> MutationChoi
     choices[idx].0
 }
 
-struct MutationOutcome<T: Float + AddAssign, Ops, const D: usize> {
-    expr: PostfixExpr<T, Ops, D>,
+struct MutationOutcome<E> {
+    expr: E,
     mutated: bool,
     evals: f64,
     return_immediately: bool,
 }
 
-struct MutationApplyCtx<'a, 'd, T: Float + AddAssign, Ops, const D: usize> {
+struct MutationApplyCtx<'a, 'd, T: Float + AddAssign, Ops, const D: usize, E>
+where
+    Ops: dynamic_expressions::OperatorSet<T = T>,
+    E: SRExpression<T, Ops, D>,
+{
     rng: &'a mut Rng,
-    member: &'a PopMember<T, Ops, D>,
-    expr: PostfixExpr<T, Ops, D>,
+    member: &'a PopMember<T, Ops, D, E>,
+    expr: E,
     dataset: TaggedDataset<'d, T>,
     temperature: f64,
     curmaxsize: usize,
@@ -158,12 +159,11 @@ struct MutationApplyCtx<'a, 'd, T: Float + AddAssign, Ops, const D: usize> {
 
 impl MutationChoice {
     #[allow(clippy::too_many_arguments)]
-    fn apply<T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + AddAssign, Ops, const D: usize>(
-        self,
-        ctx: MutationApplyCtx<'_, '_, T, Ops, D>,
-    ) -> MutationOutcome<T, Ops, D>
+    fn apply<T, Ops, const D: usize, E>(self, ctx: MutationApplyCtx<'_, '_, T, Ops, D, E>) -> MutationOutcome<E>
     where
+        T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + AddAssign,
         Ops: dynamic_expressions::OperatorSet<T = T>,
+        E: SRExpression<T, Ops, D>,
     {
         let MutationApplyCtx {
             rng,
@@ -178,55 +178,107 @@ impl MutationChoice {
         let n_features = dataset.n_features;
         match self {
             MutationChoice::MutateConstant => MutationOutcome {
-                mutated: mutation_functions::mutate_constant_in_place(rng, &mut expr, temperature, options),
+                mutated: expr.mutate_constant(rng, temperature, options),
                 expr,
                 evals: 0.0,
                 return_immediately: false,
             },
             MutationChoice::MutateOperator => MutationOutcome {
-                mutated: mutation_functions::mutate_operator_in_place(rng, &mut expr, &options.operators),
+                mutated: {
+                    let (mut tree, mctx) = expr.get_contents_for_mutation(rng);
+                    let mutated = mutation_functions::mutate_operator_in_place(rng, &mut tree, &options.operators);
+                    if mutated {
+                        expr = expr.with_contents_for_mutation(tree, mctx);
+                    }
+                    mutated
+                },
                 expr,
                 evals: 0.0,
                 return_immediately: false,
             },
             MutationChoice::MutateFeature => MutationOutcome {
-                mutated: mutation_functions::mutate_feature_in_place(rng, &mut expr, n_features),
+                mutated: {
+                    let (mut tree, mctx) = expr.get_contents_for_mutation(rng);
+                    let nf = expr.nfeatures_for_mutation(mctx, n_features);
+                    let mutated = mutation_functions::mutate_feature_in_place(rng, &mut tree, nf);
+                    if mutated {
+                        expr = expr.with_contents_for_mutation(tree, mctx);
+                    }
+                    mutated
+                },
                 expr,
                 evals: 0.0,
                 return_immediately: false,
             },
             MutationChoice::SwapOperands => MutationOutcome {
-                mutated: mutation_functions::swap_operands_in_place(rng, &mut expr),
+                mutated: {
+                    let (mut tree, mctx) = expr.get_contents_for_mutation(rng);
+                    let mutated = mutation_functions::swap_operands_in_place(rng, &mut tree);
+                    if mutated {
+                        expr = expr.with_contents_for_mutation(tree, mctx);
+                    }
+                    mutated
+                },
                 expr,
                 evals: 0.0,
                 return_immediately: false,
             },
             MutationChoice::RotateTree => MutationOutcome {
-                mutated: mutation_functions::rotate_tree_in_place(rng, &mut expr),
+                mutated: {
+                    let (mut tree, mctx) = expr.get_contents_for_mutation(rng);
+                    let mutated = mutation_functions::rotate_tree_in_place(rng, &mut tree);
+                    if mutated {
+                        expr = expr.with_contents_for_mutation(tree, mctx);
+                    }
+                    mutated
+                },
                 expr,
                 evals: 0.0,
                 return_immediately: false,
             },
             MutationChoice::AddNode => MutationOutcome {
-                mutated: mutation_functions::add_node_in_place(rng, &mut expr, &options.operators, n_features),
+                mutated: {
+                    let (mut tree, mctx) = expr.get_contents_for_mutation(rng);
+                    let nf = expr.nfeatures_for_mutation(mctx, n_features);
+                    let mutated = mutation_functions::add_node_in_place(rng, &mut tree, &options.operators, nf);
+                    if mutated {
+                        expr = expr.with_contents_for_mutation(tree, mctx);
+                    }
+                    mutated
+                },
                 expr,
                 evals: 0.0,
                 return_immediately: false,
             },
             MutationChoice::InsertNode => MutationOutcome {
-                mutated: mutation_functions::insert_random_op_in_place(rng, &mut expr, &options.operators, n_features),
+                mutated: {
+                    let (mut tree, mctx) = expr.get_contents_for_mutation(rng);
+                    let nf = expr.nfeatures_for_mutation(mctx, n_features);
+                    let mutated = mutation_functions::insert_random_op_in_place(rng, &mut tree, &options.operators, nf);
+                    if mutated {
+                        expr = expr.with_contents_for_mutation(tree, mctx);
+                    }
+                    mutated
+                },
                 expr,
                 evals: 0.0,
                 return_immediately: false,
             },
             MutationChoice::DeleteNode => MutationOutcome {
-                mutated: mutation_functions::delete_random_op_in_place(rng, &mut expr),
+                mutated: {
+                    let (mut tree, mctx) = expr.get_contents_for_mutation(rng);
+                    let mutated = mutation_functions::delete_random_op_in_place(rng, &mut tree);
+                    if mutated {
+                        expr = expr.with_contents_for_mutation(tree, mctx);
+                    }
+                    mutated
+                },
                 expr,
                 evals: 0.0,
                 return_immediately: false,
             },
             MutationChoice::Simplify => {
-                let _ = dynamic_expressions::simplify_in_place(&mut expr, &evaluator.eval_opts);
+                let _ = expr.simplify_in_place(&evaluator.eval_opts);
                 MutationOutcome {
                     mutated: true,
                     expr,
@@ -240,7 +292,7 @@ impl MutationChoice {
                 let target_size = usize_range_inclusive(rng, 1..=max_size);
                 MutationOutcome {
                     mutated: true,
-                    expr: mutation_functions::random_expr(rng, &options.operators, n_features, target_size),
+                    expr: expr.randomize(rng, &options.operators, n_features, target_size, options),
                     evals: 0.0,
                     return_immediately: false,
                 }
@@ -294,12 +346,14 @@ pub fn next_generation<
     T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + AddAssign,
     Ops,
     const D: usize,
+    E,
 >(
-    member: &PopMember<T, Ops, D>,
+    member: &PopMember<T, Ops, D, E>,
     ctx: NextGenerationCtx<'_, T, Ops, D>,
-) -> (PopMember<T, Ops, D>, bool, f64)
+) -> (PopMember<T, Ops, D, E>, bool, f64)
 where
     Ops: dynamic_expressions::OperatorSet<T = T>,
+    E: SRExpression<T, Ops, D>,
 {
     let NextGenerationCtx {
         rng,
@@ -325,7 +379,7 @@ where
     let max_attempts = 10;
     let mut successful = false;
     let mut return_immediately = false;
-    let mut tree = member.expr.clone();
+    let mut expr = member.expr.clone();
     let mut evals = 0.0f64;
 
     for _ in 0..max_attempts {
@@ -343,9 +397,9 @@ where
         if !outcome.mutated {
             continue;
         }
-        tree = outcome.expr;
-        compress_constants(&mut tree);
-        if check_constraints(&tree, options, curmaxsize) {
+        expr = outcome.expr;
+        expr.compress_constants();
+        if expr.check_constraints(options, curmaxsize) {
             successful = true;
             return_immediately = outcome.return_immediately;
             break;
@@ -366,10 +420,10 @@ where
     }
 
     if return_immediately {
-        let mut baby = PopMember::from_expr(id, Some(member.id), birth, tree, n_features);
+        let mut baby = PopMember::from_expr(id, Some(member.id), birth, expr, n_features);
         baby.rebuild_plan(n_features);
         baby.loss = member.loss;
-        baby.complexity = compute_complexity(&baby.expr.nodes, options);
+        baby.complexity = baby.expr.complexity(options);
         baby.cost = loss_to_cost(
             baby.loss,
             baby.complexity,
@@ -380,7 +434,7 @@ where
         return (baby, true, 0.0);
     }
 
-    let mut baby = PopMember::from_expr(id, Some(member.id), birth, tree, n_features);
+    let mut baby = PopMember::from_expr(id, Some(member.id), birth, expr, n_features);
     let ok = baby.evaluate(&dataset, options, evaluator);
     evals += 1.0;
     let after_cost = baby.cost.to_f64().unwrap_or(f64::INFINITY);
@@ -426,13 +480,14 @@ where
     (baby, true, evals)
 }
 
-pub fn crossover_generation<T: Float + AddAssign, Ops, const D: usize>(
-    member1: &PopMember<T, Ops, D>,
-    member2: &PopMember<T, Ops, D>,
+pub fn crossover_generation<T: Float + AddAssign, Ops, const D: usize, E>(
+    member1: &PopMember<T, Ops, D, E>,
+    member2: &PopMember<T, Ops, D, E>,
     ctx: CrossoverCtx<'_, T, Ops, D>,
-) -> (PopMember<T, Ops, D>, PopMember<T, Ops, D>, bool, f64)
+) -> CrossoverGenerationResult<T, Ops, D, E>
 where
     Ops: dynamic_expressions::OperatorSet<T = T>,
+    E: SRExpression<T, Ops, D>,
 {
     let CrossoverCtx {
         rng,
@@ -448,9 +503,27 @@ where
     let max_tries = 10;
     let mut tries = 0;
     loop {
-        let (c1_expr, c2_expr) = mutation_functions::crossover_trees(rng, &member1.expr, &member2.expr);
+        let (t1, c1) = member1.expr.get_contents_for_mutation(rng);
+        let (t2, c2) = member2.expr.get_contents_for_mutation(rng);
+        let nf1 = member1.expr.nfeatures_for_mutation(c1, dataset.n_features);
+        let nf2 = member2.expr.nfeatures_for_mutation(c2, dataset.n_features);
+        if nf1 != nf2 {
+            tries += 1;
+            if tries >= max_tries {
+                let baby1 = member1.clone();
+                let baby2 = member2.clone();
+                return (baby1, baby2, false, 0.0);
+            }
+            continue;
+        }
+
+        let (c1_tree, c2_tree) = mutation_functions::crossover_trees(rng, &t1, &t2);
+        let mut c1_expr = member1.expr.with_contents_for_mutation(c1_tree, c1);
+        let mut c2_expr = member2.expr.with_contents_for_mutation(c2_tree, c2);
+        c1_expr.compress_constants();
+        c2_expr.compress_constants();
         tries += 1;
-        if check_constraints(&c1_expr, options, curmaxsize) && check_constraints(&c2_expr, options, curmaxsize) {
+        if c1_expr.check_constraints(options, curmaxsize) && c2_expr.check_constraints(options, curmaxsize) {
             let id1 = MemberId(*next_id);
             *next_id += 1;
             let b1 = *next_birth;

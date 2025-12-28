@@ -274,6 +274,122 @@ where
 
     complete
 }
+
+pub(crate) fn resolve_val_src_slices<'a, T: Float>(
+    src: Src,
+    x_slices: &'a [&'a [T]],
+    n_rows: usize,
+    consts: &'a [T],
+    dst_slot: usize,
+    before: &'a [T],
+    after: &'a [T],
+) -> SrcRef<'a, T> {
+    match src {
+        Src::Var(f) => {
+            let idx = f as usize;
+            let s = x_slices
+                .get(idx)
+                .unwrap_or_else(|| panic!("Var index {} out of bounds (n_features={})", idx, x_slices.len()));
+            assert_eq!(s.len(), n_rows, "slice feature length mismatch");
+            SrcRef::Slice(s)
+        }
+        Src::Const(c) => SrcRef::Const(consts[c as usize]),
+        Src::Slot(s) => {
+            let slot = s as usize;
+            if slot < dst_slot {
+                let start = slot * n_rows;
+                SrcRef::Slice(&before[start..start + n_rows])
+            } else if slot > dst_slot {
+                let start = (slot - dst_slot - 1) * n_rows;
+                SrcRef::Slice(&after[start..start + n_rows])
+            } else {
+                panic!("source references dst slot");
+            }
+        }
+    }
+}
+
+/// Evaluate a compiled plan on feature slices (one slice per feature), avoiding ndarray packing.
+pub fn eval_plan_slices_into<T, Ops, const D: usize>(
+    out: &mut [T],
+    plan: &EvalPlan<D>,
+    expr: &PostfixExpr<T, Ops, D>,
+    x_slices: &[&[T]],
+    scratch: &mut Array2<T>,
+    opts: &EvalOptions,
+) -> bool
+where
+    T: Float,
+    Ops: OperatorSet<T = T>,
+{
+    let n_rows = out.len();
+    for s in x_slices {
+        assert_eq!(s.len(), n_rows, "slice feature length mismatch");
+    }
+
+    if scratch.nrows() != plan.n_slots || scratch.ncols() != n_rows {
+        *scratch = Array2::zeros((plan.n_slots, n_rows));
+    }
+    let scratch_data = scratch.as_slice_mut().expect("scratch buffer must stay contiguous");
+
+    let mut complete = true;
+    let slot_stride = n_rows;
+
+    for instr in plan.instrs.iter().copied() {
+        let dst_slot = instr.dst as usize;
+        let arity = instr.arity as usize;
+        let dst_start = dst_slot * slot_stride;
+        let (before, rest) = scratch_data.split_at_mut(dst_start);
+        let (dst_buf, after) = rest.split_at_mut(slot_stride);
+
+        let mut args_refs: [SrcRef<'_, T>; D] = [SrcRef::Const(T::zero()); D];
+        for (j, dst) in args_refs.iter_mut().take(arity).enumerate() {
+            *dst = resolve_val_src_slices(instr.args[j], x_slices, n_rows, &expr.consts, dst_slot, before, after);
+        }
+
+        let ok = Ops::eval(
+            OpId {
+                arity: instr.arity,
+                id: instr.op,
+            },
+            EvalKernelCtx {
+                out: dst_buf,
+                args: &args_refs[..arity],
+                opts,
+            },
+        );
+        complete &= ok;
+        if opts.early_exit && !ok {
+            return false;
+        }
+    }
+
+    match plan.root {
+        Src::Var(f) => {
+            let idx = f as usize;
+            let s = x_slices
+                .get(idx)
+                .unwrap_or_else(|| panic!("Var index {} out of bounds (n_features={})", idx, x_slices.len()));
+            out.copy_from_slice(s);
+        }
+        Src::Const(c) => {
+            let v = expr.consts[c as usize];
+            if opts.check_finite && !v.is_finite() {
+                complete = false;
+                if opts.early_exit {
+                    return false;
+                }
+            }
+            out.fill(v);
+        }
+        Src::Slot(s) => {
+            let start = s as usize * n_rows;
+            out.copy_from_slice(&scratch_data[start..start + n_rows]);
+        }
+    }
+
+    complete
+}
 pub fn eval_tree_array_into<T, Ops, const D: usize>(
     out: &mut [T],
     expr: &PostfixExpr<T, Ops, D>,

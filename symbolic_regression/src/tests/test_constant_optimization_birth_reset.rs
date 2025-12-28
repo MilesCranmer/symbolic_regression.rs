@@ -54,7 +54,7 @@ fn optimize_constants_resets_birth_on_improvement() {
     let mut rng = Rng::with_seed(0);
     let mut next_birth = 1000u64;
     let birth_before = member.birth;
-    let (improved, _) = optimize_constants::<T, TestOps, D>(
+    let (improved, _) = optimize_constants(
         &mut rng,
         &mut member,
         OptimizeConstantsCtx {

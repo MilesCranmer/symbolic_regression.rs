@@ -1,28 +1,34 @@
-use dynamic_expressions::expression::PostfixExpr;
-use dynamic_expressions::{EvalOptions, EvalPlan};
+use dynamic_expressions::EvalOptions;
 use num_traits::Float;
 
-use crate::complexity::compute_complexity;
 use crate::dataset::TaggedDataset;
+use crate::expression::SRExpression;
 use crate::loss_functions::loss_to_cost;
 use crate::options::Options;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct MemberId(pub u64);
 
-#[derive(Debug)]
-pub struct PopMember<T: Float, Ops, const D: usize> {
+pub struct PopMember<T: Float, Ops, const D: usize, E = dynamic_expressions::PostfixExpr<T, Ops, D>>
+where
+    Ops: dynamic_expressions::OperatorSet<T = T>,
+    E: SRExpression<T, Ops, D>,
+{
     pub id: MemberId,
     pub parent: Option<MemberId>,
     pub birth: u64,
-    pub expr: PostfixExpr<T, Ops, D>,
-    pub plan: EvalPlan<D>,
+    pub expr: E,
+    pub plan: <E as SRExpression<T, Ops, D>>::Plan,
     pub complexity: usize,
     pub loss: T,
     pub cost: T,
 }
 
-impl<T: Float, Ops, const D: usize> Clone for PopMember<T, Ops, D> {
+impl<T: Float, Ops, const D: usize, E> Clone for PopMember<T, Ops, D, E>
+where
+    Ops: dynamic_expressions::OperatorSet<T = T>,
+    E: SRExpression<T, Ops, D>,
+{
     fn clone(&self) -> Self {
         Self {
             id: self.id,
@@ -62,18 +68,13 @@ impl<T: Float, const D: usize> Evaluator<T, D> {
     }
 }
 
-impl<T: Float, Ops, const D: usize> PopMember<T, Ops, D>
+impl<T: Float, Ops, const D: usize, E> PopMember<T, Ops, D, E>
 where
     Ops: dynamic_expressions::OperatorSet<T = T>,
+    E: SRExpression<T, Ops, D>,
 {
-    pub fn from_expr(
-        id: MemberId,
-        parent: Option<MemberId>,
-        birth: u64,
-        expr: PostfixExpr<T, Ops, D>,
-        n_features: usize,
-    ) -> Self {
-        let plan = dynamic_expressions::compile_plan(&expr.nodes, n_features, expr.consts.len());
+    pub fn from_expr(id: MemberId, parent: Option<MemberId>, birth: u64, expr: E, n_features: usize) -> Self {
+        let plan = expr.build_plan(n_features);
         Self {
             id,
             parent,
@@ -87,7 +88,7 @@ where
     }
 
     pub fn rebuild_plan(&mut self, n_features: usize) {
-        self.plan = dynamic_expressions::compile_plan(&self.expr.nodes, n_features, self.expr.consts.len());
+        self.plan = self.expr.build_plan(n_features);
     }
 
     pub fn evaluate(
@@ -96,16 +97,13 @@ where
         options: &Options<T, D>,
         evaluator: &mut Evaluator<T, D>,
     ) -> bool {
-        let ok = dynamic_expressions::eval_plan_array_into(
-            &mut evaluator.yhat,
-            &self.plan,
-            &self.expr,
-            dataset.x.view(),
-            &mut evaluator.scratch,
-            &evaluator.eval_opts,
-        );
+        let eval_opts = evaluator.eval_opts;
+        let ok = self
+            .expr
+            .eval_with_plan(&self.plan, dataset.x.view(), evaluator, &eval_opts);
 
-        self.complexity = compute_complexity(&self.expr.nodes, options);
+        // Use the expression's own complexity definition.
+        self.complexity = self.expr.complexity(options);
 
         if !ok {
             self.loss = T::infinity();

@@ -3,14 +3,19 @@ use std::cmp::Ordering;
 use fastrand::Rng;
 use num_traits::Float;
 
+use crate::expression::SRExpression;
 use crate::pop_member::{MemberId, PopMember};
 use crate::population::Population;
 use crate::random::{choose, poisson_sample, usize_range};
 
-pub fn best_sub_pop<T: Float, Ops, const D: usize>(
-    pop: &Population<T, Ops, D>,
+pub fn best_sub_pop<T: Float, Ops, const D: usize, E>(
+    pop: &Population<T, Ops, D, E>,
     topn: usize,
-) -> Vec<PopMember<T, Ops, D>> {
+) -> Vec<PopMember<T, Ops, D, E>>
+where
+    Ops: dynamic_expressions::OperatorSet<T = T>,
+    E: SRExpression<T, Ops, D>,
+{
     let mut idxs: Vec<usize> = (0..pop.len()).collect();
     idxs.sort_by(|&i, &j| {
         pop.members[i]
@@ -22,14 +27,17 @@ pub fn best_sub_pop<T: Float, Ops, const D: usize>(
     idxs.into_iter().map(|i| pop.members[i].clone()).collect()
 }
 
-pub fn migrate_into<T: Float, Ops, const D: usize>(
-    dst: &mut Population<T, Ops, D>,
-    migrants: &[PopMember<T, Ops, D>],
+pub fn migrate_into<T: Float, Ops, const D: usize, E>(
+    dst: &mut Population<T, Ops, D, E>,
+    migrants: &[PopMember<T, Ops, D, E>],
     frac: f64,
     rng: &mut Rng,
     next_id: &mut u64,
     next_birth: &mut u64,
-) {
+) where
+    Ops: dynamic_expressions::OperatorSet<T = T>,
+    E: SRExpression<T, Ops, D>,
+{
     if migrants.is_empty() {
         return;
     }

@@ -63,7 +63,7 @@ fn randomize_mutation_can_succeed_below_size_3() {
     let mut next_id = 1u64;
     let mut next_birth = 0u64;
 
-    let (child, ok, _) = mutate::next_generation::<T, TestOps, D>(
+    let (child, ok, _) = mutate::next_generation(
         &parent,
         mutate::NextGenerationCtx {
             rng: &mut rng,
@@ -212,7 +212,7 @@ fn add_node_includes_append_at_leaf_move() {
     let mut saw_append = false;
 
     for _ in 0..64 {
-        let (child, ok, _) = mutate::next_generation::<T, TestOps, D>(
+        let (child, ok, _) = mutate::next_generation(
             &parent,
             mutate::NextGenerationCtx {
                 rng: &mut rng,
@@ -307,7 +307,7 @@ fn mutate_operator_can_be_a_noop_and_still_succeeds() {
     let mut next_id = 1u64;
     let mut next_birth = 0u64;
 
-    let (child, ok, _) = mutate::next_generation::<T, TestOps, D>(
+    let (child, ok, _) = mutate::next_generation(
         &parent,
         mutate::NextGenerationCtx {
             rng: &mut rng,

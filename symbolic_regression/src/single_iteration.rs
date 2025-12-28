@@ -6,13 +6,15 @@ use num_traits::{Float, FromPrimitive, ToPrimitive};
 use crate::adaptive_parsimony::RunningSearchStatistics;
 use crate::constant_optimization::{OptimizeConstantsCtx, optimize_constants};
 use crate::dataset::TaggedDataset;
+use crate::expression::SRExpression;
 use crate::hall_of_fame::HallOfFame;
 use crate::options::Options;
 use crate::pop_member::Evaluator;
 use crate::population::Population;
 use crate::regularized_evolution::{RegEvolCtx, reg_evol_cycle};
 
-pub struct IterationCtx<'a, T: Float + AddAssign, Ops, const D: usize> {
+pub struct IterationCtx<'a, T: Float + AddAssign, Ops, const D: usize, E = dynamic_expressions::PostfixExpr<T, Ops, D>>
+{
     pub rng: &'a mut Rng,
     pub full_dataset: TaggedDataset<'a, T>,
     pub curmaxsize: usize,
@@ -23,16 +25,18 @@ pub struct IterationCtx<'a, T: Float + AddAssign, Ops, const D: usize> {
     pub next_id: &'a mut u64,
     pub next_birth: &'a mut u64,
     pub _ops: core::marker::PhantomData<Ops>,
+    pub _expr: core::marker::PhantomData<E>,
 }
 
-pub fn s_r_cycle<T, Ops, const D: usize>(
-    pop: &mut Population<T, Ops, D>,
-    ctx: &mut IterationCtx<'_, T, Ops, D>,
+pub fn s_r_cycle<T, Ops, const D: usize, E>(
+    pop: &mut Population<T, Ops, D, E>,
+    ctx: &mut IterationCtx<'_, T, Ops, D, E>,
     eval_dataset: TaggedDataset<'_, T>,
-) -> (f64, HallOfFame<T, Ops, D>)
+) -> (f64, HallOfFame<T, Ops, D, E>)
 where
     T: Float + FromPrimitive + ToPrimitive + AddAssign,
     Ops: dynamic_expressions::OperatorSet<T = T>,
+    E: SRExpression<T, Ops, D>,
 {
     let max_temp = 1.0;
     let min_temp = if ctx.options.annealing { 0.0 } else { 1.0 };
@@ -68,20 +72,21 @@ where
     (num_evals, best_seen)
 }
 
-pub fn optimize_and_simplify_population<T, Ops, const D: usize>(
-    pop: &mut Population<T, Ops, D>,
-    ctx: &mut IterationCtx<'_, T, Ops, D>,
+pub fn optimize_and_simplify_population<T, Ops, const D: usize, E>(
+    pop: &mut Population<T, Ops, D, E>,
+    ctx: &mut IterationCtx<'_, T, Ops, D, E>,
     opt_dataset: TaggedDataset<'_, T>,
 ) -> f64
 where
     T: Float + FromPrimitive + ToPrimitive + AddAssign,
     Ops: dynamic_expressions::OperatorSet<T = T>,
+    E: SRExpression<T, Ops, D>,
 {
     let mut num_evals = 0.0;
 
     if ctx.options.should_simplify {
         for m in &mut pop.members {
-            let changed = dynamic_expressions::simplify_in_place(&mut m.expr, &ctx.evaluator.eval_opts);
+            let changed = m.expr.simplify_in_place(&ctx.evaluator.eval_opts);
             if changed {
                 m.rebuild_plan(ctx.full_dataset.n_features);
             }

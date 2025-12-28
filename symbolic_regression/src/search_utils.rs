@@ -6,8 +6,8 @@ use num_traits::Float;
 use progress_bars::SearchProgress;
 
 use crate::adaptive_parsimony::RunningSearchStatistics;
-use crate::check_constraints::check_constraints;
 use crate::dataset::{Dataset, TaggedDataset};
+use crate::expression::{ExpressionSpec, SRExpression, TreeSpec};
 use crate::hall_of_fame::HallOfFame;
 use crate::loss_functions::baseline_loss_from_zero_expression;
 use crate::options::Options;
@@ -16,9 +16,13 @@ use crate::population::Population;
 use crate::random::shuffle;
 use crate::{migration, progress_bars, single_iteration, warmup};
 
-pub struct SearchResult<T: Float + AddAssign, Ops, const D: usize> {
-    pub hall_of_fame: HallOfFame<T, Ops, D>,
-    pub best: PopMember<T, Ops, D>,
+pub struct SearchResult<T: Float + AddAssign, Ops, const D: usize, E = dynamic_expressions::PostfixExpr<T, Ops, D>>
+where
+    Ops: dynamic_expressions::OperatorSet<T = T>,
+    E: SRExpression<T, Ops, D>,
+{
+    pub hall_of_fame: HallOfFame<T, Ops, D, E>,
+    pub best: PopMember<T, Ops, D, E>,
 }
 
 struct SearchCounters {
@@ -44,17 +48,25 @@ impl SearchCounters {
     }
 }
 
-struct SearchTaskResult<T: Float + AddAssign, Ops, const D: usize> {
+struct SearchTaskResult<T: Float + AddAssign, Ops, const D: usize, E>
+where
+    Ops: dynamic_expressions::OperatorSet<T = T>,
+    E: SRExpression<T, Ops, D>,
+{
     pop_idx: usize,
     curmaxsize: usize,
     evals: u64,
-    best_seen: HallOfFame<T, Ops, D>,
-    best_sub_pop: Vec<PopMember<T, Ops, D>>,
-    pop_state: PopState<T, Ops, D>,
+    best_seen: HallOfFame<T, Ops, D, E>,
+    best_sub_pop: Vec<PopMember<T, Ops, D, E>>,
+    pop_state: PopState<T, Ops, D, E>,
 }
 
-pub(crate) struct PopState<T: Float + AddAssign, Ops, const D: usize> {
-    pub(crate) pop: Population<T, Ops, D>,
+pub(crate) struct PopState<T: Float + AddAssign, Ops, const D: usize, E>
+where
+    Ops: dynamic_expressions::OperatorSet<T = T>,
+    E: SRExpression<T, Ops, D>,
+{
+    pub(crate) pop: Population<T, Ops, D, E>,
     pub(crate) evaluator: Evaluator<T, D>,
     pub(crate) grad_ctx: dynamic_expressions::GradContext<T, D>,
     pub(crate) rng: Rng,
@@ -63,7 +75,11 @@ pub(crate) struct PopState<T: Float + AddAssign, Ops, const D: usize> {
     pub(crate) next_birth: u64,
 }
 
-impl<T: Float + AddAssign, Ops, const D: usize> PopState<T, Ops, D> {
+impl<T: Float + AddAssign, Ops, const D: usize, E> PopState<T, Ops, D, E>
+where
+    Ops: dynamic_expressions::OperatorSet<T = T>,
+    E: SRExpression<T, Ops, D>,
+{
     fn run_iteration_phase<'a, F, Ret>(
         &'a mut self,
         full_dataset: TaggedDataset<'a, T>,
@@ -74,8 +90,8 @@ impl<T: Float + AddAssign, Ops, const D: usize> PopState<T, Ops, D> {
     ) -> Ret
     where
         F: FnOnce(
-            &mut Population<T, Ops, D>,
-            &mut single_iteration::IterationCtx<'a, T, Ops, D>,
+            &mut Population<T, Ops, D, E>,
+            &mut single_iteration::IterationCtx<'a, T, Ops, D, E>,
             TaggedDataset<'a, T>,
         ) -> Ret,
     {
@@ -113,28 +129,37 @@ impl<T: Float + AddAssign, Ops, const D: usize> PopState<T, Ops, D> {
             next_id: &mut self.next_id,
             next_birth: &mut self.next_birth,
             _ops: core::marker::PhantomData,
+            _expr: core::marker::PhantomData,
         };
 
         f(&mut self.pop, &mut ctx, phase_dataset)
     }
 }
 
-struct PopPools<T: Float + AddAssign, Ops, const D: usize> {
-    pops: Vec<Option<PopState<T, Ops, D>>>,
-    best_sub_pops: Vec<Vec<PopMember<T, Ops, D>>>,
-    best: PopMember<T, Ops, D>,
+struct PopPools<T: Float + AddAssign, Ops, const D: usize, E>
+where
+    Ops: dynamic_expressions::OperatorSet<T = T>,
+    E: SRExpression<T, Ops, D>,
+{
+    pops: Vec<Option<PopState<T, Ops, D, E>>>,
+    best_sub_pops: Vec<Vec<PopMember<T, Ops, D, E>>>,
+    best: PopMember<T, Ops, D, E>,
     total_evals: u64,
 }
 
-struct EquationSearchState<'a, T: Float + AddAssign, Ops, const D: usize> {
+struct EquationSearchState<'a, T: Float + AddAssign, Ops, const D: usize, E>
+where
+    Ops: dynamic_expressions::OperatorSet<T = T>,
+    E: SRExpression<T, Ops, D>,
+{
     full_dataset: TaggedDataset<'a, T>,
     options: &'a Options<T, D>,
     n_workers: usize,
     counters: SearchCounters,
     stats: RunningSearchStatistics,
-    hall: HallOfFame<T, Ops, D>,
+    hall: HallOfFame<T, Ops, D, E>,
     progress: SearchProgress,
-    pools: PopPools<T, Ops, D>,
+    pools: PopPools<T, Ops, D, E>,
     order_rng: Rng,
 }
 
@@ -154,6 +179,34 @@ where
     T: Float + AddAssign + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + Send + Sync,
     Ops: dynamic_expressions::OperatorSet<T = T> + Send + Sync,
 {
+    equation_search_parallel_with_spec::<T, Ops, D, TreeSpec>(dataset, options, TreeSpec)
+}
+
+pub fn equation_search_with_spec<T, Ops, const D: usize, S>(
+    dataset: &Dataset<T>,
+    options: &Options<T, D>,
+    spec: S,
+) -> SearchResult<T, Ops, D, S::Expr>
+where
+    T: Float + AddAssign + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + Send + Sync,
+    Ops: dynamic_expressions::OperatorSet<T = T> + Send + Sync,
+    S: ExpressionSpec<T, Ops, D>,
+    S::Expr: Display,
+{
+    equation_search_parallel_with_spec::<T, Ops, D, S>(dataset, options, spec)
+}
+
+fn equation_search_parallel_with_spec<T, Ops, const D: usize, S>(
+    dataset: &Dataset<T>,
+    options: &Options<T, D>,
+    spec: S,
+) -> SearchResult<T, Ops, D, S::Expr>
+where
+    T: Float + AddAssign + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + Send + Sync,
+    Ops: dynamic_expressions::OperatorSet<T = T> + Send + Sync,
+    S: ExpressionSpec<T, Ops, D>,
+    S::Expr: Display,
+{
     let baseline_loss = if options.use_baseline {
         baseline_loss_from_zero_expression::<T, Ops, D>(dataset, options.loss.as_ref())
     } else {
@@ -172,7 +225,7 @@ where
 
     let mut progress = SearchProgress::new(options, counters.total_cycles);
 
-    let pools = init_populations(full_dataset, options, &mut hall);
+    let pools = init_populations(full_dataset, options, &spec, &mut hall);
     progress.set_initial_evals(pools.total_evals);
 
     let order_rng = Rng::with_seed(options.seed ^ 0x9e37_79b9_7f4a_7c15);
@@ -217,15 +270,19 @@ where
     }
 }
 
-pub struct SearchEngine<T: Float + AddAssign, Ops, const D: usize> {
+pub struct SearchEngine<T: Float + AddAssign, Ops, const D: usize, E = dynamic_expressions::PostfixExpr<T, Ops, D>>
+where
+    Ops: dynamic_expressions::OperatorSet<T = T>,
+    E: SRExpression<T, Ops, D>,
+{
     dataset: Dataset<T>,
     baseline_loss: Option<T>,
     options: Options<T, D>,
     counters: SearchCounters,
     stats: RunningSearchStatistics,
-    hall: HallOfFame<T, Ops, D>,
+    hall: HallOfFame<T, Ops, D, E>,
     progress: SearchProgress,
-    pools: PopPools<T, Ops, D>,
+    pools: PopPools<T, Ops, D, E>,
     order_rng: Rng,
     cur_iter: usize,
     task_order: Vec<usize>,
@@ -235,10 +292,18 @@ pub struct SearchEngine<T: Float + AddAssign, Ops, const D: usize> {
 
 impl<T, Ops, const D: usize> SearchEngine<T, Ops, D>
 where
-    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + AddAssign,
-    Ops: dynamic_expressions::OperatorSet<T = T>,
+    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + AddAssign + Send + Sync,
+    Ops: dynamic_expressions::OperatorSet<T = T> + Send + Sync,
 {
     pub fn new(dataset: Dataset<T>, options: Options<T, D>) -> Self {
+        Self::new_with_spec(dataset, options, TreeSpec)
+    }
+
+    pub fn new_with_spec<S>(dataset: Dataset<T>, options: Options<T, D>, spec: S) -> SearchEngine<T, Ops, D, S::Expr>
+    where
+        S: ExpressionSpec<T, Ops, D>,
+        S::Expr: Display,
+    {
         let baseline_loss = if options.use_baseline {
             baseline_loss_from_zero_expression::<T, Ops, D>(&dataset, options.loss.as_ref())
         } else {
@@ -256,12 +321,12 @@ where
         let mut progress = SearchProgress::new(&options, counters.total_cycles);
 
         let full_dataset = TaggedDataset::new(&dataset, baseline_loss);
-        let pools = init_populations(full_dataset, &options, &mut hall);
+        let pools = init_populations(full_dataset, &options, &spec, &mut hall);
         progress.set_initial_evals(pools.total_evals);
 
         let order_rng = Rng::with_seed(options.seed ^ 0x9e37_79b9_7f4a_7c15);
 
-        Self {
+        SearchEngine {
             dataset,
             baseline_loss,
             options,
@@ -403,17 +468,18 @@ where
     }
 }
 
-fn execute_task<T, Ops, const D: usize>(
+fn execute_task<T, Ops, const D: usize, E>(
     full_dataset: TaggedDataset<'_, T>,
     options: &Options<T, D>,
     pop_idx: usize,
     curmaxsize: usize,
     stats: RunningSearchStatistics,
-    mut pop_state: PopState<T, Ops, D>,
-) -> SearchTaskResult<T, Ops, D>
+    mut pop_state: PopState<T, Ops, D, E>,
+) -> SearchTaskResult<T, Ops, D, E>
 where
     T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + AddAssign,
     Ops: dynamic_expressions::OperatorSet<T = T>,
+    E: SRExpression<T, Ops, D>,
 {
     let (evals1, best_seen) =
         pop_state.run_iteration_phase(full_dataset, options, curmaxsize, &stats, |pop, ctx, eval_dataset| {
@@ -437,17 +503,18 @@ where
     }
 }
 
-fn apply_task_result<T, Ops, const D: usize>(
+fn apply_task_result<T, Ops, const D: usize, E>(
     options: &Options<T, D>,
     counters: &mut SearchCounters,
     stats: &mut RunningSearchStatistics,
-    hall: &mut HallOfFame<T, Ops, D>,
+    hall: &mut HallOfFame<T, Ops, D, E>,
     progress: &mut SearchProgress,
-    pools: &mut PopPools<T, Ops, D>,
-    res: SearchTaskResult<T, Ops, D>,
+    pools: &mut PopPools<T, Ops, D, E>,
+    res: SearchTaskResult<T, Ops, D, E>,
 ) where
-    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + AddAssign,
-    Ops: dynamic_expressions::OperatorSet<T = T>,
+    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + AddAssign + Send + Sync,
+    Ops: dynamic_expressions::OperatorSet<T = T> + Send + Sync,
+    E: SRExpression<T, Ops, D> + Display,
 {
     pools.total_evals = pools.total_evals.saturating_add(res.evals);
 
@@ -466,13 +533,13 @@ fn apply_task_result<T, Ops, const D: usize>(
     }
     for m in &st.pop.members {
         hall.consider(m, options, curmaxsize);
-        if check_constraints(&m.expr, options, curmaxsize) && m.loss < pools.best.loss {
+        if m.expr.check_constraints(options, curmaxsize) && m.loss < pools.best.loss {
             pools.best = m.clone();
         }
     }
 
     if options.migration {
-        let mut candidates: Vec<PopMember<T, Ops, D>> = Vec::new();
+        let mut candidates: Vec<PopMember<T, Ops, D, E>> = Vec::new();
         for (i, v) in pools.best_sub_pops.iter().enumerate() {
             if i != pop_idx {
                 candidates.extend(v.iter().cloned());
@@ -504,18 +571,19 @@ fn apply_task_result<T, Ops, const D: usize>(
     progress.on_cycle_complete(hall, pools.total_evals, cycles_remaining);
 }
 
-fn run_scoped_search<'scope, 'env, T, Ops, const D: usize>(
+fn run_scoped_search<'scope, 'env, T, Ops, const D: usize, E>(
     scope: &rayon::Scope<'scope>,
-    state: &mut EquationSearchState<'env, T, Ops, D>,
+    state: &mut EquationSearchState<'env, T, Ops, D, E>,
 ) where
     'env: 'scope,
     T: Float + AddAssign + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + Send + Sync + 'scope,
     Ops: dynamic_expressions::OperatorSet<T = T> + Send + Sync + 'scope,
+    E: SRExpression<T, Ops, D> + Display + 'scope,
 {
     let full_dataset = state.full_dataset;
     let options = state.options;
 
-    let (result_tx, result_rx) = std::sync::mpsc::channel::<SearchTaskResult<T, Ops, D>>();
+    let (result_tx, result_rx) = std::sync::mpsc::channel::<SearchTaskResult<T, Ops, D, E>>();
 
     for _iter in 0..options.niterations {
         let mut task_order: Vec<usize> = (0..state.pools.pops.len()).collect();
@@ -561,18 +629,20 @@ fn run_scoped_search<'scope, 'env, T, Ops, const D: usize>(
     }
 }
 
-fn init_populations<T, Ops, const D: usize>(
+fn init_populations<T, Ops, const D: usize, S>(
     full_dataset: TaggedDataset<'_, T>,
     options: &Options<T, D>,
-    hall: &mut HallOfFame<T, Ops, D>,
-) -> PopPools<T, Ops, D>
+    spec: &S,
+    hall: &mut HallOfFame<T, Ops, D, S::Expr>,
+) -> PopPools<T, Ops, D, S::Expr>
 where
     T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + AddAssign,
     Ops: dynamic_expressions::OperatorSet<T = T>,
+    S: ExpressionSpec<T, Ops, D>,
 {
     let dataset = full_dataset.data;
     let mut total_evals: u64 = 0;
-    let mut pops: Vec<Option<PopState<T, Ops, D>>> = Vec::with_capacity(options.populations);
+    let mut pops: Vec<Option<PopState<T, Ops, D, S::Expr>>> = Vec::with_capacity(options.populations);
 
     for pop_i in 0..options.populations {
         let mut rng = Rng::with_seed(options.seed.wrapping_add(pop_i as u64));
@@ -582,15 +652,14 @@ where
         let mut next_id = (pop_i as u64) << 32;
         let mut next_birth = 0u64;
 
-        let nlength = 3usize;
         let mut members = Vec::with_capacity(options.population_size);
         for _ in 0..options.population_size {
-            let expr = crate::mutation_functions::random_expr_append_ops(
+            let expr = spec.random_expr(
                 &mut rng,
                 &options.operators,
                 dataset.n_features,
-                nlength,
                 options.maxsize,
+                options,
             );
             let mut m = PopMember::from_expr(MemberId(next_id), None, next_birth, expr, dataset.n_features);
             next_id += 1;
@@ -612,10 +681,10 @@ where
         }));
     }
 
-    let mut best: Option<PopMember<T, Ops, D>> = None;
+    let mut best: Option<PopMember<T, Ops, D, S::Expr>> = None;
     for st in pops.iter().flatten() {
         for m in &st.pop.members {
-            if !check_constraints(&m.expr, options, options.maxsize) {
+            if !m.expr.check_constraints(options, options.maxsize) {
                 continue;
             }
             match &best {
@@ -638,7 +707,7 @@ where
             .clone()
     });
 
-    let mut best_sub_pops: Vec<Vec<PopMember<T, Ops, D>>> = vec![Vec::new(); pops.len()];
+    let mut best_sub_pops: Vec<Vec<PopMember<T, Ops, D, S::Expr>>> = vec![Vec::new(); pops.len()];
     for i in 0..pops.len() {
         let st = pops[i].as_ref().expect("population exists");
         best_sub_pops[i] = migration::best_sub_pop(&st.pop, options.topn);

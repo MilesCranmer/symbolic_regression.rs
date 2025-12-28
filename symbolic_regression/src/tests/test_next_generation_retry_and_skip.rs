@@ -67,7 +67,7 @@ fn next_generation_fails_constraints_after_retries() {
 
     let mut next_id = 1u64;
     let mut next_birth = 1u64;
-    let (_baby, accepted, _evals) = mutate::next_generation::<T, TestOps, D>(
+    let (_baby, accepted, _evals) = mutate::next_generation(
         &member,
         mutate::NextGenerationCtx {
             rng: &mut rng,
@@ -150,6 +150,6 @@ fn reg_evol_cycle_skips_replacement_when_configured() {
         _ops: core::marker::PhantomData,
     };
 
-    regularized_evolution::reg_evol_cycle::<T, TestOps, D>(&mut pop, ctx);
+    regularized_evolution::reg_evol_cycle(&mut pop, ctx);
     assert_eq!(pop.members.len(), 1);
 }

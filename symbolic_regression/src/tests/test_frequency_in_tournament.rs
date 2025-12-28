@@ -44,7 +44,7 @@ fn tournament_penalizes_frequent_sizes_when_enabled() {
     stats.update_frequencies(3);
     stats.normalize();
 
-    let chosen = best_of_sample::<T, TestOps, D>(&mut rng, &pop, &stats, &options);
+    let chosen = best_of_sample(&mut rng, &pop, &stats, &options);
 
     // If frequency is used in tournament, the rare (larger) member should be favored here.
     assert_eq!(chosen.id, MemberId(2));
