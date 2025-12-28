@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/astroautomata/symbolic_regression.rs/compare/dynamic_expressions-v0.9.0...dynamic_expressions-v0.9.1) (2025-12-27)
+
+
+### Bug Fixes
+
+* infix-inside-infix strings ([63ec801](https://github.com/astroautomata/symbolic_regression.rs/commit/63ec801adb0a8e5e72c26c017c0a28345eef282e))
+
 ## [0.9.0](https://github.com/astroautomata/symbolic_regression.rs/compare/dynamic_expressions-v0.8.0...dynamic_expressions-v0.9.0) (2025-12-26)
 
 

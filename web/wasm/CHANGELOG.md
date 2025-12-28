@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.7.1](https://github.com/astroautomata/symbolic_regression.rs/compare/symbolic_regression_wasm-v0.7.0...symbolic_regression_wasm-v0.7.1) (2025-12-27)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * symbolic_regression bumped from 0.10.0 to 0.11.0
+    * dynamic_expressions bumped from 0.9.0 to 0.9.1
+
 ## [0.7.0](https://github.com/astroautomata/symbolic_regression.rs/compare/symbolic_regression_wasm-v0.6.0...symbolic_regression_wasm-v0.7.0) (2025-12-26)
 
 

@@ -8,7 +8,9 @@
 
 <h1 align="center">symbolic_regression.rs</h1>
 
-Experimental Rust port of [`SymbolicRegression.jl`](https://github.com/MilesCranmer/SymbolicRegression.jl).
+Rust port of [`SymbolicRegression.jl`](https://github.com/MilesCranmer/SymbolicRegression.jl) with support for WebAssembly.
+
+Try out a fully browser-based demo of WebAssembly-compiled symbolic regression [here](https://astroautomata.com/symbolic_regression.rs/).
 
 > [!WARNING]
 > This package is an **experiment**. The API is not stabilized, and you should expect large breaking changes in the syntax.

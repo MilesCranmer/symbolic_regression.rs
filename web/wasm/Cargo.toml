@@ -1,6 +1,6 @@
 [package]
 name = "symbolic_regression_wasm"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2021"
 license = "Apache-2.0"
 description = "WASM bindings for symbolic_regression (browser-friendly wrapper via wasm-bindgen)."
@@ -29,8 +29,8 @@ csv = "1"
 ndarray = "0.17"
 fastrand = "2.3"
 
-symbolic_regression = { version = "0.10.0", path = "../../symbolic_regression", default-features = false, features = ["serde"] }
-dynamic_expressions = { version = "0.9.0", path = "../../dynamic_expressions", default-features = false }
+symbolic_regression = { version = "0.11.0", path = "../../symbolic_regression", default-features = false, features = ["serde"] }
+dynamic_expressions = { version = "0.9.1", path = "../../dynamic_expressions", default-features = false }
 
 [features]
 default = ["panic-hook"]

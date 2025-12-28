@@ -2,7 +2,7 @@ use ndarray::{Array2, ArrayView2};
 use num_traits::Float;
 
 use crate::compile::{EvalPlan, build_node_hash, compile_plan};
-use crate::dispatch::{EvalKernelCtx, GradRef, SrcRef};
+use crate::dispatch::{EvalKernelCtx, SrcRef};
 use crate::expression::PostfixExpr;
 use crate::node::Src;
 use crate::traits::{OpId, OperatorSet};
@@ -104,76 +104,6 @@ pub(crate) fn resolve_val_src<'a, T: Float>(
             } else if slot > dst_slot {
                 let start = (slot - dst_slot - 1) * n_rows;
                 SrcRef::Slice(&after[start..start + n_rows])
-            } else {
-                panic!("source references dst slot");
-            }
-        }
-    }
-}
-
-pub(crate) fn resolve_der_src<'a, T: Float>(
-    src: Src,
-    direction: usize,
-    dst_slot: usize,
-    before: &'a [T],
-    after: &'a [T],
-    n_rows: usize,
-) -> SrcRef<'a, T> {
-    match src {
-        Src::Var(f) => {
-            if f as usize == direction {
-                SrcRef::Const(T::one())
-            } else {
-                SrcRef::Const(T::zero())
-            }
-        }
-        Src::Const(_) => SrcRef::Const(T::zero()),
-        Src::Slot(s) => {
-            let slot = s as usize;
-            if slot < dst_slot {
-                let start = slot * n_rows;
-                SrcRef::Slice(&before[start..start + n_rows])
-            } else if slot > dst_slot {
-                let start = (slot - dst_slot - 1) * n_rows;
-                SrcRef::Slice(&after[start..start + n_rows])
-            } else {
-                panic!("source references dst slot");
-            }
-        }
-    }
-}
-
-pub(crate) fn resolve_grad_src<'a, T: Float>(
-    src: Src,
-    variable: bool,
-    dst_slot: usize,
-    before: &'a [T],
-    after: &'a [T],
-    slot_stride: usize,
-) -> GradRef<'a, T> {
-    match src {
-        Src::Var(f) => {
-            if variable {
-                GradRef::Basis(f as usize)
-            } else {
-                GradRef::Zero
-            }
-        }
-        Src::Const(c) => {
-            if variable {
-                GradRef::Zero
-            } else {
-                GradRef::Basis(c as usize)
-            }
-        }
-        Src::Slot(s) => {
-            let slot = s as usize;
-            if slot < dst_slot {
-                let start = slot * slot_stride;
-                GradRef::Slice(&before[start..start + slot_stride])
-            } else if slot > dst_slot {
-                let start = (slot - dst_slot - 1) * slot_stride;
-                GradRef::Slice(&after[start..start + slot_stride])
             } else {
                 panic!("source references dst slot");
             }
