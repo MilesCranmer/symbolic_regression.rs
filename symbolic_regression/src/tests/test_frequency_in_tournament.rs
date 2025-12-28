@@ -27,8 +27,8 @@ fn tournament_penalizes_frequent_sizes_when_enabled() {
     };
     let mut rng = Rng::with_seed(0);
 
-    let mut a = PopMember::from_expr(MemberId(1), None, 0, leaf_expr(), 1);
-    let mut b = PopMember::from_expr(MemberId(2), None, 0, leaf_expr(), 1);
+    let mut a = PopMember::from_expr_with_birth(MemberId(1), None, 0, leaf_expr(), 1);
+    let mut b = PopMember::from_expr_with_birth(MemberId(2), None, 0, leaf_expr(), 1);
     a.complexity = 1;
     b.complexity = 3;
     a.cost = T::one();
@@ -44,7 +44,7 @@ fn tournament_penalizes_frequent_sizes_when_enabled() {
     stats.update_frequencies(3);
     stats.normalize();
 
-    let chosen = best_of_sample(&mut rng, &pop, &stats, &options);
+    let chosen = best_of_sample::<T, TestOps, D>(&mut rng, &pop, &stats, &options);
 
     // If frequency is used in tournament, the rare (larger) member should be favored here.
     assert_eq!(chosen.id, MemberId(2));

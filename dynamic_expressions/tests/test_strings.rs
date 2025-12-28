@@ -92,3 +92,18 @@ fn ternary_infix_custom_op_preserves_child_grouping() {
     let s = string_tree(&expr, StringTreeOptions::default());
     assert_eq!(s, "(a + b) ⊕ (b + c) ⊕ a");
 }
+
+#[test]
+fn default_string_variable_uses_name_and_falls_back() {
+    let names = vec!["hello".to_string()];
+    assert_eq!(
+        dynamic_expressions::strings::default_string_variable(0, Some(&names)),
+        "hello"
+    );
+
+    let empty: Vec<String> = vec![];
+    assert_eq!(
+        dynamic_expressions::strings::default_string_variable(0, Some(&empty)),
+        "x0"
+    );
+}

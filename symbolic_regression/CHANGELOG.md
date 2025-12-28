@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.11.0](https://github.com/astroautomata/symbolic_regression.rs/compare/symbolic_regression-v0.10.0...symbolic_regression-v0.11.0) (2025-12-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove the CLI
+
+### Features
+
+* remove the CLI ([9ac2f4b](https://github.com/astroautomata/symbolic_regression.rs/commit/9ac2f4b0947ceec751b705b745136db60b016edf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * dynamic_expressions bumped from 0.9.0 to 0.9.1
+
 ## [0.10.0](https://github.com/astroautomata/symbolic_regression.rs/compare/symbolic_regression-v0.9.0...symbolic_regression-v0.10.0) (2025-12-26)
 
 

@@ -27,3 +27,17 @@ fn compile_plan_panics_if_not_single_root() {
     let nodes = vec![PNode::Var { feature: 0 }, PNode::Var { feature: 1 }];
     let _ = compile_plan::<3>(&nodes, 2, 0);
 }
+
+#[test]
+#[should_panic(expected = "n_features=")]
+fn compile_plan_panics_if_n_features_exceeds_u16() {
+    let nodes = vec![PNode::Var { feature: 0 }];
+    let _ = compile_plan::<3>(&nodes, (u16::MAX as usize) + 1, 0);
+}
+
+#[test]
+#[should_panic(expected = "n_consts=")]
+fn compile_plan_panics_if_n_consts_exceeds_u16() {
+    let nodes = vec![PNode::Var { feature: 0 }];
+    let _ = compile_plan::<3>(&nodes, 1, (u16::MAX as usize) + 1);
+}

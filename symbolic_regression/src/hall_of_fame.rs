@@ -1,30 +1,25 @@
 use num_traits::Float;
 
-use crate::expression::ExprExt;
+use crate::check_constraints::check_constraints;
 use crate::options::Options;
 use crate::pop_member::PopMember;
 
-pub struct HallOfFame<T: Float, Ops, const D: usize, E = dynamic_expressions::PostfixExpr<T, Ops, D>>
-where
-    Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: ExprExt<T, Ops, D>,
-{
-    pub best_by_complexity: Vec<Option<PopMember<T, Ops, D, E>>>,
+pub struct HallOfFame<T: Float, Ops, const D: usize> {
+    pub best_by_complexity: Vec<Option<PopMember<T, Ops, D>>>,
 }
 
-impl<T: Float, Ops, const D: usize, E> HallOfFame<T, Ops, D, E>
-where
-    Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: ExprExt<T, Ops, D>,
-{
+impl<T: Float, Ops, const D: usize> HallOfFame<T, Ops, D> {
     pub fn new(max_complexity: usize) -> Self {
         Self {
             best_by_complexity: vec![None; max_complexity + 1],
         }
     }
 
-    pub fn consider(&mut self, member: &PopMember<T, Ops, D, E>, options: &Options<T, D>, curmaxsize: usize) {
-        if !member.expr.check_constraints(options, curmaxsize) {
+    pub fn consider(&mut self, member: &PopMember<T, Ops, D>, options: &Options<T, D>, curmaxsize: usize) {
+        if !member.loss.is_finite() {
+            return;
+        }
+        if !check_constraints(&member.expr, options, curmaxsize) {
             return;
         }
         let c = member.complexity;
@@ -51,7 +46,7 @@ where
 
     pub fn update_from_members(
         &mut self,
-        members: &[PopMember<T, Ops, D, E>],
+        members: &[PopMember<T, Ops, D>],
         options: &Options<T, D>,
         curmaxsize: usize,
     ) {
@@ -60,11 +55,11 @@ where
         }
     }
 
-    pub fn members(&self) -> impl Iterator<Item = &PopMember<T, Ops, D, E>> {
+    pub fn members(&self) -> impl Iterator<Item = &PopMember<T, Ops, D>> {
         self.best_by_complexity.iter().flatten()
     }
 
-    pub fn pareto_front(&self) -> Vec<PopMember<T, Ops, D, E>> {
+    pub fn pareto_front(&self) -> Vec<PopMember<T, Ops, D>> {
         let mut out = Vec::new();
         let mut best_loss = T::infinity();
         for m in self.best_by_complexity.iter().flatten() {

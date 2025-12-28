@@ -98,6 +98,10 @@ macro_rules! sr_options_spec {
                     (f64, 0.001, "fraction-replaced-guesses"),
                 topn:
                     (usize, 12, "topn"),
+                max_evals:
+                    (u64, 0, "max-evals"),
+                timeout_in_seconds:
+                    (f64, 0.0, "timeout-in-seconds"),
             }
             neg_flags {
                 use_frequency:
@@ -124,6 +128,8 @@ macro_rules! sr_options_spec {
                     (true, should_simplify, "should-simplify"),
                 batching:
                     (false, batching, "batching"),
+                deterministic:
+                    (false, deterministic, "deterministic"),
             }
         }
     };

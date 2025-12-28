@@ -6,7 +6,7 @@ use num_traits::Float;
 
 use crate::operators::Operators;
 use crate::options::Options;
-use crate::random::{standard_normal, usize_range};
+use crate::random::{standard_normal, usize_range, usize_range_excl};
 
 fn random_leaf<T: Float>(rng: &mut Rng, n_features: usize, consts: &mut Vec<T>) -> PNode {
     if rng.bool() {
@@ -126,7 +126,6 @@ fn op_indices(nodes: &[PNode]) -> Vec<usize> {
         .collect()
 }
 
-#[allow(dead_code)]
 fn const_node_indices(nodes: &[PNode]) -> Vec<usize> {
     nodes
         .iter()
@@ -156,7 +155,6 @@ fn child_ranges(sizes: &[usize], root_idx: usize, arity: usize) -> Vec<(usize, u
     out
 }
 
-#[allow(dead_code)]
 pub(crate) fn mutate_constant_in_place<T: Float, Ops, const D: usize>(
     rng: &mut Rng,
     expr: &mut PostfixExpr<T, Ops, D>,
@@ -216,34 +214,26 @@ pub(crate) fn mutate_feature_in_place<T, Ops, const D: usize>(
     rng: &mut Rng,
     expr: &mut PostfixExpr<T, Ops, D>,
     n_features: usize,
-) -> bool {
+) {
     if n_features <= 1 {
-        return false;
+        return;
     }
     let idxs = var_node_indices(&expr.nodes);
     if idxs.is_empty() {
-        return false;
+        return;
     }
-    let node_i = idxs[usize_range(rng, 0..idxs.len())];
-    let PNode::Var { feature } = expr.nodes[node_i] else {
-        return false;
+    let node_i = rng.choice(idxs).unwrap();
+    let PNode::Var { ref mut feature } = &mut expr.nodes[node_i] else {
+        unreachable!("expected var node");
     };
-    let old = usize::from(feature);
-    if old >= n_features {
-        return false;
-    }
+    let old = usize::from(*feature);
+    assert!(old < n_features, "feature index out of bounds");
+    let new_feature = usize_range_excl(rng, 0..n_features, old);
+    *feature = new_feature as u16;
+}
 
-    for _ in 0..8 {
-        let new_feature = usize_range(rng, 0..n_features);
-        if new_feature != old {
-            let new_u16: u16 = new_feature
-                .try_into()
-                .unwrap_or_else(|_| panic!("too many features to index in u16"));
-            expr.nodes[node_i] = PNode::Var { feature: new_u16 };
-            return true;
-        }
-    }
-    false
+pub(crate) fn is_swappable_op(node: &PNode) -> bool {
+    matches!(node, PNode::Op { arity, .. } if *arity > 1)
 }
 
 pub(crate) fn swap_operands_in_place<T, Ops, const D: usize>(rng: &mut Rng, expr: &mut PostfixExpr<T, Ops, D>) -> bool {
@@ -251,22 +241,31 @@ pub(crate) fn swap_operands_in_place<T, Ops, const D: usize>(rng: &mut Rng, expr
         .nodes
         .iter()
         .enumerate()
-        .filter_map(|(i, n)| matches!(n, PNode::Op { arity: 2, .. }).then_some(i))
+        .filter_map(|(i, n)| is_swappable_op(n).then_some(i))
         .collect();
     if idxs.is_empty() {
         return false;
     }
     let sizes = node_utils::subtree_sizes(&expr.nodes);
-    let root_idx = idxs[usize_range(rng, 0..idxs.len())];
-    let PNode::Op { op, .. } = expr.nodes[root_idx] else {
-        return false;
+    let root_idx = rng.choice(idxs).unwrap();
+    let PNode::Op { op, arity: arity_u8 } = expr.nodes[root_idx] else {
+        unreachable!("expected swappable op");
     };
+    let arity = arity_u8 as usize;
     let (sub_start, sub_end) = node_utils::subtree_range(&sizes, root_idx);
-    let child = child_ranges(&sizes, root_idx, 2);
+    let child = child_ranges(&sizes, root_idx, arity);
+
+    // Choose two distinct child slots uniformly and swap them.
+    let i = usize_range(rng, 0..arity);
+    let j = usize_range_excl(rng, 0..arity, i);
+
+    let mut positions: Vec<usize> = (0..arity).collect();
+    positions.swap(i, j);
     let mut new_sub: Vec<PNode> = Vec::with_capacity(sub_end + 1 - sub_start);
-    new_sub.extend_from_slice(&expr.nodes[child[1].0..=child[1].1]);
-    new_sub.extend_from_slice(&expr.nodes[child[0].0..=child[0].1]);
-    new_sub.push(PNode::Op { arity: 2, op });
+    for pos in positions {
+        new_sub.extend_from_slice(&expr.nodes[child[pos].0..=child[pos].1]);
+    }
+    new_sub.push(PNode::Op { arity: arity as u8, op });
     expr.nodes.splice(sub_start..=sub_end, new_sub);
     true
 }

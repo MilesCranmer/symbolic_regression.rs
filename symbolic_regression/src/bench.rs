@@ -121,7 +121,7 @@ pub fn constant_opt_linear_env() -> ConstantOptLinearEnv {
 
 pub fn run_constant_opt_linear(env: &ConstantOptLinearEnv) -> (bool, f64, Vec<f64>) {
     let expr = build_linear_expr_for_constant_optimization();
-    let mut member = PopMember::from_expr(MemberId(0), None, 0, expr, env.dataset.n_features);
+    let mut member = PopMember::from_expr(MemberId(0), None, expr, env.dataset.n_features, &env.options);
     let mut evaluator = Evaluator::new(env.dataset.n_rows);
     let mut grad_ctx = dynamic_expressions::GradContext::new(env.dataset.n_rows);
     let baseline_loss = if env.options.use_baseline {
@@ -133,7 +133,6 @@ pub fn run_constant_opt_linear(env: &ConstantOptLinearEnv) -> (bool, f64, Vec<f6
     let _ = member.evaluate(&full_dataset, &env.options, &mut evaluator);
 
     let mut rng = Rng::with_seed(0);
-    let mut next_birth = 1000u64;
 
     let (improved, evals) = optimize_constants(
         &mut rng,
@@ -143,7 +142,6 @@ pub fn run_constant_opt_linear(env: &ConstantOptLinearEnv) -> (bool, f64, Vec<f6
             options: &env.options,
             evaluator: &mut evaluator,
             grad_ctx: &mut grad_ctx,
-            next_birth: &mut next_birth,
         },
     );
 

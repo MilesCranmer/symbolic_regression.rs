@@ -1,22 +1,13 @@
 use num_traits::Float;
 
-use crate::expression::ExprExt;
 use crate::pop_member::PopMember;
 
-pub struct Population<T: Float, Ops, const D: usize, E = dynamic_expressions::PostfixExpr<T, Ops, D>>
-where
-    Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: ExprExt<T, Ops, D>,
-{
-    pub members: Vec<PopMember<T, Ops, D, E>>,
+pub struct Population<T: Float, Ops, const D: usize> {
+    pub members: Vec<PopMember<T, Ops, D>>,
 }
 
-impl<T: Float, Ops, const D: usize, E> Population<T, Ops, D, E>
-where
-    Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: ExprExt<T, Ops, D>,
-{
-    pub fn new(members: Vec<PopMember<T, Ops, D, E>>) -> Self {
+impl<T: Float, Ops, const D: usize> Population<T, Ops, D> {
+    pub fn new(members: Vec<PopMember<T, Ops, D>>) -> Self {
         Self { members }
     }
 
@@ -67,12 +58,12 @@ where
         (i1, i2)
     }
 
-    pub fn replace_oldest(&mut self, child: PopMember<T, Ops, D, E>) {
+    pub fn replace_oldest(&mut self, child: PopMember<T, Ops, D>) {
         let idx = self.oldest_index();
         self.members[idx] = child;
     }
 
-    pub fn replace_two_oldest(&mut self, a: PopMember<T, Ops, D, E>, b: PopMember<T, Ops, D, E>) {
+    pub fn replace_two_oldest(&mut self, a: PopMember<T, Ops, D>, b: PopMember<T, Ops, D>) {
         let (i1, i2) = self.two_oldest_indices();
         self.members[i1] = a;
         self.members[i2] = b;

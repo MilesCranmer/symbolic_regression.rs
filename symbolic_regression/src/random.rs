@@ -4,6 +4,19 @@ pub(crate) fn usize_range(rng: &mut fastrand::Rng, range: Range<usize>) -> usize
     rng.usize(range)
 }
 
+pub(crate) fn usize_range_excl(rng: &mut fastrand::Rng, range: Range<usize>, exclude: usize) -> usize {
+    assert!(range.start < range.end);
+    let len = range.end - range.start;
+    assert!(len > 1);
+    if exclude < range.start || exclude >= range.end {
+        usize_range(rng, range)
+    } else {
+        let exclude_idx = exclude - range.start;
+        let r = rng.usize(0..(len - 1));
+        range.start + if r >= exclude_idx { r + 1 } else { r }
+    }
+}
+
 pub(crate) fn usize_range_inclusive(rng: &mut fastrand::Rng, range: RangeInclusive<usize>) -> usize {
     let (start, end) = range.into_inner();
     if start >= end {

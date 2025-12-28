@@ -31,16 +31,12 @@ fn sample_tournament_place(rng: &mut Rng, n: usize, p: f32) -> usize {
     weighted_index(rng, &weights) + 1
 }
 
-pub fn best_of_sample<T: Float, Ops, const D: usize, E>(
+pub fn best_of_sample<T: Float, Ops, const D: usize>(
     rng: &mut Rng,
-    pop: &Population<T, Ops, D, E>,
+    pop: &Population<T, Ops, D>,
     stats: &RunningSearchStatistics,
     options: &Options<T, D>,
-) -> PopMember<T, Ops, D, E>
-where
-    Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: crate::expression::ExprExt<T, Ops, D>,
-{
+) -> PopMember<T, Ops, D> {
     let n = options.tournament_selection_n.min(pop.len());
     let indices = sample_indices(rng, pop.len(), n);
 

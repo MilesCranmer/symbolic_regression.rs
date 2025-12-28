@@ -52,7 +52,7 @@ fn next_generation_fails_constraints_after_retries() {
     };
 
     let mut evaluator = Evaluator::<T, D>::new(dataset.n_rows);
-    let mut member = PopMember::from_expr(MemberId(0), None, 0, leaf_expr(), dataset.n_features);
+    let mut member = PopMember::from_expr_with_birth(MemberId(0), None, 0, leaf_expr(), dataset.n_features);
     let baseline_loss = if options.use_baseline {
         crate::loss_functions::baseline_loss_from_zero_expression::<T, TestOps, D>(&dataset, options.loss.as_ref())
     } else {
@@ -66,8 +66,7 @@ fn next_generation_fails_constraints_after_retries() {
     stats.normalize();
 
     let mut next_id = 1u64;
-    let mut next_birth = 1u64;
-    let (_baby, accepted, _evals) = mutate::next_generation(
+    let (_baby, accepted, _evals) = mutate::next_generation::<T, TestOps, D>(
         &member,
         mutate::NextGenerationCtx {
             rng: &mut rng,
@@ -78,7 +77,6 @@ fn next_generation_fails_constraints_after_retries() {
             options: &options,
             evaluator: &mut evaluator,
             next_id: &mut next_id,
-            next_birth: &mut next_birth,
             _ops: core::marker::PhantomData,
         },
     );
@@ -128,7 +126,7 @@ fn reg_evol_cycle_skips_replacement_when_configured() {
         None
     };
     let full_dataset = TaggedDataset::new(&dataset, baseline_loss);
-    let member = PopMember::from_expr(MemberId(0), None, 0, leaf_expr(), dataset.n_features);
+    let member = PopMember::from_expr_with_birth(MemberId(0), None, 0, leaf_expr(), dataset.n_features);
     let mut pop = Population::new(vec![member]);
 
     let mut rng = Rng::with_seed(0);
@@ -136,7 +134,7 @@ fn reg_evol_cycle_skips_replacement_when_configured() {
     stats.normalize();
 
     let mut next_id = 1u64;
-    let mut next_birth = 1u64;
+    let controller = crate::stop_controller::StopController::from_options(&options);
     let ctx = regularized_evolution::RegEvolCtx::<T, TestOps, D> {
         rng: &mut rng,
         dataset: full_dataset,
@@ -144,12 +142,12 @@ fn reg_evol_cycle_skips_replacement_when_configured() {
         options: &options,
         evaluator: &mut evaluator,
         next_id: &mut next_id,
-        next_birth: &mut next_birth,
+        controller: &controller,
         temperature: 1.0,
         curmaxsize: 1,
         _ops: core::marker::PhantomData,
     };
 
-    regularized_evolution::reg_evol_cycle(&mut pop, ctx);
+    regularized_evolution::reg_evol_cycle::<T, TestOps, D>(&mut pop, ctx);
     assert_eq!(pop.members.len(), 1);
 }

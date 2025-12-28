@@ -383,13 +383,9 @@ fn eval_member_on_dataset(
         check_finite: true,
         early_exit: false,
     };
-    let plan0 = m
-        .plans
-        .first()
-        .ok_or_else(|| JsValue::from_str("missing evaluation plan"))?;
     let ok = eval_plan_array_into::<f64, BuiltinOpsF64, 3>(
         &mut yhat,
-        plan0,
+        &m.plan,
         &m.expr,
         dataset.x.view(),
         &mut scratch,

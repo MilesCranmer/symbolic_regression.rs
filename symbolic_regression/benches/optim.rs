@@ -176,7 +176,7 @@ fn make_population(
     let mut members = Vec::with_capacity(pop_size);
     for i in 0..pop_size {
         let expr = random_expr::<Ops, D, _>(&mut rng, &options.operators, dataset.n_features, tree_size);
-        let mut member = PopMember::from_expr(MemberId(i as u64), None, i as u64, expr, dataset.n_features);
+        let mut member = PopMember::from_expr(MemberId(i as u64), None, expr, dataset.n_features, options);
         let _ = member.evaluate(&tagged, options, &mut evaluator);
         members.push(member);
     }
@@ -249,10 +249,9 @@ fn bench_utils(c: &mut Criterion) {
                     let evaluator = Evaluator::new(dataset.n_rows);
                     let rng = FastRand::with_seed(6);
                     let next_id = population.len() as u64;
-                    let next_birth = population.len() as u64;
-                    (tagged, evaluator, rng, next_id, next_birth)
+                    (tagged, evaluator, rng, next_id)
                 },
-                |(tagged, mut evaluator, mut rng, mut next_id, mut next_birth)| {
+                |(tagged, mut evaluator, mut rng, mut next_id)| {
                     for member in population.members.iter() {
                         let ctx = NextGenerationCtx {
                             rng: &mut rng,
@@ -263,7 +262,6 @@ fn bench_utils(c: &mut Criterion) {
                             options: &options,
                             evaluator: &mut evaluator,
                             next_id: &mut next_id,
-                            next_birth: &mut next_birth,
                             _ops: PhantomData::<Ops>,
                         };
                         let _ = next_generation(member, ctx);
@@ -283,7 +281,7 @@ fn bench_utils(c: &mut Criterion) {
         let mut members = Vec::with_capacity(10);
         for i in 0..10 {
             let expr = random_expr::<Ops, D, _>(&mut expr_rng, &options.operators, dataset.n_features, 20);
-            let member = PopMember::from_expr(MemberId(i as u64), None, i as u64, expr, dataset.n_features);
+            let member = PopMember::from_expr(MemberId(i as u64), None, expr, dataset.n_features, &options);
             members.push(member);
         }
 
@@ -291,7 +289,6 @@ fn bench_utils(c: &mut Criterion) {
             b.iter(|| {
                 let mut evaluator = Evaluator::new(dataset.n_rows);
                 let mut grad_ctx = dynamic_expressions::GradContext::<T, D>::new(dataset.n_rows);
-                let mut next_birth = 0u64;
 
                 for member in &members {
                     let mut m = member.clone();
@@ -300,7 +297,6 @@ fn bench_utils(c: &mut Criterion) {
                         options: &options,
                         evaluator: &mut evaluator,
                         grad_ctx: &mut grad_ctx,
-                        next_birth: &mut next_birth,
                     };
                     let _ = optimize_constants(&mut rng, &mut m, ctx);
                 }
