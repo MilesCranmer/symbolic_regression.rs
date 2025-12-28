@@ -7,7 +7,7 @@ use progress_bars::SearchProgress;
 
 use crate::adaptive_parsimony::RunningSearchStatistics;
 use crate::dataset::{Dataset, TaggedDataset};
-use crate::expression::{ExpressionSpec, SRExpression, TreeSpec};
+use crate::expression::{ConstantOptimizable, ExprExt, ExpressionSpec, TreeSpec};
 use crate::hall_of_fame::HallOfFame;
 use crate::loss_functions::baseline_loss_from_zero_expression;
 use crate::options::Options;
@@ -19,7 +19,7 @@ use crate::{migration, progress_bars, single_iteration, warmup};
 pub struct SearchResult<T: Float + AddAssign, Ops, const D: usize, E = dynamic_expressions::PostfixExpr<T, Ops, D>>
 where
     Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: SRExpression<T, Ops, D>,
+    E: ExprExt<T, Ops, D>,
 {
     pub hall_of_fame: HallOfFame<T, Ops, D, E>,
     pub best: PopMember<T, Ops, D, E>,
@@ -51,7 +51,7 @@ impl SearchCounters {
 struct SearchTaskResult<T: Float + AddAssign, Ops, const D: usize, E>
 where
     Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: SRExpression<T, Ops, D>,
+    E: ExprExt<T, Ops, D>,
 {
     pop_idx: usize,
     curmaxsize: usize,
@@ -64,7 +64,7 @@ where
 pub(crate) struct PopState<T: Float + AddAssign, Ops, const D: usize, E>
 where
     Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: SRExpression<T, Ops, D>,
+    E: ExprExt<T, Ops, D>,
 {
     pub(crate) pop: Population<T, Ops, D, E>,
     pub(crate) evaluator: Evaluator<T, D>,
@@ -78,7 +78,7 @@ where
 impl<T: Float + AddAssign, Ops, const D: usize, E> PopState<T, Ops, D, E>
 where
     Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: SRExpression<T, Ops, D>,
+    E: ExprExt<T, Ops, D>,
 {
     fn run_iteration_phase<'a, F, Ret>(
         &'a mut self,
@@ -139,7 +139,7 @@ where
 struct PopPools<T: Float + AddAssign, Ops, const D: usize, E>
 where
     Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: SRExpression<T, Ops, D>,
+    E: ExprExt<T, Ops, D>,
 {
     pops: Vec<Option<PopState<T, Ops, D, E>>>,
     best_sub_pops: Vec<Vec<PopMember<T, Ops, D, E>>>,
@@ -150,7 +150,7 @@ where
 struct EquationSearchState<'a, T: Float + AddAssign, Ops, const D: usize, E>
 where
     Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: SRExpression<T, Ops, D>,
+    E: ExprExt<T, Ops, D>,
 {
     full_dataset: TaggedDataset<'a, T>,
     options: &'a Options<T, D>,
@@ -191,7 +191,7 @@ where
     T: Float + AddAssign + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + Send + Sync,
     Ops: dynamic_expressions::OperatorSet<T = T> + Send + Sync,
     S: ExpressionSpec<T, Ops, D>,
-    S::Expr: Display,
+    S::Expr: ConstantOptimizable<T, Ops, D> + Display,
 {
     equation_search_parallel_with_spec::<T, Ops, D, S>(dataset, options, spec)
 }
@@ -205,7 +205,7 @@ where
     T: Float + AddAssign + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + Send + Sync,
     Ops: dynamic_expressions::OperatorSet<T = T> + Send + Sync,
     S: ExpressionSpec<T, Ops, D>,
-    S::Expr: Display,
+    S::Expr: ConstantOptimizable<T, Ops, D> + Display,
 {
     let baseline_loss = if options.use_baseline {
         baseline_loss_from_zero_expression::<T, Ops, D>(dataset, options.loss.as_ref())
@@ -273,7 +273,7 @@ where
 pub struct SearchEngine<T: Float + AddAssign, Ops, const D: usize, E = dynamic_expressions::PostfixExpr<T, Ops, D>>
 where
     Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: SRExpression<T, Ops, D>,
+    E: ExprExt<T, Ops, D>,
 {
     dataset: Dataset<T>,
     baseline_loss: Option<T>,
@@ -302,7 +302,7 @@ where
     pub fn new_with_spec<S>(dataset: Dataset<T>, options: Options<T, D>, spec: S) -> SearchEngine<T, Ops, D, S::Expr>
     where
         S: ExpressionSpec<T, Ops, D>,
-        S::Expr: Display,
+        S::Expr: ConstantOptimizable<T, Ops, D> + Display,
     {
         let baseline_loss = if options.use_baseline {
             baseline_loss_from_zero_expression::<T, Ops, D>(&dataset, options.loss.as_ref())
@@ -479,7 +479,7 @@ fn execute_task<T, Ops, const D: usize, E>(
 where
     T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + AddAssign,
     Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: SRExpression<T, Ops, D>,
+    E: ExprExt<T, Ops, D> + ConstantOptimizable<T, Ops, D>,
 {
     let (evals1, best_seen) =
         pop_state.run_iteration_phase(full_dataset, options, curmaxsize, &stats, |pop, ctx, eval_dataset| {
@@ -514,7 +514,7 @@ fn apply_task_result<T, Ops, const D: usize, E>(
 ) where
     T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + AddAssign + Send + Sync,
     Ops: dynamic_expressions::OperatorSet<T = T> + Send + Sync,
-    E: SRExpression<T, Ops, D> + Display,
+    E: ExprExt<T, Ops, D> + Display,
 {
     pools.total_evals = pools.total_evals.saturating_add(res.evals);
 
@@ -578,7 +578,7 @@ fn run_scoped_search<'scope, 'env, T, Ops, const D: usize, E>(
     'env: 'scope,
     T: Float + AddAssign + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + Send + Sync + 'scope,
     Ops: dynamic_expressions::OperatorSet<T = T> + Send + Sync + 'scope,
-    E: SRExpression<T, Ops, D> + Display + 'scope,
+    E: ExprExt<T, Ops, D> + ConstantOptimizable<T, Ops, D> + Display + 'scope,
 {
     let full_dataset = state.full_dataset;
     let options = state.options;

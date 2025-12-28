@@ -6,7 +6,7 @@ use num_traits::Float;
 use crate::adaptive_parsimony::RunningSearchStatistics;
 use crate::constant_optimization::{OptimizeConstantsCtx, optimize_constants};
 use crate::dataset::TaggedDataset;
-use crate::expression::SRExpression;
+use crate::expression::{ConstantOptimizable, ExprExt};
 use crate::loss_functions::loss_to_cost;
 use crate::mutation_functions;
 use crate::options::{MutationWeights, Options};
@@ -70,14 +70,14 @@ pub fn condition_mutation_weights<T: Float + AddAssign, Ops, const D: usize, E>(
     nfeatures: usize,
 ) where
     Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: SRExpression<T, Ops, D>,
+    E: ExprExt<T, Ops, D>,
 {
     if member.expr.is_leaf() {
         weights.mutate_operator = 0.0;
         weights.swap_operands = 0.0;
         weights.delete_node = 0.0;
         weights.simplify = 0.0;
-        if member.expr.count_scalar_constants() == 0 {
+        if member.expr.n_scalars() == 0 {
             weights.optimize = 0.0;
             weights.mutate_constant = 0.0;
         } else {
@@ -107,10 +107,7 @@ pub fn condition_mutation_weights<T: Float + AddAssign, Ops, const D: usize, E>(
         weights.simplify = 0.0;
     }
 
-    if !options.should_optimize_constants
-        || options.optimizer_probability == 0.0
-        || member.expr.count_scalar_constants() == 0
-    {
+    if !options.should_optimize_constants || options.optimizer_probability == 0.0 || member.expr.n_scalars() == 0 {
         weights.optimize = 0.0;
     }
 }
@@ -145,7 +142,7 @@ struct MutationOutcome<E> {
 struct MutationApplyCtx<'a, 'd, T: Float + AddAssign, Ops, const D: usize, E>
 where
     Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: SRExpression<T, Ops, D>,
+    E: ExprExt<T, Ops, D> + ConstantOptimizable<T, Ops, D>,
 {
     rng: &'a mut Rng,
     member: &'a PopMember<T, Ops, D, E>,
@@ -163,7 +160,7 @@ impl MutationChoice {
     where
         T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + AddAssign,
         Ops: dynamic_expressions::OperatorSet<T = T>,
-        E: SRExpression<T, Ops, D>,
+        E: ExprExt<T, Ops, D> + ConstantOptimizable<T, Ops, D>,
     {
         let MutationApplyCtx {
             rng,
@@ -185,12 +182,8 @@ impl MutationChoice {
             },
             MutationChoice::MutateOperator => MutationOutcome {
                 mutated: {
-                    let (mut tree, mctx) = expr.get_contents_for_mutation(rng);
-                    let mutated = mutation_functions::mutate_operator_in_place(rng, &mut tree, &options.operators);
-                    if mutated {
-                        expr = expr.with_contents_for_mutation(tree, mctx);
-                    }
-                    mutated
+                    let i = rng.usize(0..expr.n_trees());
+                    mutation_functions::mutate_operator_in_place(rng, expr.tree_mut(i), &options.operators)
                 },
                 expr,
                 evals: 0.0,
@@ -198,13 +191,9 @@ impl MutationChoice {
             },
             MutationChoice::MutateFeature => MutationOutcome {
                 mutated: {
-                    let (mut tree, mctx) = expr.get_contents_for_mutation(rng);
-                    let nf = expr.nfeatures_for_mutation(mctx, n_features);
-                    let mutated = mutation_functions::mutate_feature_in_place(rng, &mut tree, nf);
-                    if mutated {
-                        expr = expr.with_contents_for_mutation(tree, mctx);
-                    }
-                    mutated
+                    let i = rng.usize(0..expr.n_trees());
+                    let nf = expr.tree_nfeatures(i, n_features);
+                    mutation_functions::mutate_feature_in_place(rng, expr.tree_mut(i), nf)
                 },
                 expr,
                 evals: 0.0,
@@ -212,12 +201,8 @@ impl MutationChoice {
             },
             MutationChoice::SwapOperands => MutationOutcome {
                 mutated: {
-                    let (mut tree, mctx) = expr.get_contents_for_mutation(rng);
-                    let mutated = mutation_functions::swap_operands_in_place(rng, &mut tree);
-                    if mutated {
-                        expr = expr.with_contents_for_mutation(tree, mctx);
-                    }
-                    mutated
+                    let i = rng.usize(0..expr.n_trees());
+                    mutation_functions::swap_operands_in_place(rng, expr.tree_mut(i))
                 },
                 expr,
                 evals: 0.0,
@@ -225,12 +210,8 @@ impl MutationChoice {
             },
             MutationChoice::RotateTree => MutationOutcome {
                 mutated: {
-                    let (mut tree, mctx) = expr.get_contents_for_mutation(rng);
-                    let mutated = mutation_functions::rotate_tree_in_place(rng, &mut tree);
-                    if mutated {
-                        expr = expr.with_contents_for_mutation(tree, mctx);
-                    }
-                    mutated
+                    let i = rng.usize(0..expr.n_trees());
+                    mutation_functions::rotate_tree_in_place(rng, expr.tree_mut(i))
                 },
                 expr,
                 evals: 0.0,
@@ -238,13 +219,9 @@ impl MutationChoice {
             },
             MutationChoice::AddNode => MutationOutcome {
                 mutated: {
-                    let (mut tree, mctx) = expr.get_contents_for_mutation(rng);
-                    let nf = expr.nfeatures_for_mutation(mctx, n_features);
-                    let mutated = mutation_functions::add_node_in_place(rng, &mut tree, &options.operators, nf);
-                    if mutated {
-                        expr = expr.with_contents_for_mutation(tree, mctx);
-                    }
-                    mutated
+                    let i = rng.usize(0..expr.n_trees());
+                    let nf = expr.tree_nfeatures(i, n_features);
+                    mutation_functions::add_node_in_place(rng, expr.tree_mut(i), &options.operators, nf)
                 },
                 expr,
                 evals: 0.0,
@@ -252,13 +229,9 @@ impl MutationChoice {
             },
             MutationChoice::InsertNode => MutationOutcome {
                 mutated: {
-                    let (mut tree, mctx) = expr.get_contents_for_mutation(rng);
-                    let nf = expr.nfeatures_for_mutation(mctx, n_features);
-                    let mutated = mutation_functions::insert_random_op_in_place(rng, &mut tree, &options.operators, nf);
-                    if mutated {
-                        expr = expr.with_contents_for_mutation(tree, mctx);
-                    }
-                    mutated
+                    let i = rng.usize(0..expr.n_trees());
+                    let nf = expr.tree_nfeatures(i, n_features);
+                    mutation_functions::insert_random_op_in_place(rng, expr.tree_mut(i), &options.operators, nf)
                 },
                 expr,
                 evals: 0.0,
@@ -266,12 +239,8 @@ impl MutationChoice {
             },
             MutationChoice::DeleteNode => MutationOutcome {
                 mutated: {
-                    let (mut tree, mctx) = expr.get_contents_for_mutation(rng);
-                    let mutated = mutation_functions::delete_random_op_in_place(rng, &mut tree);
-                    if mutated {
-                        expr = expr.with_contents_for_mutation(tree, mctx);
-                    }
-                    mutated
+                    let i = rng.usize(0..expr.n_trees());
+                    mutation_functions::delete_random_op_in_place(rng, expr.tree_mut(i))
                 },
                 expr,
                 evals: 0.0,
@@ -292,7 +261,7 @@ impl MutationChoice {
                 let target_size = usize_range_inclusive(rng, 1..=max_size);
                 MutationOutcome {
                     mutated: true,
-                    expr: expr.randomize(rng, &options.operators, n_features, target_size, options),
+                    expr: expr.randomize(rng, &options.operators, n_features, target_size),
                     evals: 0.0,
                     return_immediately: false,
                 }
@@ -312,7 +281,7 @@ impl MutationChoice {
                 let mut dummy_next_birth = orig_birth;
 
                 // Preserve cached plan/loss/cost as the starting point.
-                tmp.plan = member.plan.clone();
+                tmp.plans = member.plans.clone();
                 tmp.complexity = member.complexity;
                 tmp.loss = member.loss;
                 tmp.cost = member.cost;
@@ -353,7 +322,7 @@ pub fn next_generation<
 ) -> (PopMember<T, Ops, D, E>, bool, f64)
 where
     Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: SRExpression<T, Ops, D>,
+    E: ExprExt<T, Ops, D> + ConstantOptimizable<T, Ops, D>,
 {
     let NextGenerationCtx {
         rng,
@@ -487,7 +456,7 @@ pub fn crossover_generation<T: Float + AddAssign, Ops, const D: usize, E>(
 ) -> CrossoverGenerationResult<T, Ops, D, E>
 where
     Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: SRExpression<T, Ops, D>,
+    E: ExprExt<T, Ops, D>,
 {
     let CrossoverCtx {
         rng,
@@ -503,10 +472,10 @@ where
     let max_tries = 10;
     let mut tries = 0;
     loop {
-        let (t1, c1) = member1.expr.get_contents_for_mutation(rng);
-        let (t2, c2) = member2.expr.get_contents_for_mutation(rng);
-        let nf1 = member1.expr.nfeatures_for_mutation(c1, dataset.n_features);
-        let nf2 = member2.expr.nfeatures_for_mutation(c2, dataset.n_features);
+        let i1 = rng.usize(0..member1.expr.n_trees());
+        let i2 = rng.usize(0..member2.expr.n_trees());
+        let nf1 = member1.expr.tree_nfeatures(i1, dataset.n_features);
+        let nf2 = member2.expr.tree_nfeatures(i2, dataset.n_features);
         if nf1 != nf2 {
             tries += 1;
             if tries >= max_tries {
@@ -517,9 +486,11 @@ where
             continue;
         }
 
-        let (c1_tree, c2_tree) = mutation_functions::crossover_trees(rng, &t1, &t2);
-        let mut c1_expr = member1.expr.with_contents_for_mutation(c1_tree, c1);
-        let mut c2_expr = member2.expr.with_contents_for_mutation(c2_tree, c2);
+        let (c1_tree, c2_tree) = mutation_functions::crossover_trees(rng, member1.expr.tree(i1), member2.expr.tree(i2));
+        let mut c1_expr = member1.expr.clone();
+        let mut c2_expr = member2.expr.clone();
+        *c1_expr.tree_mut(i1) = c1_tree;
+        *c2_expr.tree_mut(i2) = c2_tree;
         c1_expr.compress_constants();
         c2_expr.compress_constants();
         tries += 1;

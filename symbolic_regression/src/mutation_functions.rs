@@ -126,6 +126,7 @@ fn op_indices(nodes: &[PNode]) -> Vec<usize> {
         .collect()
 }
 
+#[allow(dead_code)]
 fn const_node_indices(nodes: &[PNode]) -> Vec<usize> {
     nodes
         .iter()
@@ -155,6 +156,7 @@ fn child_ranges(sizes: &[usize], root_idx: usize, arity: usize) -> Vec<(usize, u
     out
 }
 
+#[allow(dead_code)]
 pub(crate) fn mutate_constant_in_place<T: Float, Ops, const D: usize>(
     rng: &mut Rng,
     expr: &mut PostfixExpr<T, Ops, D>,

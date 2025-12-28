@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 use fastrand::Rng;
 use num_traits::Float;
 
-use crate::expression::SRExpression;
+use crate::expression::ExprExt;
 use crate::pop_member::{MemberId, PopMember};
 use crate::population::Population;
 use crate::random::{choose, poisson_sample, usize_range};
@@ -14,7 +14,7 @@ pub fn best_sub_pop<T: Float, Ops, const D: usize, E>(
 ) -> Vec<PopMember<T, Ops, D, E>>
 where
     Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: SRExpression<T, Ops, D>,
+    E: ExprExt<T, Ops, D>,
 {
     let mut idxs: Vec<usize> = (0..pop.len()).collect();
     idxs.sort_by(|&i, &j| {
@@ -36,7 +36,7 @@ pub fn migrate_into<T: Float, Ops, const D: usize, E>(
     next_birth: &mut u64,
 ) where
     Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: SRExpression<T, Ops, D>,
+    E: ExprExt<T, Ops, D>,
 {
     if migrants.is_empty() {
         return;

@@ -39,7 +39,9 @@ pub use complexity::compute_complexity;
 pub use dataset::{Dataset, TaggedDataset};
 #[doc(hidden)]
 pub use dynamic_expressions::custom_opset as __dynamic_expressions_custom_opset;
-pub use expression::{ExpressionSpec, SRExpression, TreeSpec};
+pub use expression::{
+    ConstantOptimizable, Evaluatable, ExprExt, Expression, ExpressionSpec, HasTrees, ScalarConstants, TreeSpec,
+};
 pub use hall_of_fame::HallOfFame;
 pub use loss_functions::{LossKind, epsilon_insensitive, huber, log_cosh, lp, mae, make_loss, mse, quantile, rmse};
 pub use operator_library::OperatorLibrary;
@@ -47,9 +49,7 @@ pub use operators::{OperatorSelectError, Operators};
 pub use options::{MutationWeights, Options, OutputStyle, WasmOptionsShim};
 pub use pop_member::{MemberId, PopMember};
 pub use search_utils::{SearchEngine, SearchResult, equation_search, equation_search_with_spec};
-pub use template::{
-    ParamVector, TemplateContext, TemplateExpression, TemplateSpec, TemplateStructure, ValidVec, ValidVecView,
-};
+pub use template::{TemplateContext, TemplateExpression, TemplateSpec, TemplateStructure, string_template_pretty};
 #[cfg(feature = "bench")]
 pub use {
     crate::mutation_functions::{insert_random_op_in_place, random_expr, random_expr_append_ops, rotate_tree_in_place},

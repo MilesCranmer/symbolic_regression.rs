@@ -31,7 +31,7 @@ pub fn reg_evol_cycle<T, Ops, const D: usize, E>(
 where
     T: Float + FromPrimitive + ToPrimitive + AddAssign,
     Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: crate::expression::SRExpression<T, Ops, D>,
+    E: crate::expression::ExprExt<T, Ops, D> + crate::expression::ConstantOptimizable<T, Ops, D>,
 {
     let mut num_evals = 0.0;
     let n_evol_cycles = ((pop.len() as f64) / (ctx.options.tournament_selection_n as f64)).ceil() as usize;

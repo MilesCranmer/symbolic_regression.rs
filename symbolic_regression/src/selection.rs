@@ -39,7 +39,7 @@ pub fn best_of_sample<T: Float, Ops, const D: usize, E>(
 ) -> PopMember<T, Ops, D, E>
 where
     Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: crate::expression::SRExpression<T, Ops, D>,
+    E: crate::expression::ExprExt<T, Ops, D>,
 {
     let n = options.tournament_selection_n.min(pop.len());
     let indices = sample_indices(rng, pop.len(), n);

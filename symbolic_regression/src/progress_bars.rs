@@ -8,7 +8,7 @@ mod imp {
     use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
     use num_traits::Float;
 
-    use crate::expression::SRExpression;
+    use crate::expression::ExprExt;
     use crate::hall_of_fame::HallOfFame;
     use crate::options::{Options, OutputStyle};
 
@@ -92,7 +92,7 @@ mod imp {
         ) where
             T: Float + num_traits::ToPrimitive + Display,
             Ops: OperatorSet<T = T>,
-            E: SRExpression<T, Ops, D> + Display,
+            E: ExprExt<T, Ops, D> + Display,
         {
             if !self.show {
                 return;
@@ -120,7 +120,7 @@ mod imp {
     struct ProgressMsgCtx<'a, T: Float, Ops, const D: usize, E>
     where
         Ops: OperatorSet<T = T>,
-        E: SRExpression<T, Ops, D> + Display,
+        E: ExprExt<T, Ops, D> + Display,
     {
         pb: &'a ProgressBar,
         hall: &'a HallOfFame<T, Ops, D, E>,
@@ -136,7 +136,7 @@ mod imp {
     where
         T: Float + num_traits::ToPrimitive + Display,
         Ops: OperatorSet<T = T>,
-        E: SRExpression<T, Ops, D> + Display,
+        E: ExprExt<T, Ops, D> + Display,
     {
         let ProgressMsgCtx {
             pb,
@@ -211,7 +211,7 @@ mod imp {
     where
         T: Float + num_traits::ToPrimitive + Display,
         Ops: OperatorSet<T = T>,
-        E: SRExpression<T, Ops, D> + Display,
+        E: ExprExt<T, Ops, D> + Display,
     {
         let terminal_width = terminal_width.max(80);
         let raw_border = "─".repeat(terminal_width.saturating_sub(1));

@@ -1,12 +1,12 @@
 use num_traits::Float;
 
-use crate::expression::SRExpression;
+use crate::expression::ExprExt;
 use crate::pop_member::PopMember;
 
 pub struct Population<T: Float, Ops, const D: usize, E = dynamic_expressions::PostfixExpr<T, Ops, D>>
 where
     Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: SRExpression<T, Ops, D>,
+    E: ExprExt<T, Ops, D>,
 {
     pub members: Vec<PopMember<T, Ops, D, E>>,
 }
@@ -14,7 +14,7 @@ where
 impl<T: Float, Ops, const D: usize, E> Population<T, Ops, D, E>
 where
     Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: SRExpression<T, Ops, D>,
+    E: ExprExt<T, Ops, D>,
 {
     pub fn new(members: Vec<PopMember<T, Ops, D, E>>) -> Self {
         Self { members }

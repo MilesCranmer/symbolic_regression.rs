@@ -6,7 +6,7 @@ use num_traits::{Float, FromPrimitive, ToPrimitive};
 use crate::adaptive_parsimony::RunningSearchStatistics;
 use crate::constant_optimization::{OptimizeConstantsCtx, optimize_constants};
 use crate::dataset::TaggedDataset;
-use crate::expression::SRExpression;
+use crate::expression::{ConstantOptimizable, ExprExt};
 use crate::hall_of_fame::HallOfFame;
 use crate::options::Options;
 use crate::pop_member::Evaluator;
@@ -36,7 +36,7 @@ pub fn s_r_cycle<T, Ops, const D: usize, E>(
 where
     T: Float + FromPrimitive + ToPrimitive + AddAssign,
     Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: SRExpression<T, Ops, D>,
+    E: ExprExt<T, Ops, D> + ConstantOptimizable<T, Ops, D>,
 {
     let max_temp = 1.0;
     let min_temp = if ctx.options.annealing { 0.0 } else { 1.0 };
@@ -80,7 +80,7 @@ pub fn optimize_and_simplify_population<T, Ops, const D: usize, E>(
 where
     T: Float + FromPrimitive + ToPrimitive + AddAssign,
     Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: SRExpression<T, Ops, D>,
+    E: ExprExt<T, Ops, D> + ConstantOptimizable<T, Ops, D>,
 {
     let mut num_evals = 0.0;
 

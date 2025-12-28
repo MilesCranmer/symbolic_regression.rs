@@ -17,5 +17,5 @@ pub use crate::operators::Operators;
 pub use crate::options::{MutationWeights, Options};
 pub use crate::search_utils::{SearchResult, equation_search, equation_search_with_spec};
 pub use crate::template::{
-    ParamVector, TemplateContext, TemplateExpression, TemplateSpec, TemplateStructure, ValidVec, ValidVecView,
+    TemplateContext, TemplateExpression, TemplateSpec, TemplateStructure, string_template_pretty,
 };

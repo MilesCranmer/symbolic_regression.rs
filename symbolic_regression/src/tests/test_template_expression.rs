@@ -2,13 +2,13 @@ use dynamic_expressions::HasOp;
 use dynamic_expressions::node::PNode;
 use dynamic_expressions::operator_enum::builtin;
 use ndarray::{Array1, Array2};
-use num_traits::{Float, Zero};
+use num_traits::Zero;
 
 use super::common::{D, T, TestOps};
 use crate::operator_library::OperatorLibrary;
 use crate::pop_member::{Evaluator, MemberId, PopMember};
-use crate::template::{ParamVector, TemplateExpression, TemplateSpec, TemplateStructure, ValidVec};
-use crate::{Dataset, Options, SRExpression};
+use crate::template::{TemplateExpression, TemplateSpec, TemplateStructure};
+use crate::{Dataset, ExprExt, Options};
 
 #[test]
 fn template_expression_evaluates_and_matches_target() {
@@ -74,27 +74,25 @@ fn template_expression_evaluates_and_matches_target() {
         Default::default(),
     );
 
-    let structure = TemplateStructure::<T, TestOps, D>::new(vec![("f", 2), ("g", 1)], vec![("a", 1)], |ctx, x| {
-        let f = ctx.call("f", &[x[0], x[1]]);
-        let g = ctx.call("g", &[x[2]]);
-        if !f.valid || !g.valid {
-            return ValidVec {
-                x: vec![T::nan(); ctx.n_rows()],
-                valid: false,
-            };
-        }
-        let a0 = ctx.param("a").unwrap()[0];
-        let mut out = vec![T::zero(); ctx.n_rows()];
-        for (outv, (&fv, &gv)) in out.iter_mut().zip(f.x.iter().zip(g.x.iter())) {
-            *outv = fv + a0 * gv;
-        }
-        ValidVec { x: out, valid: true }
-    });
+    let structure = TemplateStructure::<T, TestOps, D>::new_fixed_inputs::<3, _>(
+        vec![("f", 2), ("g", 1)],
+        vec![("a", 1)],
+        |ctx, [x0, x1, x2]| {
+            let f = ctx.call("f", &[x0, x1]);
+            let g = ctx.call("g", &[x2]);
+            let a0 = ctx.param("a").unwrap()[0];
+            let mut out = vec![T::zero(); ctx.n_rows()];
+            for (dst, (&fv, &gv)) in out.iter_mut().zip(f.iter().zip(g.iter())) {
+                *dst = fv + a0 * gv;
+            }
+            out
+        },
+    );
 
     let template = TemplateExpression::<T, TestOps, D> {
         structure: std::sync::Arc::new(structure),
         trees: vec![f_tree, g_tree],
-        params: vec![ParamVector::new(vec![2.0])],
+        params: vec![vec![2.0]],
     };
 
     let spec = TemplateSpec::new(template.structure.clone());
@@ -110,5 +108,5 @@ fn template_expression_evaluates_and_matches_target() {
     assert!(member.expr.check_constraints(&options, options.maxsize));
 
     // Plan rebuild smoke test.
-    member.plan = member.expr.build_plan(dataset.n_features);
+    member.rebuild_plan(dataset.n_features);
 }

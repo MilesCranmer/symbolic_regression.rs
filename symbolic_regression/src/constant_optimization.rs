@@ -5,7 +5,7 @@ use fastrand::Rng;
 use num_traits::{Float, FromPrimitive, ToPrimitive};
 
 use crate::dataset::{Dataset, TaggedDataset};
-use crate::expression::SRExpression;
+use crate::expression::{ConstantOptimizable, Evaluatable, ExprExt, ScalarConstants};
 use crate::optim::{BackTracking, Objective, OptimOptions, bfgs_minimize, newton_1d_minimize};
 use crate::options::Options;
 use crate::pop_member::{Evaluator, PopMember};
@@ -26,6 +26,7 @@ impl<'a, T: Float + AddAssign, const D: usize> EvalWorkspace<'a, T, D> {
         evaluator: &'a mut Evaluator<T, D>,
         grad_ctx: &'a mut dynamic_expressions::GradContext<T, D>,
     ) -> Self {
+        evaluator.ensure_n_rows(dataset.n_rows);
         let eval_opts = EvalOptions {
             check_finite: true,
             early_exit: true,
@@ -39,13 +40,19 @@ impl<'a, T: Float + AddAssign, const D: usize> EvalWorkspace<'a, T, D> {
         }
     }
 
-    fn loss_only<Ops, E>(&mut self, plan: &E::Plan, expr: &E) -> Option<f64>
+    fn loss_only<Ops, E>(&mut self, plans: &[dynamic_expressions::EvalPlan<D>], expr: &E) -> Option<f64>
     where
         T: FromPrimitive + ToPrimitive,
         Ops: dynamic_expressions::OperatorSet<T = T>,
-        E: SRExpression<T, Ops, D>,
+        E: Evaluatable<T, Ops, D>,
     {
-        let ok = expr.eval_with_plan(plan, self.dataset.x.view(), self.evaluator, &self.eval_opts);
+        let ok = expr.eval_with_plans(
+            plans,
+            self.dataset.x.view(),
+            &mut self.evaluator.yhat,
+            &mut self.evaluator.scratch,
+            &self.eval_opts,
+        );
         if !ok {
             return None;
         }
@@ -71,11 +78,11 @@ impl<'a, T: Float + AddAssign, const D: usize> EvalWorkspace<'a, T, D> {
     where
         T: FromPrimitive + ToPrimitive,
         Ops: dynamic_expressions::OperatorSet<T = T>,
-        E: SRExpression<T, Ops, D>,
+        E: ScalarConstants<T, Ops, D> + ConstantOptimizable<T, Ops, D> + Send + Sync,
     {
-        let n_params = member.expr.count_scalar_constants();
+        let n_params = member.expr.n_scalars();
         let mut obj = ConstObjective {
-            plan: &member.plan,
+            plans: &member.plans,
             expr: &mut member.expr,
             workspace: self,
             tmp_t: vec![T::zero(); n_params],
@@ -93,9 +100,9 @@ impl<'a, T: Float + AddAssign, const D: usize> EvalWorkspace<'a, T, D> {
 struct ConstObjective<'plan, 'expr, 'work, 'data, T: Float + AddAssign, Ops, const D: usize, E>
 where
     Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: SRExpression<T, Ops, D>,
+    E: ScalarConstants<T, Ops, D> + ConstantOptimizable<T, Ops, D>,
 {
-    plan: &'plan E::Plan,
+    plans: &'plan [dynamic_expressions::EvalPlan<D>],
     expr: &'expr mut E,
     workspace: &'work mut EvalWorkspace<'data, T, D>,
     tmp_t: Vec<T>,
@@ -107,7 +114,7 @@ impl<'plan, 'expr, 'work, 'data, T, Ops, const D: usize, E> ConstObjective<'plan
 where
     T: Float + FromPrimitive + ToPrimitive + AddAssign,
     Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: SRExpression<T, Ops, D>,
+    E: ScalarConstants<T, Ops, D> + ConstantOptimizable<T, Ops, D>,
 {
     fn set_expr_params(&mut self, x: &[f64]) -> Option<()> {
         if self.tmp_t.len() != x.len() {
@@ -116,7 +123,7 @@ where
         for (dst, &src) in self.tmp_t.iter_mut().zip(x) {
             *dst = T::from_f64(src)?;
         }
-        self.expr.set_scalar_constants_flat(&self.tmp_t);
+        self.expr.unpack_scalars(&self.tmp_t);
         Some(())
     }
 }
@@ -126,19 +133,19 @@ impl<'plan, 'expr, 'work, 'data, T, Ops, const D: usize, E> Objective
 where
     T: Float + FromPrimitive + ToPrimitive + AddAssign,
     Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: SRExpression<T, Ops, D>,
+    E: ScalarConstants<T, Ops, D> + ConstantOptimizable<T, Ops, D>,
 {
     fn f_only(&mut self, x: &[f64], budget: &mut crate::optim::EvalBudget) -> Option<f64> {
         budget.f_calls += 1;
         self.set_expr_params(x)?;
-        self.workspace.loss_only::<Ops, E>(self.plan, self.expr)
+        self.workspace.loss_only::<Ops, E>(self.plans, self.expr)
     }
 
     fn fg(&mut self, x: &[f64], g_out: &mut [f64], budget: &mut crate::optim::EvalBudget) -> Option<f64> {
         budget.f_calls += 1;
         self.set_expr_params(x)?;
         self.expr.loss_and_grad(
-            self.plan,
+            self.plans,
             self.workspace.dataset,
             self.workspace.options,
             self.workspace.evaluator,
@@ -152,7 +159,7 @@ where
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn finite_diff_loss_and_grad<T, Ops, const D: usize, E>(
     expr: &mut E,
-    plan: &E::Plan,
+    plans: &[dynamic_expressions::EvalPlan<D>],
     dataset: &Dataset<T>,
     options: &Options<T, D>,
     evaluator: &mut Evaluator<T, D>,
@@ -163,9 +170,9 @@ pub(crate) fn finite_diff_loss_and_grad<T, Ops, const D: usize, E>(
 where
     T: Float + FromPrimitive + ToPrimitive + AddAssign,
     Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: SRExpression<T, Ops, D>,
+    E: ScalarConstants<T, Ops, D> + Evaluatable<T, Ops, D>,
 {
-    let n_params = expr.count_scalar_constants();
+    let n_params = expr.n_scalars();
     if n_params == 0 {
         return None;
     }
@@ -174,7 +181,7 @@ where
     }
 
     let mut base_t: Vec<T> = Vec::with_capacity(n_params);
-    expr.get_scalar_constants_flat(&mut base_t);
+    expr.pack_scalars(&mut base_t);
     let mut x: Vec<f64> = base_t.iter().map(|v| v.to_f64().unwrap_or(0.0)).collect();
     let mut tmp_t = base_t.clone();
 
@@ -182,8 +189,15 @@ where
         for (dst, &src) in tmp_t.iter_mut().zip(x) {
             *dst = T::from_f64(src)?;
         }
-        expr.set_scalar_constants_flat(tmp_t);
-        let ok = expr.eval_with_plan(plan, dataset.x.view(), evaluator, eval_opts);
+        expr.unpack_scalars(tmp_t);
+        evaluator.ensure_n_rows(dataset.n_rows);
+        let ok = expr.eval_with_plans(
+            plans,
+            dataset.x.view(),
+            &mut evaluator.yhat,
+            &mut evaluator.scratch,
+            eval_opts,
+        );
         if !ok {
             return None;
         }
@@ -217,7 +231,7 @@ where
         grad_out[i] = (f_plus - f_minus) / (2.0 * h);
     }
 
-    expr.set_scalar_constants_flat(&base_t);
+    expr.unpack_scalars(&base_t);
     Some(base_loss)
 }
 
@@ -228,7 +242,7 @@ pub fn optimize_constants<T: Float + FromPrimitive + ToPrimitive + AddAssign, Op
 ) -> (bool, f64)
 where
     Ops: dynamic_expressions::OperatorSet<T = T>,
-    E: SRExpression<T, Ops, D>,
+    E: ExprExt<T, Ops, D> + ConstantOptimizable<T, Ops, D>,
 {
     let OptimizeConstantsCtx {
         dataset,
@@ -242,20 +256,20 @@ where
     if !options.should_optimize_constants {
         return (false, 0.0);
     }
-    let n_params = member.expr.count_scalar_constants();
+    let n_params = member.expr.n_scalars();
     if n_params == 0 {
         return (false, 0.0);
     }
 
     let mut orig_flat: Vec<T> = Vec::with_capacity(n_params);
-    member.expr.get_scalar_constants_flat(&mut orig_flat);
+    member.expr.pack_scalars(&mut orig_flat);
     let orig_birth = member.birth;
     let orig_loss = member.loss;
     let orig_cost = member.cost;
 
     let mut workspace = EvalWorkspace::new(dataset_ref, options, evaluator, grad_ctx);
 
-    let baseline = match workspace.loss_only::<Ops, E>(&member.plan, &member.expr) {
+    let baseline = match workspace.loss_only::<Ops, E>(&member.plans, &member.expr) {
         Some(v) => v,
         None => return (false, 0.0),
     };
@@ -309,11 +323,11 @@ where
         for (dst, &src) in best_t.iter_mut().zip(best_x.iter()) {
             *dst = T::from_f64(src).unwrap_or_else(T::zero);
         }
-        member.expr.set_scalar_constants_flat(&best_t);
+        member.expr.unpack_scalars(&best_t);
 
         let ok = member.evaluate(&dataset, options, evaluator);
         if !ok {
-            member.expr.set_scalar_constants_flat(&orig_flat);
+            member.expr.unpack_scalars(&orig_flat);
             member.birth = orig_birth;
             member.loss = orig_loss;
             member.cost = orig_cost;
@@ -324,7 +338,7 @@ where
         *next_birth += 1;
         (true, n_evals as f64)
     } else {
-        member.expr.set_scalar_constants_flat(&orig_flat);
+        member.expr.unpack_scalars(&orig_flat);
         member.birth = orig_birth;
         member.loss = orig_loss;
         member.cost = orig_cost;

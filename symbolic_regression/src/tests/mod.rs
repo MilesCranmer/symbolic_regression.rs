@@ -14,3 +14,4 @@ mod test_population_replacement;
 mod test_random_distributions;
 mod test_rotate_tree_proptests;
 mod test_template_expression;
+mod test_template_expression_more;

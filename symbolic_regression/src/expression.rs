@@ -1,69 +1,23 @@
+use std::ops::AddAssign;
+
+pub use dynamic_expressions::{Evaluatable, HasTrees, ScalarConstants};
 use fastrand::Rng;
 use num_traits::{Float, FromPrimitive, ToPrimitive};
 
-use crate::Dataset;
+use crate::dataset::Dataset;
 use crate::operators::Operators;
 use crate::options::Options;
 use crate::pop_member::Evaluator;
 
-/// Abstraction over candidate expressions searched by symbolic regression.
-///
-/// The default implementation is `dynamic_expressions::PostfixExpr`, but composite
-/// expressions (e.g., `TemplateExpression`) can participate by implementing this trait.
-pub trait SRExpression<T, Ops, const D: usize>: Clone + Send + Sync
+pub trait ConstantOptimizable<T, Ops, const D: usize>: Evaluatable<T, Ops, D> + ScalarConstants<T, Ops, D>
 where
     T: Float,
     Ops: dynamic_expressions::OperatorSet<T = T>,
 {
-    type Plan: Clone + Send + Sync + 'static;
-    type MutationContext: Copy + Send + Sync + 'static;
-
-    fn build_plan(&self, dataset_n_features: usize) -> Self::Plan;
-
-    fn eval_with_plan(
-        &self,
-        plan: &Self::Plan,
-        x: ndarray::ArrayView2<'_, T>,
-        evaluator: &mut Evaluator<T, D>,
-        eval_options: &dynamic_expressions::EvalOptions,
-    ) -> bool;
-
-    fn complexity(&self, options: &Options<T, D>) -> usize;
-
-    fn check_constraints(&self, options: &Options<T, D>, curmaxsize: usize) -> bool;
-
-    fn compress_constants(&mut self);
-
-    fn simplify_in_place(&mut self, eval_opts: &dynamic_expressions::EvalOptions) -> bool;
-
-    fn get_contents_for_mutation(
-        &self,
-        rng: &mut Rng,
-    ) -> (dynamic_expressions::PostfixExpr<T, Ops, D>, Self::MutationContext);
-
-    fn with_contents_for_mutation(
-        &self,
-        mutated: dynamic_expressions::PostfixExpr<T, Ops, D>,
-        ctx: Self::MutationContext,
-    ) -> Self;
-
-    fn nfeatures_for_mutation(&self, ctx: Self::MutationContext, dataset_n_features: usize) -> usize;
-
-    fn feature_mutation_possible(&self, dataset_n_features: usize) -> bool;
-
-    fn is_leaf(&self) -> bool;
-    fn has_binary_op(&self) -> bool;
-
-    fn count_constant_nodes(&self) -> usize;
-
-    fn count_scalar_constants(&self) -> usize;
-    fn get_scalar_constants_flat(&self, out: &mut Vec<T>);
-    fn set_scalar_constants_flat(&mut self, values: &[T]);
-
     #[allow(clippy::too_many_arguments)]
     fn loss_and_grad(
         &mut self,
-        plan: &Self::Plan,
+        plans: &[dynamic_expressions::EvalPlan<D>],
         dataset: &Dataset<T>,
         options: &Options<T, D>,
         evaluator: &mut Evaluator<T, D>,
@@ -72,18 +26,22 @@ where
         grad_out: &mut [f64],
     ) -> Option<f64>
     where
-        T: FromPrimitive + ToPrimitive + core::ops::AddAssign;
+        T: FromPrimitive + ToPrimitive + AddAssign;
+}
 
-    fn mutate_constant(&mut self, rng: &mut Rng, temperature: f64, options: &Options<T, D>) -> bool;
+pub trait Expression<T, Ops, const D: usize>: dynamic_expressions::Expression<T, Ops, D> + Send + Sync
+where
+    T: Float,
+    Ops: dynamic_expressions::OperatorSet<T = T>,
+{
+}
 
-    fn randomize(
-        &self,
-        rng: &mut Rng,
-        operators: &Operators<D>,
-        dataset_n_features: usize,
-        target_size: usize,
-        options: &Options<T, D>,
-    ) -> Self;
+impl<T, Ops, const D: usize, E> Expression<T, Ops, D> for E
+where
+    T: Float,
+    Ops: dynamic_expressions::OperatorSet<T = T>,
+    E: dynamic_expressions::Expression<T, Ops, D> + Send + Sync,
+{
 }
 
 pub trait ExpressionSpec<T, Ops, const D: usize>: Clone + Send + Sync
@@ -91,7 +49,7 @@ where
     T: Float,
     Ops: dynamic_expressions::OperatorSet<T = T>,
 {
-    type Expr: SRExpression<T, Ops, D>;
+    type Expr: Expression<T, Ops, D>;
 
     fn random_expr(
         &self,
@@ -126,123 +84,26 @@ where
     }
 }
 
-impl<T, Ops, const D: usize> SRExpression<T, Ops, D> for dynamic_expressions::PostfixExpr<T, Ops, D>
+impl<T, Ops, const D: usize> ConstantOptimizable<T, Ops, D> for dynamic_expressions::PostfixExpr<T, Ops, D>
 where
-    T: Float + Send + Sync,
+    T: Float + FromPrimitive + ToPrimitive + AddAssign + Send + Sync,
     Ops: dynamic_expressions::OperatorSet<T = T> + Send + Sync,
 {
-    type Plan = dynamic_expressions::EvalPlan<D>;
-    type MutationContext = ();
-
-    fn build_plan(&self, dataset_n_features: usize) -> Self::Plan {
-        dynamic_expressions::compile_plan(&self.nodes, dataset_n_features, self.consts.len())
-    }
-
-    fn eval_with_plan(
-        &self,
-        plan: &Self::Plan,
-        x: ndarray::ArrayView2<'_, T>,
-        evaluator: &mut Evaluator<T, D>,
-        eval_options: &dynamic_expressions::EvalOptions,
-    ) -> bool {
-        dynamic_expressions::eval_plan_array_into(
-            &mut evaluator.yhat,
-            plan,
-            self,
-            x,
-            &mut evaluator.scratch,
-            eval_options,
-        )
-    }
-
-    fn complexity(&self, options: &Options<T, D>) -> usize {
-        crate::complexity::compute_complexity(&self.nodes, options)
-    }
-
-    fn check_constraints(&self, options: &Options<T, D>, curmaxsize: usize) -> bool {
-        crate::check_constraints::check_constraints(self, options, curmaxsize)
-    }
-
-    fn compress_constants(&mut self) {
-        dynamic_expressions::compress_constants(self);
-    }
-
-    fn simplify_in_place(&mut self, eval_opts: &dynamic_expressions::EvalOptions) -> bool {
-        dynamic_expressions::simplify_in_place(self, eval_opts)
-    }
-
-    fn get_contents_for_mutation(
-        &self,
-        _rng: &mut Rng,
-    ) -> (dynamic_expressions::PostfixExpr<T, Ops, D>, Self::MutationContext) {
-        (self.clone(), ())
-    }
-
-    fn with_contents_for_mutation(
-        &self,
-        mutated: dynamic_expressions::PostfixExpr<T, Ops, D>,
-        _ctx: Self::MutationContext,
-    ) -> Self {
-        mutated
-    }
-
-    fn nfeatures_for_mutation(&self, _ctx: Self::MutationContext, dataset_n_features: usize) -> usize {
-        dataset_n_features
-    }
-
-    fn feature_mutation_possible(&self, dataset_n_features: usize) -> bool {
-        dataset_n_features > 1
-    }
-
-    fn is_leaf(&self) -> bool {
-        self.nodes.iter().all(|n| {
-            matches!(
-                n,
-                dynamic_expressions::PNode::Var { .. } | dynamic_expressions::PNode::Const { .. }
-            )
-        })
-    }
-
-    fn has_binary_op(&self) -> bool {
-        self.nodes
-            .iter()
-            .any(|n| matches!(n, dynamic_expressions::PNode::Op { arity: 2, .. }))
-    }
-
-    fn count_constant_nodes(&self) -> usize {
-        dynamic_expressions::count_constant_nodes(&self.nodes)
-    }
-
-    fn count_scalar_constants(&self) -> usize {
-        self.consts.len()
-    }
-
-    fn get_scalar_constants_flat(&self, out: &mut Vec<T>) {
-        out.clear();
-        out.extend_from_slice(&self.consts);
-    }
-
-    fn set_scalar_constants_flat(&mut self, values: &[T]) {
-        self.consts.clone_from_slice(values);
-    }
-
     fn loss_and_grad(
         &mut self,
-        _plan: &Self::Plan,
+        plans: &[dynamic_expressions::EvalPlan<D>],
         dataset: &Dataset<T>,
         options: &Options<T, D>,
         evaluator: &mut Evaluator<T, D>,
         grad_ctx: &mut dynamic_expressions::GradContext<T, D>,
         eval_opts: &dynamic_expressions::EvalOptions,
         grad_out: &mut [f64],
-    ) -> Option<f64>
-    where
-        T: FromPrimitive + ToPrimitive + core::ops::AddAssign,
-    {
+    ) -> Option<f64> {
         use dynamic_expressions::utils::ZipEq;
 
         let n_params = self.consts.len();
         let n_rows = dataset.n_rows;
+        debug_assert_eq!(plans.len(), 1);
         debug_assert_eq!(grad_out.len(), n_params);
 
         let x = dataset.x.view();
@@ -284,19 +145,199 @@ where
 
         Some(loss.to_f64().unwrap_or(f64::INFINITY))
     }
+}
 
-    fn mutate_constant(&mut self, rng: &mut Rng, temperature: f64, options: &Options<T, D>) -> bool {
-        crate::mutation_functions::mutate_constant_in_place(rng, self, temperature, options)
+pub trait ExprExt<T, Ops, const D: usize>: Expression<T, Ops, D>
+where
+    T: Float,
+    Ops: dynamic_expressions::OperatorSet<T = T>,
+{
+    fn complexity(&self, options: &Options<T, D>) -> usize {
+        (0..self.n_trees())
+            .map(|i| crate::complexity::compute_complexity(&self.tree(i).nodes, options))
+            .sum()
     }
 
-    fn randomize(
-        &self,
-        rng: &mut Rng,
-        operators: &Operators<D>,
-        dataset_n_features: usize,
-        target_size: usize,
-        _options: &Options<T, D>,
-    ) -> Self {
-        crate::mutation_functions::random_expr(rng, operators, dataset_n_features, target_size)
+    fn check_constraints(&self, options: &Options<T, D>, curmaxsize: usize) -> bool {
+        if self.complexity(options) > curmaxsize {
+            return false;
+        }
+
+        for i in 0..self.n_trees() {
+            let tree = self.tree(i);
+            if !crate::check_constraints::check_constraints(tree, options, curmaxsize) {
+                return false;
+            }
+
+            let max_feature = max_feature_index(&tree.nodes);
+            if let Some(m) = max_feature {
+                // For expressions whose feature visibility is independent of the dataset
+                // (e.g., templates), this enforces var bounds. For plain expressions, this is
+                // expected to be satisfied by construction/mutation (so use a large sentinel).
+                let nfeatures = self.tree_nfeatures(i, usize::MAX);
+                if m >= nfeatures {
+                    return false;
+                }
+            }
+        }
+
+        true
     }
+
+    fn compress_constants(&mut self) {
+        for i in 0..self.n_trees() {
+            dynamic_expressions::compress_constants(self.tree_mut(i));
+        }
+    }
+
+    fn simplify_in_place(&mut self, eval_opts: &dynamic_expressions::EvalOptions) -> bool {
+        let mut any = false;
+        for i in 0..self.n_trees() {
+            any |= dynamic_expressions::simplify_in_place(self.tree_mut(i), eval_opts);
+        }
+        any
+    }
+
+    fn is_leaf(&self) -> bool {
+        for i in 0..self.n_trees() {
+            let tree = self.tree(i);
+            if tree
+                .nodes
+                .iter()
+                .any(|n| matches!(n, dynamic_expressions::PNode::Op { .. }))
+            {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn has_binary_op(&self) -> bool {
+        for i in 0..self.n_trees() {
+            let tree = self.tree(i);
+            if tree
+                .nodes
+                .iter()
+                .any(|n| matches!(n, dynamic_expressions::PNode::Op { arity: 2, .. }))
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn count_constant_nodes(&self) -> usize {
+        (0..self.n_trees())
+            .map(|i| dynamic_expressions::count_constant_nodes(&self.tree(i).nodes))
+            .sum()
+    }
+
+    fn feature_mutation_possible(&self, dataset_nfeatures: usize) -> bool {
+        for i in 0..self.n_trees() {
+            let tree = self.tree(i);
+            let nfeatures = self.tree_nfeatures(i, dataset_nfeatures);
+            if nfeatures <= 1 {
+                continue;
+            }
+            if tree
+                .nodes
+                .iter()
+                .any(|n| matches!(n, dynamic_expressions::PNode::Var { .. }))
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn mutate_constant(&mut self, rng: &mut Rng, temperature: f64, options: &Options<T, D>) -> bool
+    where
+        T: FromPrimitive,
+    {
+        let n = self.n_scalars();
+        if n == 0 {
+            return false;
+        }
+        let mut scalars: Vec<T> = Vec::with_capacity(n);
+        self.pack_scalars(&mut scalars);
+        debug_assert_eq!(scalars.len(), n);
+
+        let idx = rng.usize(0..n);
+        mutate_scalar(rng, &mut scalars[idx], temperature, options);
+        self.unpack_scalars(&scalars);
+        true
+    }
+
+    fn randomize(&self, rng: &mut Rng, operators: &Operators<D>, dataset_nfeatures: usize, target_size: usize) -> Self
+    where
+        T: FromPrimitive,
+    {
+        let k = self.n_trees().max(1);
+        let total = target_size.max(k);
+
+        let mut sizes = vec![1usize; k];
+        for _ in 0..(total - k) {
+            sizes[rng.usize(0..k)] += 1;
+        }
+
+        let mut out = self.clone();
+        for i in 0..out.n_trees() {
+            let nfeatures = out.tree_nfeatures(i, dataset_nfeatures);
+            let sz = sizes.get(i).copied().unwrap_or(1);
+            *out.tree_mut(i) = crate::mutation_functions::random_expr(rng, operators, nfeatures, sz);
+        }
+
+        // Randomize any additional scalar parameters (and re-randomize const pools) in a derived way.
+        let n_scalars = out.n_scalars();
+        if n_scalars > 0 {
+            let mut scalars: Vec<T> = Vec::with_capacity(n_scalars);
+            out.pack_scalars(&mut scalars);
+            for v in &mut scalars {
+                let r = crate::random::standard_normal(rng);
+                *v = T::from_f64(r).unwrap_or_else(T::zero);
+            }
+            out.unpack_scalars(&scalars);
+        }
+
+        out
+    }
+}
+
+impl<T, Ops, const D: usize, E> ExprExt<T, Ops, D> for E
+where
+    T: Float,
+    Ops: dynamic_expressions::OperatorSet<T = T>,
+    E: Expression<T, Ops, D>,
+{
+}
+
+fn max_feature_index(nodes: &[dynamic_expressions::PNode]) -> Option<usize> {
+    let mut maxf: Option<usize> = None;
+    for n in nodes {
+        let dynamic_expressions::PNode::Var { feature } = *n else {
+            continue;
+        };
+        let f = usize::from(feature);
+        maxf = Some(maxf.map_or(f, |m| m.max(f)));
+    }
+    maxf
+}
+
+fn mutate_scalar<T: Float + FromPrimitive, const D: usize>(
+    rng: &mut Rng,
+    v: &mut T,
+    temperature: f64,
+    options: &Options<T, D>,
+) {
+    // Follows SymbolicRegression.jl's `mutate_factor` (mirrors `mutate_constant_in_place`).
+    let pf = options.perturbation_factor * temperature.max(0.0);
+    let max_change = pf + 1.1;
+    let exponent: f64 = rng.f64();
+    let mut mul = max_change.powf(exponent);
+    let make_bigger: bool = rng.bool();
+    mul = if make_bigger { mul } else { 1.0 / mul };
+    if rng.f64() > options.probability_negate_constant {
+        mul = -mul;
+    }
+    *v = *v * T::from_f64(mul).unwrap_or_else(T::one);
 }
