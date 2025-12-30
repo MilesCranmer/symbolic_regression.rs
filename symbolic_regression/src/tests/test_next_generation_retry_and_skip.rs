@@ -75,6 +75,8 @@ fn next_generation_fails_constraints_after_retries() {
             stats: &stats,
             options: &options,
             evaluator: &mut evaluator,
+            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+            gpu: None,
             _ops: core::marker::PhantomData,
         },
     );
@@ -138,6 +140,8 @@ fn reg_evol_cycle_skips_replacement_when_configured() {
         stats: &stats,
         options: &options,
         evaluator: &mut evaluator,
+        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        gpu: None,
         controller: &controller,
         temperature: 1.0,
         curmaxsize: 1,

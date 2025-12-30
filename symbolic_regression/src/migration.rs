@@ -13,10 +13,14 @@ pub fn best_sub_pop<T: Float, Ops, const D: usize>(
 ) -> Vec<PopMember<T, Ops, D>> {
     let mut idxs: Vec<usize> = (0..pop.len()).collect();
     idxs.sort_by(|&i, &j| {
-        pop.members[i]
-            .cost
-            .partial_cmp(&pop.members[j].cost)
-            .unwrap_or(Ordering::Greater)
+        let a = pop.members[i].cost;
+        let b = pop.members[j].cost;
+        match (a.is_nan(), b.is_nan()) {
+            (true, true) => i.cmp(&j),
+            (true, false) => Ordering::Greater,
+            (false, true) => Ordering::Less,
+            (false, false) => a.partial_cmp(&b).unwrap_or(Ordering::Equal),
+        }
     });
     idxs.truncate(topn.min(idxs.len()));
     idxs.into_iter().map(|i| pop.members[i].clone()).collect()

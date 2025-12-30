@@ -41,6 +41,8 @@ pub struct NextGenerationCtx<'a, T: Float + AddAssign, Ops, const D: usize> {
     pub stats: &'a RunningSearchStatistics,
     pub options: &'a Options<T, D>,
     pub evaluator: &'a mut Evaluator<T, D>,
+    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+    pub gpu: Option<&'a crate::gpu::GpuClient>,
     pub _ops: core::marker::PhantomData<Ops>,
 }
 
@@ -50,6 +52,8 @@ pub struct CrossoverCtx<'a, T: Float, Ops, const D: usize> {
     pub curmaxsize: usize,
     pub options: &'a Options<T, D>,
     pub evaluator: &'a mut Evaluator<T, D>,
+    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+    pub gpu: Option<&'a crate::gpu::GpuClient>,
     pub _ops: core::marker::PhantomData<Ops>,
 }
 
@@ -139,6 +143,8 @@ struct MutationApplyCtx<'a, 'd, T: Float + AddAssign, Ops, const D: usize> {
     curmaxsize: usize,
     options: &'a Options<T, D>,
     evaluator: &'a mut Evaluator<T, D>,
+    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+    gpu: Option<&'a crate::gpu::GpuClient>,
 }
 
 impl MutationChoice {
@@ -159,6 +165,8 @@ impl MutationChoice {
             curmaxsize,
             options,
             evaluator,
+            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+            gpu,
         } = ctx;
         let n_features = dataset.n_features;
 
@@ -256,6 +264,8 @@ impl MutationChoice {
                         options,
                         evaluator,
                         grad_ctx: &mut grad_ctx,
+                        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+                        gpu,
                     },
                 );
 
@@ -284,6 +294,8 @@ where
         stats,
         options,
         evaluator,
+        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        gpu,
         ..
     } = ctx;
 
@@ -310,6 +322,8 @@ where
             curmaxsize,
             options,
             evaluator,
+            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+            gpu,
         });
         match outcome {
             MutationResult::ProposedExpr { expr, evals: e } => {
@@ -339,7 +353,13 @@ where
     }
 
     let mut baby = PopMember::from_expr(tree, n_features, options);
-    let _ok = baby.evaluate(&dataset, options, evaluator);
+    let _ok = baby.evaluate_with_gpu(
+        &dataset,
+        options,
+        evaluator,
+        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        gpu,
+    );
     evals += 1.0;
     let after_cost = baby.cost.to_f64().unwrap_or(f64::INFINITY);
     if after_cost.is_nan() {
@@ -396,6 +416,8 @@ where
         curmaxsize,
         options,
         evaluator,
+        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        gpu,
         ..
     } = ctx;
 
@@ -407,8 +429,20 @@ where
         if check_constraints(&c1_expr, options, curmaxsize) && check_constraints(&c2_expr, options, curmaxsize) {
             let mut baby1 = PopMember::from_expr(c1_expr, dataset.n_features, options);
             let mut baby2 = PopMember::from_expr(c2_expr, dataset.n_features, options);
-            let _ = baby1.evaluate(&dataset, options, evaluator);
-            let _ = baby2.evaluate(&dataset, options, evaluator);
+            let _ = baby1.evaluate_with_gpu(
+                &dataset,
+                options,
+                evaluator,
+                #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+                gpu,
+            );
+            let _ = baby2.evaluate_with_gpu(
+                &dataset,
+                options,
+                evaluator,
+                #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+                gpu,
+            );
             return (baby1, baby2, true, 2.0);
         }
         if tries >= max_tries {

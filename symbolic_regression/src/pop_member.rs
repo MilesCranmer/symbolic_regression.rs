@@ -172,4 +172,45 @@ where
         );
         true
     }
+
+    pub fn evaluate_with_gpu(
+        &mut self,
+        dataset: &TaggedDataset<'_, T>,
+        options: &Options<T, D>,
+        evaluator: &mut Evaluator<T, D>,
+        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))] gpu: Option<&crate::gpu::GpuClient>,
+    ) -> bool {
+        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        if let Some(gpu) = gpu {
+            if !options.batching
+                && options.loss_kind == crate::loss_functions::LossKind::Mse
+                && dataset.n_rows == gpu.n_rows
+                && dataset.n_features == gpu.n_features
+            {
+                if let Some(packed) = crate::gpu::pack_expr(&self.expr) {
+                    self.complexity = compute_complexity(&self.expr.nodes, options);
+                    let loss_f32 = gpu.eval_mse(packed);
+                    let loss = T::from(loss_f32).unwrap_or_else(T::nan);
+
+                    if !loss.is_finite() {
+                        self.loss = T::infinity();
+                        self.cost = T::infinity();
+                        return false;
+                    }
+
+                    self.loss = loss;
+                    self.cost = loss_to_cost(
+                        loss,
+                        self.complexity,
+                        options.parsimony,
+                        options.use_baseline,
+                        dataset.baseline_loss,
+                    );
+                    return true;
+                }
+            }
+        }
+
+        self.evaluate(dataset, options, evaluator)
+    }
 }

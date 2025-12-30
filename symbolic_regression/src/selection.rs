@@ -1,5 +1,3 @@
-use std::cmp::Ordering;
-
 use fastrand::Rng;
 use num_traits::Float;
 
@@ -58,7 +56,7 @@ pub fn best_of_sample<T: Float, Ops, const D: usize>(
 
     let place = sample_tournament_place(rng, scored.len(), options.tournament_selection_p);
     let place_index = (place - 1).min(scored.len() - 1);
-    scored.sort_by(|(a, _), (b, _)| a.partial_cmp(b).unwrap_or(Ordering::Greater));
+    scored.sort_by(|(a, _), (b, _)| a.total_cmp(b));
     let chosen = scored[place_index].1;
     pop.members[chosen].clone()
 }

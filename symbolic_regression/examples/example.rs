@@ -28,12 +28,31 @@ fn main() {
 
     let operators = BuiltinOpsF32::from_names(["cos", "exp", "sin", "+", "sub", "*", "/"]).unwrap();
 
+    let is_gpu = cfg!(all(feature = "gpu", not(target_arch = "wasm32")));
     let options = Options::<f32, D> {
         operators,
-        niterations: 200,
+        niterations: if is_gpu { 10 } else { 200 },
+        populations: if is_gpu { 4 } else { 31 },
+        population_size: if is_gpu { 32 } else { 27 },
+        ncycles_per_iteration: if is_gpu { 50 } else { 380 },
+        should_optimize_constants: if is_gpu { false } else { true },
+        should_simplify: if is_gpu { false } else { true },
         ..Default::default()
     };
 
+    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+    let result = {
+        let batch_max = 2048;
+        match symbolic_regression::equation_search_gpu::<BuiltinOpsF32, D>(&dataset, &options, batch_max) {
+            Ok(result) => result,
+            Err(err) => {
+                eprintln!("GPU init failed ({err:?}); falling back to CPU.");
+                equation_search::<_, BuiltinOpsF32, D>(&dataset, &options)
+            }
+        }
+    };
+
+    #[cfg(not(all(feature = "gpu", not(target_arch = "wasm32"))))]
     let result = equation_search::<_, BuiltinOpsF32, D>(&dataset, &options);
     let dominating = result.hall_of_fame.pareto_front();
 

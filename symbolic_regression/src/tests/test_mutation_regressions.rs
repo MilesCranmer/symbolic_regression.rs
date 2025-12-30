@@ -70,6 +70,8 @@ fn randomize_mutation_can_succeed_below_size_3() {
             stats: &stats,
             options: &options,
             evaluator: &mut evaluator,
+            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+            gpu: None,
             _ops: core::marker::PhantomData,
         },
     );
@@ -212,6 +214,8 @@ fn add_node_includes_append_at_leaf_move() {
                 stats: &stats,
                 options: &options,
                 evaluator: &mut evaluator,
+                #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+                gpu: None,
                 _ops: core::marker::PhantomData,
             },
         );
@@ -302,6 +306,8 @@ fn mutate_operator_can_be_a_noop_and_still_succeeds() {
             stats: &stats,
             options: &options,
             evaluator: &mut evaluator,
+            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+            gpu: None,
             _ops: core::marker::PhantomData,
         },
     );

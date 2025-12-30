@@ -11,6 +11,70 @@ use crate::options::Options;
 use crate::pop_member::{Evaluator, PopMember, get_birth_order};
 use crate::random::standard_normal;
 
+#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+struct GpuConstObjective<'a> {
+    gpu: &'a crate::gpu::GpuClient,
+    program: [u32; crate::gpu::MAX_NODES],
+    n_params: usize,
+}
+
+#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+impl Objective for GpuConstObjective<'_> {
+    fn f_only(&mut self, x: &[f64], budget: &mut crate::optim::EvalBudget) -> Option<f64> {
+        budget.f_calls += 1;
+
+        let mut c = [0.0f32; crate::gpu::MAX_CONSTS];
+        for i in 0..self.n_params {
+            let v = *x.get(i)?;
+            let vf = v as f32;
+            if !vf.is_finite() {
+                return None;
+            }
+            c[i] = vf;
+        }
+
+        let packed = crate::gpu::PackedProgram {
+            program: self.program,
+            consts: c,
+        };
+        let loss = self.gpu.eval_mse(packed);
+        loss.is_finite().then_some(loss as f64)
+    }
+
+    fn fg(&mut self, x: &[f64], g_out: &mut [f64], budget: &mut crate::optim::EvalBudget) -> Option<f64> {
+        budget.f_calls += 1;
+
+        let mut c = [0.0f32; crate::gpu::MAX_CONSTS];
+        for i in 0..self.n_params {
+            let v = *x.get(i)?;
+            let vf = v as f32;
+            if !vf.is_finite() {
+                return None;
+            }
+            c[i] = vf;
+        }
+
+        let packed = crate::gpu::PackedProgram {
+            program: self.program,
+            consts: c,
+        };
+        let res = self.gpu.eval_mse_grad(packed);
+        if !res.loss.is_finite() {
+            return None;
+        }
+
+        for (dst, &src) in g_out.iter_mut().zip_eq(res.grad.iter()) {
+            let v = src as f64;
+            if !v.is_finite() {
+                return None;
+            }
+            *dst = v;
+        }
+
+        Some(res.loss as f64)
+    }
+}
+
 struct EvalWorkspace<'a, T: Float + AddAssign, const D: usize> {
     dataset: &'a Dataset<T>,
     options: &'a Options<T, D>,
@@ -198,6 +262,8 @@ where
         options,
         evaluator,
         grad_ctx,
+        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        gpu,
     } = ctx;
     let dataset_ref: &Dataset<T> = dataset.data;
     evaluator.ensure_n_rows(dataset.n_rows);
@@ -214,9 +280,44 @@ where
 
     let mut workspace = EvalWorkspace::new(dataset_ref, options, evaluator, grad_ctx);
 
-    let baseline = match workspace.loss_only::<Ops>(&member.plan, &member.expr) {
-        Some(v) => v,
-        None => return (false, 0.0),
+    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+    let gpu_packed = gpu.and_then(|g| {
+        if core::mem::size_of::<T>() != core::mem::size_of::<f32>() {
+            return None;
+        }
+        if options.batching {
+            return None;
+        }
+        if options.loss_kind != crate::loss_functions::LossKind::Mse {
+            return None;
+        }
+        if dataset.n_rows != g.n_rows || dataset.n_features != g.n_features {
+            return None;
+        }
+        crate::gpu::pack_expr(&member.expr).map(|p| (g, p))
+    });
+
+    let baseline = {
+        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        if let Some((g, packed)) = gpu_packed {
+            let v = g.eval_mse(packed) as f64;
+            if v.is_finite() {
+                v
+            } else {
+                return (false, 0.0);
+            }
+        } else {
+            match workspace.loss_only::<Ops>(&member.plan, &member.expr) {
+                Some(v) => v,
+                None => return (false, 0.0),
+            }
+        }
+
+        #[cfg(not(all(feature = "gpu", not(target_arch = "wasm32"))))]
+        match workspace.loss_only::<Ops>(&member.plan, &member.expr) {
+            Some(v) => v,
+            None => return (false, 0.0),
+        }
     };
 
     let x0: Vec<f64> = member.expr.consts.iter().map(|v| v.to_f64().unwrap_or(0.0)).collect();
@@ -234,6 +335,23 @@ where
     let mut n_evals: u64 = 0;
 
     {
+        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        let res = if let Some((g, packed)) = gpu_packed {
+            let mut obj = GpuConstObjective {
+                gpu: g,
+                program: packed.program,
+                n_params,
+            };
+            if n_params == 1 {
+                newton_1d_minimize(x0[0], &mut obj, optim_opts, ls)
+            } else {
+                bfgs_minimize(&x0, &mut obj, optim_opts, ls)
+            }
+        } else {
+            workspace.optimize_from_start(&x0, n_params, member, optim_opts, ls)
+        };
+
+        #[cfg(not(all(feature = "gpu", not(target_arch = "wasm32"))))]
         let res = workspace.optimize_from_start(&x0, n_params, member, optim_opts, ls);
         if let Some(res) = res {
             n_evals = n_evals.saturating_add(res.f_calls as u64);
@@ -252,7 +370,29 @@ where
             *v *= 1.0 + 0.5 * eps;
         }
 
-        let res = workspace.optimize_from_start(&xt, n_params, member, optim_opts, ls);
+        let res = {
+            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+            {
+                if let Some((g, packed)) = gpu_packed {
+                    let mut obj = GpuConstObjective {
+                        gpu: g,
+                        program: packed.program,
+                        n_params,
+                    };
+                    if n_params == 1 {
+                        newton_1d_minimize(xt[0], &mut obj, optim_opts, ls)
+                    } else {
+                        bfgs_minimize(&xt, &mut obj, optim_opts, ls)
+                    }
+                } else {
+                    workspace.optimize_from_start(&xt, n_params, member, optim_opts, ls)
+                }
+            }
+            #[cfg(not(all(feature = "gpu", not(target_arch = "wasm32"))))]
+            {
+                workspace.optimize_from_start(&xt, n_params, member, optim_opts, ls)
+            }
+        };
         if let Some(res) = res {
             n_evals = n_evals.saturating_add(res.f_calls as u64);
             if res.minimum < best_f {
@@ -266,7 +406,13 @@ where
         for (dst, &src) in member.expr.consts.iter_mut().zip_eq(&best_x) {
             *dst = T::from_f64(src).unwrap_or_else(T::zero);
         }
-        let ok = member.evaluate(&dataset, options, evaluator);
+        let ok = member.evaluate_with_gpu(
+            &dataset,
+            options,
+            evaluator,
+            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+            gpu,
+        );
         if !ok {
             member.expr.consts = orig_consts;
             member.birth = orig_birth;
@@ -291,4 +437,7 @@ pub struct OptimizeConstantsCtx<'a, 'd, T: Float, const D: usize> {
     pub options: &'a Options<T, D>,
     pub evaluator: &'a mut Evaluator<T, D>,
     pub grad_ctx: &'a mut GradContext<T, D>,
+
+    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+    pub gpu: Option<&'a crate::gpu::GpuClient>,
 }

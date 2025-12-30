@@ -296,6 +296,8 @@ fn bench_utils(c: &mut Criterion) {
                         options: &options,
                         evaluator: &mut evaluator,
                         grad_ctx: &mut grad_ctx,
+                        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+                        gpu: None,
                     };
                     let _ = optimize_constants(&mut rng, &mut m, ctx);
                 }

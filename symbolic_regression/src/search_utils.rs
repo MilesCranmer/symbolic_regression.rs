@@ -70,6 +70,8 @@ pub(crate) struct PopState<T: Float + AddAssign, Ops, const D: usize> {
     pub(crate) grad_ctx: dynamic_expressions::GradContext<T, D>,
     pub(crate) rng: Rng,
     pub(crate) batch_dataset: Option<Dataset<T>>,
+    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+    pub(crate) gpu: Option<crate::gpu::GpuClient>,
 }
 
 impl<T: Float + AddAssign, Ops, const D: usize> PopState<T, Ops, D> {
@@ -120,6 +122,8 @@ impl<T: Float + AddAssign, Ops, const D: usize> PopState<T, Ops, D> {
             options,
             evaluator: &mut self.evaluator,
             grad_ctx: &mut self.grad_ctx,
+            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+            gpu: self.gpu.as_ref(),
             controller,
             _ops: core::marker::PhantomData,
         };
@@ -152,7 +156,14 @@ where
     let stats = RunningSearchStatistics::new(options.maxsize, 100_000);
     let mut hall = HallOfFame::new(options.maxsize);
 
-    let pools = init_populations(full_dataset, options, &controller, &mut hall);
+    let pools = init_populations(
+        full_dataset,
+        options,
+        &controller,
+        &mut hall,
+        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        None,
+    );
     let counters = SearchCounters {
         total_cycles: options.niterations * pools.pops.len(),
         cycles_started: 0,
@@ -183,6 +194,19 @@ where
         hall_of_fame: hall,
         best: pools.best,
     }
+}
+
+#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+pub fn equation_search_gpu<Ops, const D: usize>(
+    dataset: &Dataset<f32>,
+    options: &Options<f32, D>,
+    batch_max: usize,
+) -> Result<SearchResult<f32, Ops, D>, crate::gpu::GpuInitError>
+where
+    Ops: dynamic_expressions::OperatorSet<T = f32> + Send + Sync,
+{
+    let engine = SearchEngine::<f32, Ops, D>::new_gpu(dataset.clone(), options.clone(), batch_max)?;
+    Ok(engine.run_to_completion())
 }
 
 struct SearchCore<T: Float + AddAssign, Ops, const D: usize> {
@@ -398,7 +422,14 @@ where
         let mut hall = HallOfFame::new(options.maxsize);
 
         let full_dataset = TaggedDataset::new(&dataset, baseline_loss);
-        let pools = init_populations(full_dataset, &options, &controller, &mut hall);
+        let pools = init_populations(
+            full_dataset,
+            &options,
+            &controller,
+            &mut hall,
+            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+            None,
+        );
         let counters = SearchCounters {
             total_cycles: options.niterations * pools.pops.len(),
             cycles_started: 0,
@@ -490,6 +521,72 @@ where
             hall_of_fame: hall,
             best: pools.best,
         }
+    }
+}
+
+#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+impl<Ops, const D: usize> SearchEngine<f32, Ops, D>
+where
+    Ops: dynamic_expressions::OperatorSet<T = f32>,
+{
+    pub fn new_gpu(
+        dataset: Dataset<f32>,
+        options: Options<f32, D>,
+        batch_max: usize,
+    ) -> Result<Self, crate::gpu::GpuInitError> {
+        if options.batching {
+            return Err(crate::gpu::GpuInitError::BatchingEnabled);
+        }
+        if options.loss_kind != crate::loss_functions::LossKind::Mse {
+            return Err(crate::gpu::GpuInitError::UnsupportedLoss);
+        }
+
+        let baseline_loss = if options.use_baseline {
+            baseline_loss_from_zero_expression::<f32, Ops, D>(&dataset, options.loss.as_ref())
+        } else {
+            None
+        };
+
+        let controller = StopController::from_options(&options);
+
+        let stats = RunningSearchStatistics::new(options.maxsize, 100_000);
+        let mut hall = HallOfFame::new(options.maxsize);
+
+        let gpu = crate::gpu::GpuClient::spawn(&dataset, batch_max)?;
+
+        let full_dataset = TaggedDataset::new(&dataset, baseline_loss);
+        let pools = init_populations(full_dataset, &options, &controller, &mut hall, Some(gpu));
+        let counters = SearchCounters {
+            total_cycles: options.niterations * pools.pops.len(),
+            cycles_started: 0,
+            cycles_completed: 0,
+        };
+
+        let mut progress = SearchProgress::new(&options, counters.total_cycles);
+        progress.set_initial_evals(pools.total_evals);
+
+        let order_rng = Rng::with_seed(options.seed ^ 0x9e37_79b9_7f4a_7c15);
+
+        let core = SearchCore {
+            counters,
+            stats,
+            hall,
+            progress,
+            pools,
+            order_rng,
+            cur_iter: 0,
+            task_order: Vec::new(),
+            next_task: 0,
+            progress_finished: false,
+        };
+
+        Ok(Self {
+            dataset,
+            baseline_loss,
+            options,
+            controller,
+            core,
+        })
     }
 }
 
@@ -617,6 +714,7 @@ fn init_populations<T, Ops, const D: usize>(
     options: &Options<T, D>,
     controller: &StopController,
     hall: &mut HallOfFame<T, Ops, D>,
+    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))] gpu: Option<crate::gpu::GpuClient>,
 ) -> PopPools<T, Ops, D>
 where
     T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + AddAssign,
@@ -647,7 +745,13 @@ where
                 options.maxsize,
             );
             let mut m = PopMember::from_expr(expr, dataset.n_features, options);
-            let _ = m.evaluate(&full_dataset, options, &mut evaluator);
+            let _ = m.evaluate_with_gpu(
+                &full_dataset,
+                options,
+                &mut evaluator,
+                #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+                gpu.as_ref(),
+            );
             total_evals += 1;
             hall.consider(&m, options, options.maxsize);
             members.push(m);
@@ -662,6 +766,8 @@ where
             grad_ctx,
             rng,
             batch_dataset: None,
+            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+            gpu: gpu.clone(),
         }));
     }
 

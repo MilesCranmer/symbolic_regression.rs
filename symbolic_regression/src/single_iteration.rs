@@ -21,6 +21,8 @@ pub struct IterationCtx<'a, T: Float + AddAssign, Ops, const D: usize> {
     pub options: &'a Options<T, D>,
     pub evaluator: &'a mut Evaluator<T, D>,
     pub grad_ctx: &'a mut dynamic_expressions::GradContext<T, D>,
+    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+    pub gpu: Option<&'a crate::gpu::GpuClient>,
     pub controller: &'a StopController,
     pub _ops: core::marker::PhantomData<Ops>,
 }
@@ -61,6 +63,8 @@ where
                 stats: ctx.stats,
                 options: ctx.options,
                 evaluator: ctx.evaluator,
+                #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+                gpu: ctx.gpu,
                 controller: ctx.controller,
                 _ops: core::marker::PhantomData,
             },
@@ -109,6 +113,8 @@ where
                         options: ctx.options,
                         evaluator: ctx.evaluator,
                         grad_ctx: ctx.grad_ctx,
+                        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+                        gpu: ctx.gpu,
                     },
                 );
                 let _ = improved;
@@ -125,7 +131,13 @@ where
             if ctx.controller.is_cancelled() {
                 return num_evals;
             }
-            let _ = m.evaluate(&ctx.full_dataset, ctx.options, ctx.evaluator);
+            let _ = m.evaluate_with_gpu(
+                &ctx.full_dataset,
+                ctx.options,
+                ctx.evaluator,
+                #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+                ctx.gpu,
+            );
             num_evals += 1.0;
         }
     }

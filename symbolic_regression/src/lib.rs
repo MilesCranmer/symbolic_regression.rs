@@ -30,6 +30,9 @@ pub(crate) mod single_iteration;
 pub(crate) mod stop_controller;
 pub(crate) mod warmup;
 
+#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+pub(crate) mod gpu;
+
 #[cfg(feature = "bench")]
 pub mod bench;
 
@@ -43,6 +46,8 @@ pub use operator_library::OperatorLibrary;
 pub use operator_selection::OperatorsSampling;
 pub use options::{MutationWeights, Options, OutputStyle, WasmOptionsShim};
 pub use pop_member::PopMember;
+#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+pub use search_utils::equation_search_gpu;
 pub use search_utils::{SearchEngine, SearchResult, equation_search};
 #[cfg(feature = "bench")]
 pub use {

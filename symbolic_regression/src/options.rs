@@ -1,7 +1,7 @@
 use dynamic_expressions::Operators;
 use num_traits::Float;
 
-use crate::loss_functions::{LossObject, mse};
+use crate::loss_functions::{LossKind, LossObject, make_loss, mse};
 
 #[rustfmt::skip]
 macro_rules! sr_mutation_weights_spec {
@@ -180,6 +180,7 @@ macro_rules! __define_options {
 
             pub operators: Operators<D>,
             pub mutation_weights: MutationWeights,
+            pub loss_kind: LossKind,
             pub loss: LossObject<T>,
 
             pub output_style: OutputStyle,
@@ -201,6 +202,7 @@ macro_rules! __define_options {
                     $($pname: $pdefault,)*
                     operators: Operators::new(),
                     mutation_weights: MutationWeights::default(),
+                    loss_kind: LossKind::Mse,
                     loss: mse::<T>(),
                     output_style: OutputStyle::Auto,
                     variable_complexities: None,
@@ -261,6 +263,14 @@ macro_rules! __define_wasm_options_shim {
 sr_options_spec!(__define_wasm_options_shim);
 
 impl<T: Float, const D: usize> Options<T, D> {
+    pub fn set_loss_kind(&mut self, kind: LossKind)
+    where
+        T: Send + Sync + 'static,
+    {
+        self.loss_kind = kind;
+        self.loss = make_loss::<T>(kind);
+    }
+
     pub fn uses_default_complexity(&self) -> bool {
         self.complexity_of_constants == 1
             && self.complexity_of_variables == 1

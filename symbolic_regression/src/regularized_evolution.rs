@@ -20,6 +20,8 @@ pub struct RegEvolCtx<'a, T: Float + AddAssign, Ops, const D: usize> {
     pub stats: &'a RunningSearchStatistics,
     pub options: &'a Options<T, D>,
     pub evaluator: &'a mut Evaluator<T, D>,
+    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+    pub gpu: Option<&'a crate::gpu::GpuClient>,
     pub controller: &'a StopController,
     pub _ops: core::marker::PhantomData<Ops>,
 }
@@ -48,6 +50,8 @@ where
                     stats: ctx.stats,
                     options: ctx.options,
                     evaluator: ctx.evaluator,
+                    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+                    gpu: ctx.gpu,
                     _ops: core::marker::PhantomData,
                 },
             );
@@ -68,6 +72,8 @@ where
                     curmaxsize: ctx.curmaxsize,
                     options: ctx.options,
                     evaluator: ctx.evaluator,
+                    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+                    gpu: ctx.gpu,
                     _ops: core::marker::PhantomData,
                 },
             );
