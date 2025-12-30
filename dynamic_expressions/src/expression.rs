@@ -1,4 +1,7 @@
 use core::marker::PhantomData;
+use std::hash::{Hash, Hasher};
+
+use rustc_hash::FxHasher;
 
 use crate::node::PNode;
 
@@ -42,6 +45,16 @@ impl<T, Ops, const D: usize> PostfixExpr<T, Ops, D> {
         T: num_traits::Zero,
     {
         Self::new(vec![PNode::Const { idx: 0 }], vec![T::zero()], Metadata::default())
+    }
+
+    /// Hash the expression's node structure (excluding constant values).
+    ///
+    /// This is useful for building stable IDs in UIs: constant optimization may update `consts`
+    /// in-place, while the tree structure remains unchanged.
+    pub fn hash_nodes(&self) -> u64 {
+        let mut hasher = FxHasher::default();
+        self.nodes.hash(&mut hasher);
+        hasher.finish()
     }
 }
 
