@@ -1,3 +1,5 @@
+use core::marker::PhantomData;
+
 use dynamic_expressions::expression::{Metadata, PostfixExpr};
 use dynamic_expressions::node::PNode;
 use dynamic_expressions::operator_enum::builtin;
@@ -15,6 +17,7 @@ use crate::dataset::TaggedDataset;
 use crate::loss_functions::baseline_loss_from_zero_expression;
 use crate::optim::{BackTracking, EvalBudget, Objective, OptimOptions, bfgs_minimize};
 use crate::pop_member::Evaluator;
+use crate::population::Population;
 use crate::{Dataset, OperatorConstraints, OperatorLibrary, Options, PopMember};
 
 const D: usize = 3;
@@ -350,7 +353,7 @@ pub fn run_equation_search(env: &SearchBenchEnv) {
 
 pub struct BestOfSampleBenchEnv {
     rng: Rng,
-    pop: crate::population::Population<BenchT, BenchOps, BENCH_D>,
+    pop: Population<BenchT, BenchOps, BENCH_D>,
     stats: crate::adaptive_parsimony::RunningSearchStatistics,
     options: Options<BenchT, BENCH_D>,
 }
@@ -375,7 +378,7 @@ pub fn run_best_of_sample(env: &mut BestOfSampleBenchEnv) {
 
 pub struct NextGenerationBenchEnv {
     dataset: Dataset<BenchT>,
-    pop: crate::population::Population<BenchT, BenchOps, BENCH_D>,
+    pop: Population<BenchT, BenchOps, BENCH_D>,
     stats: crate::adaptive_parsimony::RunningSearchStatistics,
     options: Options<BenchT, BENCH_D>,
 }
@@ -421,7 +424,7 @@ pub fn run_next_generation_x100(env: &NextGenerationBenchEnv) {
             stats: &env.stats,
             options: &env.options,
             evaluator: &mut evaluator,
-            _ops: core::marker::PhantomData::<BenchOps>,
+            _ops: PhantomData::<BenchOps>,
         };
         let _ = crate::mutate::next_generation(member, ctx);
     }

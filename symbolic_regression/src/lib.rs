@@ -41,7 +41,6 @@ pub use dataset::Dataset;
 pub use dynamic_expressions::{OperatorSelectError, Operators, op, opset};
 pub use hall_of_fame::HallOfFame;
 pub use loss_functions::{LossKind, epsilon_insensitive, huber, log_cosh, lp, mae, make_loss, mse, quantile, rmse};
-pub use operator_library::OperatorLibrary;
 pub use options::{MutationWeights, Options, OutputStyle, WasmOptionsShim};
 pub use pop_member::PopMember;
 pub use search_utils::{SearchEngine, SearchResult, equation_search};

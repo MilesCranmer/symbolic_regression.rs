@@ -14,14 +14,14 @@ use crate::dataset::TaggedDataset;
 use crate::loss_functions::loss_to_cost;
 use crate::options::Options;
 
+/// A candidate expression tracked by the search (with cached evaluation plan).
 #[derive(Debug)]
-/// A candidate expression tracked by the search (with cached evaluation state).
 pub struct PopMember<T: Float, Ops, const D: usize> {
-    /// Birth timestamp / order (used for tie-breaking and reporting).
+    /// Birth timestamp (used for age regularization).
     pub birth: u64,
     /// Expression in postfix form.
     pub expr: PostfixExpr<T, Ops, D>,
-    /// Cached evaluation plan for fast array evaluation.
+    /// Cached evaluation plan.
     pub plan: EvalPlan<D>,
     /// Cached complexity.
     pub complexity: usize,
@@ -119,7 +119,6 @@ where
         }
     }
 
-    /// Like [`PopMember::from_expr`], but with an explicit birth timestamp / order.
     #[cfg(test)]
     pub(crate) fn from_expr_with_birth(birth: u64, expr: PostfixExpr<T, Ops, D>, n_features: usize) -> Self {
         let plan = dynamic_expressions::compile_plan(&expr.nodes, n_features, expr.consts.len());

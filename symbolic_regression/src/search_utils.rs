@@ -21,7 +21,7 @@ use crate::{migration, single_iteration, warmup};
 pub struct SearchResult<T: Float + AddAssign, Ops, const D: usize> {
     /// Hall-of-fame containing the best expressions seen during the search.
     pub hall_of_fame: HallOfFame<T, Ops, D>,
-    /// Best (lowest-cost) member seen during the search.
+    /// Best member seen during the search.
     pub best: PopMember<T, Ops, D>,
 }
 
@@ -444,32 +444,24 @@ where
     }
 
     /// Total number of cycles planned for this run.
-    ///
-    /// This is mainly intended for UIs (e.g. the wasm wrapper).
     #[cfg(any(test, feature = "wasm-ui"))]
     pub fn total_cycles(&self) -> usize {
         self.core.counters.total_cycles
     }
 
     /// Number of cycles completed so far.
-    ///
-    /// This is mainly intended for UIs (e.g. the wasm wrapper).
     #[cfg(any(test, feature = "wasm-ui"))]
     pub fn cycles_completed(&self) -> usize {
         self.core.counters.cycles_completed
     }
 
     /// Total number of expression evaluations performed so far.
-    ///
-    /// This is mainly intended for UIs (e.g. the wasm wrapper).
     #[cfg(any(test, feature = "wasm-ui"))]
     pub fn total_evals(&self) -> u64 {
         self.core.pools.total_evals
     }
 
     /// Returns `true` if the run is finished (or was cancelled).
-    ///
-    /// This is mainly intended for UIs (e.g. the wasm wrapper).
     #[cfg(any(test, feature = "wasm-ui"))]
     pub fn is_finished(&self) -> bool {
         self.core.counters.cycles_remaining() == 0 || self.controller.is_cancelled()

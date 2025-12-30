@@ -65,7 +65,7 @@ and grouped with [`opset!`](https://docs.rs/symbolic_regression/latest/symbolic_
 
 - `BuiltinOpsF32` (or your own `opset!` type) defines the *universe* of operators available to the engine.
 - `Options::operators` is an `Operators<D>` value that selects which ops (by `OpId`) are allowed for this run.
-  `OperatorLibrary` contains small helpers for building common `Operators<D>` selections.
+  You can build one by pushing `OpId`s into `Operators::new()` or by using `BuiltinOpsF32::from_names(["+", "*"])`.
 
 ## Run the example binary
 

@@ -64,11 +64,8 @@ pub fn loss_to_cost<T: Float>(
 
 pub type LossObject<T> = Arc<dyn LossFn<T> + Send + Sync>;
 
+/// Built-in loss function families (use [`make_loss`] to construct a concrete loss object).
 #[derive(Copy, Clone, Debug, PartialEq)]
-/// Built-in loss function families.
-///
-/// Use [`make_loss`] to turn a [`LossKind`] into a concrete loss object suitable for
-/// [`crate::Options::loss`].
 pub enum LossKind {
     Mse,
     Mae,

@@ -64,8 +64,6 @@ impl<T: Float, Ops, const D: usize> HallOfFame<T, Ops, D> {
     }
 
     /// Return a loss-improving sequence of members, scanning from low to high complexity.
-    ///
-    /// This is a convenient approximation of a Pareto front.
     pub fn pareto_front(&self) -> Vec<PopMember<T, Ops, D>> {
         let mut out = Vec::new();
         let mut best_loss = T::infinity();

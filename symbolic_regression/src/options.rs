@@ -144,7 +144,7 @@ macro_rules! __define_mutation_weights {
         /// Relative weights for the different mutation operators.
         ///
         /// These values influence how often each mutation is selected when generating new
-        /// candidate expressions.
+        /// expressions.
         pub struct MutationWeights {
             $(pub $name: $ty,)*
         }
@@ -180,14 +180,19 @@ macro_rules! __define_options {
         /// Configuration for an equation search run.
         ///
         /// Most fields are public "knobs" for the underlying SR engine. For a typical run you
-        /// usually only need to set [`Options::operators`] and a few high-level parameters like
-        /// [`Options::niterations`].
+        /// can start from [`Options::default`] and override [`Options::operators`] plus a few
+        /// high-level parameters such as [`Options::niterations`] and [`Options::popsize`].
         pub struct Options<T: Float, const D: usize> {
             $(pub $name: $ty,)*
             $(pub $iname: bool,)*
             $(pub $pname: bool,)*
 
             /// The set of allowed operators (as `OpId`s) up to arity `D`.
+            ///
+            /// Build this by pushing `OpId`s into [`Operators`] or via string-based constructors
+            /// such as `BuiltinOpsF32::from_names(["+", "*"])`. Custom operator universes can be
+            /// defined with [`dynamic_expressions::opset!`], which also provides a `from_names`
+            /// constructor on the generated opset type.
             pub operators: Operators<D>,
             /// Mutation operator selection weights.
             pub mutation_weights: MutationWeights,

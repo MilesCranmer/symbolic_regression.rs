@@ -15,7 +15,6 @@ pub(crate) struct TaggedDataset<'a, T: Float> {
 }
 
 impl<'a, T: Float> TaggedDataset<'a, T> {
-    /// Create a tagged dataset.
     pub(crate) fn new(data: &'a Dataset<T>, baseline_loss: Option<T>) -> Self {
         Self { data, baseline_loss }
     }
@@ -33,8 +32,6 @@ impl<'a, T: Float> std::ops::Deref for TaggedDataset<'a, T> {
 ///
 /// - `x` is expected to have shape `(n_features, n_rows)` (i.e. column-major with each column a row / sample).
 /// - `y` has length `n_rows`.
-///
-/// Some internals assume `x` and `y` are contiguous; constructors will copy as needed.
 pub struct Dataset<T: Float> {
     /// Column-major contiguous data with shape `(n_features, n_rows)` for vectorization over rows.
     pub x: Array2<T>,
