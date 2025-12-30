@@ -178,6 +178,19 @@ struct GpuMseBatchEvaluator {
     p_max: usize,
 }
 
+#[derive(Copy, Clone, Debug, Default)]
+struct GpuBatchTiming {
+    write_us: u64,
+    encode_submit_us: u64,
+    map_wait_us: u64,
+    readback_us: u64,
+    total_us: u64,
+}
+
+fn dur_us(d: time::Duration) -> u64 {
+    d.as_micros().try_into().unwrap_or(u64::MAX)
+}
+
 impl GpuMseBatchEvaluator {
     fn new(dataset: &Dataset<f32>, p_max: usize) -> Result<Self, GpuInitError> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
@@ -613,17 +626,28 @@ impl GpuMseBatchEvaluator {
         })
     }
 
-    fn eval_mse_batch(&mut self, programs: &[u32], consts: &[f32], p: usize, out: &mut [f32]) {
+    fn eval_mse_batch(
+        &mut self,
+        programs: &[u32],
+        consts: &[f32],
+        p: usize,
+        out: &mut [f32],
+        timing: Option<&mut GpuBatchTiming>,
+    ) {
         assert!(p <= self.p_max);
         assert_eq!(programs.len(), p * MAX_NODES);
         assert_eq!(consts.len(), p * MAX_CONSTS);
         assert_eq!(out.len(), p);
 
+        let t_total = time::Instant::now();
+        let t0 = time::Instant::now();
         self.queue
             .write_buffer(&self.programs_buf, 0, bytemuck::cast_slice(programs));
         self.queue
             .write_buffer(&self.consts_buf, 0, bytemuck::cast_slice(consts));
+        let write_us = dur_us(t0.elapsed());
 
+        let t1 = time::Instant::now();
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("gpu_eval_encoder"),
         });
@@ -641,20 +665,36 @@ impl GpuMseBatchEvaluator {
         encoder.copy_buffer_to_buffer(&self.out_loss_buf, 0, &self.readback_loss_buf, 0, nbytes);
 
         self.queue.submit([encoder.finish()]);
+        let encode_submit_us = dur_us(t1.elapsed());
 
         let slice = self.readback_loss_buf.slice(0..nbytes);
         let (tx, rx) = channel::bounded(1);
+        let t2 = time::Instant::now();
         slice.map_async(wgpu::MapMode::Read, move |res| {
             let _ = tx.send(res);
         });
         let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
         rx.recv().expect("map callback runs").expect("map ok");
+        let map_wait_us = dur_us(t2.elapsed());
 
+        let t3 = time::Instant::now();
         let view = slice.get_mapped_range();
         let got: &[f32] = bytemuck::cast_slice(&view);
         out.copy_from_slice(got);
         drop(view);
         self.readback_loss_buf.unmap();
+        let readback_us = dur_us(t3.elapsed());
+        let total_us = dur_us(t_total.elapsed());
+
+        if let Some(timing) = timing {
+            *timing = GpuBatchTiming {
+                write_us,
+                encode_submit_us,
+                map_wait_us,
+                readback_us,
+                total_us,
+            };
+        }
     }
 
     fn eval_mse_grad_batch(
@@ -664,6 +704,7 @@ impl GpuMseBatchEvaluator {
         p: usize,
         out_loss: &mut [f32],
         out_grad: &mut [f32],
+        timing: Option<&mut GpuBatchTiming>,
     ) {
         assert!(p <= self.p_max);
         assert_eq!(programs.len(), p * MAX_NODES);
@@ -671,11 +712,15 @@ impl GpuMseBatchEvaluator {
         assert_eq!(out_loss.len(), p);
         assert_eq!(out_grad.len(), p * MAX_CONSTS);
 
+        let t_total = time::Instant::now();
+        let t0 = time::Instant::now();
         self.queue
             .write_buffer(&self.programs_buf, 0, bytemuck::cast_slice(programs));
         self.queue
             .write_buffer(&self.consts_buf, 0, bytemuck::cast_slice(consts));
+        let write_us = dur_us(t0.elapsed());
 
+        let t1 = time::Instant::now();
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("gpu_eval_grad_encoder"),
         });
@@ -697,12 +742,14 @@ impl GpuMseBatchEvaluator {
         encoder.copy_buffer_to_buffer(&self.out_grad_buf, 0, &self.readback_grad_buf, 0, grad_bytes);
 
         self.queue.submit([encoder.finish()]);
+        let encode_submit_us = dur_us(t1.elapsed());
 
         let loss_slice = self.readback_loss_buf.slice(0..loss_bytes);
         let grad_slice = self.readback_grad_buf.slice(0..grad_bytes);
 
         let (tx, rx) = channel::bounded(2);
 
+        let t2 = time::Instant::now();
         loss_slice.map_async(wgpu::MapMode::Read, {
             let tx = tx.clone();
             move |res| {
@@ -717,7 +764,9 @@ impl GpuMseBatchEvaluator {
         for _ in 0..2 {
             rx.recv().expect("map callback runs").expect("map ok");
         }
+        let map_wait_us = dur_us(t2.elapsed());
 
+        let t3 = time::Instant::now();
         {
             let view = loss_slice.get_mapped_range();
             let got: &[f32] = bytemuck::cast_slice(&view);
@@ -731,6 +780,18 @@ impl GpuMseBatchEvaluator {
             out_grad.copy_from_slice(&got[..(p * MAX_CONSTS)]);
             drop(view);
             self.readback_grad_buf.unmap();
+        }
+        let readback_us = dur_us(t3.elapsed());
+        let total_us = dur_us(t_total.elapsed());
+
+        if let Some(timing) = timing {
+            *timing = GpuBatchTiming {
+                write_us,
+                encode_submit_us,
+                map_wait_us,
+                readback_us,
+                total_us,
+            };
         }
     }
 }
@@ -870,6 +931,14 @@ fn gpu_server_loop(mut evaluator: GpuMseBatchEvaluator, rx: channel::Receiver<Ev
     let stats_enabled = std::env::var("SYMBOLIC_REGRESSION_GPU_STATS")
         .ok()
         .is_some_and(|v| v != "0");
+    let profile_enabled = std::env::var("SYMBOLIC_REGRESSION_GPU_PROFILE")
+        .ok()
+        .is_some_and(|v| v != "0");
+    let profile_sample = std::env::var("SYMBOLIC_REGRESSION_GPU_PROFILE_SAMPLE")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(1)
+        .max(1);
 
     let mut pending: Vec<EvalRequest> = Vec::new();
 
@@ -887,6 +956,8 @@ fn gpu_server_loop(mut evaluator: GpuMseBatchEvaluator, rx: channel::Receiver<Ev
     let mut total_time = time::Duration::ZERO;
     let mut total_time_loss_only = time::Duration::ZERO;
     let mut total_time_loss_grad = time::Duration::ZERO;
+    let mut profile_tick: u64 = 0;
+    let mut timing = GpuBatchTiming::default();
 
     loop {
         reqs.clear();
@@ -898,7 +969,19 @@ fn gpu_server_loop(mut evaluator: GpuMseBatchEvaluator, rx: channel::Receiver<Ev
         } else {
             match rx.recv() {
                 Ok(r) => r,
-                Err(_) => return,
+                Err(_) => {
+                    if stats_enabled || profile_enabled {
+                        let avg_batch = (total_programs as f64) / (batches as f64).max(1.0);
+                        eprintln!(
+                            "gpu server exit: batches={batches} programs={total_programs} avg_batch={avg_batch:.1} max_batch={max_batch} total_time_ms={} loss_only_ms={} loss_grad_ms={} batch_wait_us={} profile_sample={profile_sample}",
+                            total_time.as_millis(),
+                            total_time_loss_only.as_millis(),
+                            total_time_loss_grad.as_millis(),
+                            batch_wait.as_micros(),
+                        );
+                    }
+                    return;
+                }
             }
         };
         match first {
@@ -927,12 +1010,26 @@ fn gpu_server_loop(mut evaluator: GpuMseBatchEvaluator, rx: channel::Receiver<Ev
                     let const_start = chunk_start * MAX_CONSTS;
                     let const_end = const_start + chunk_p * MAX_CONSTS;
 
+                    profile_tick += 1;
+                    let do_profile = profile_enabled && (profile_tick % profile_sample == 0);
                     evaluator.eval_mse_batch(
                         &programs[prog_start..prog_end],
                         &consts[const_start..const_end],
                         chunk_p,
                         &mut scratch[..chunk_p],
+                        do_profile.then_some(&mut timing),
                     );
+                    if do_profile {
+                        eprintln!(
+                            "gpu_profile,kind=mse,p={chunk_p},write_us={},encode_submit_us={},map_wait_us={},readback_us={},total_us={},pending={}",
+                            timing.write_us,
+                            timing.encode_submit_us,
+                            timing.map_wait_us,
+                            timing.readback_us,
+                            timing.total_us,
+                            pending.len(),
+                        );
+                    }
                     out[chunk_start..(chunk_start + chunk_p)].copy_from_slice(&scratch[..chunk_p]);
                 }
                 let _ = resp.send(out);
@@ -1018,7 +1115,26 @@ fn gpu_server_loop(mut evaluator: GpuMseBatchEvaluator, rx: channel::Receiver<Ev
         let t0 = time::Instant::now();
         match kind {
             EvalKind::LossOnly => {
-                evaluator.eval_mse_batch(&programs, &consts, p, &mut out_loss[..p]);
+                profile_tick += 1;
+                let do_profile = profile_enabled && (profile_tick % profile_sample == 0);
+                evaluator.eval_mse_batch(
+                    &programs,
+                    &consts,
+                    p,
+                    &mut out_loss[..p],
+                    do_profile.then_some(&mut timing),
+                );
+                if do_profile {
+                    eprintln!(
+                        "gpu_profile,kind=mse,p={p},write_us={},encode_submit_us={},map_wait_us={},readback_us={},total_us={},pending={}",
+                        timing.write_us,
+                        timing.encode_submit_us,
+                        timing.map_wait_us,
+                        timing.readback_us,
+                        timing.total_us,
+                        pending.len(),
+                    );
+                }
                 for (i, r) in reqs.drain(..).enumerate() {
                     let resp = match r {
                         EvalRequest::Single { resp, .. } => resp,
@@ -1028,13 +1144,27 @@ fn gpu_server_loop(mut evaluator: GpuMseBatchEvaluator, rx: channel::Receiver<Ev
                 }
             }
             EvalKind::LossGrad => {
+                profile_tick += 1;
+                let do_profile = profile_enabled && (profile_tick % profile_sample == 0);
                 evaluator.eval_mse_grad_batch(
                     &programs,
                     &consts,
                     p,
                     &mut out_loss[..p],
                     &mut out_grad[..(p * MAX_CONSTS)],
+                    do_profile.then_some(&mut timing),
                 );
+                if do_profile {
+                    eprintln!(
+                        "gpu_profile,kind=mse_grad,p={p},write_us={},encode_submit_us={},map_wait_us={},readback_us={},total_us={},pending={}",
+                        timing.write_us,
+                        timing.encode_submit_us,
+                        timing.map_wait_us,
+                        timing.readback_us,
+                        timing.total_us,
+                        pending.len(),
+                    );
+                }
                 for (i, r) in reqs.drain(..).enumerate() {
                     let mut g = [0.0f32; MAX_CONSTS];
                     let base = i * MAX_CONSTS;
