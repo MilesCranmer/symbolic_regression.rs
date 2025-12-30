@@ -1094,3 +1094,11 @@ impl GpuClient {
         }
     }
 }
+
+#[cfg(all(test, feature = "gpu", not(target_arch = "wasm32")))]
+mod tests {
+    #[test]
+    fn wgsl_parses() {
+        let _ = naga::front::wgsl::parse_str(super::KERNELS_WGSL).expect("WGSL should parse");
+    }
+}

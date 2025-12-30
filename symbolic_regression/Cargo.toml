@@ -49,6 +49,7 @@ gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck", "dep:crossbeam-channel"]
 bench = []
 [dev-dependencies]
 criterion = "0.7"
+naga = { version = "28", default-features = false, features = ["wgsl-in"] }
 proptest = "1"
 rand = { version = "0.9", default-features = false, features = ["std", "std_rng"] }
 rand_distr = "0.5"

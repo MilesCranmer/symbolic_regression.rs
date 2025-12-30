@@ -32,11 +32,8 @@ fn main() {
     let options = Options::<f32, D> {
         operators,
         niterations: if is_gpu { 10 } else { 200 },
+        population_size: if is_gpu { 1024 } else { 27 },
         populations: if is_gpu { 4 } else { 31 },
-        population_size: if is_gpu { 32 } else { 27 },
-        ncycles_per_iteration: if is_gpu { 50 } else { 380 },
-        should_optimize_constants: true,
-        optimizer_probability: if is_gpu { 0.02 } else { 0.14 },
         should_simplify: !is_gpu,
         ..Default::default()
     };
