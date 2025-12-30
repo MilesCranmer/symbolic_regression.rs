@@ -6,6 +6,8 @@ use crate::{Options, equation_search};
 
 #[test]
 fn equation_search_runs() {
+    let _guard = crate::search_utils::test_hooks::exclusive_guard();
+
     let n_rows = 64;
     let n_features = 1;
     let mut x = vec![0.0; n_rows];

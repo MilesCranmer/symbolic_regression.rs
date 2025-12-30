@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::fmt::Display;
 use std::ops::AddAssign;
 
@@ -20,6 +21,120 @@ use crate::{migration, single_iteration, warmup};
 pub struct SearchResult<T: Float + AddAssign, Ops, const D: usize> {
     pub hall_of_fame: HallOfFame<T, Ops, D>,
     pub best: PopMember<T, Ops, D>,
+}
+
+enum ResultHandling<T: Float + AddAssign, Ops, const D: usize> {
+    ApplyAsCompleted {
+        ready_to_commit: VecDeque<SearchTaskResult<T, Ops, D>>,
+    },
+    WaitUntilInTaskOrder {
+        pending: Vec<Option<SearchTaskResult<T, Ops, D>>>,
+        task_spawned: Vec<bool>,
+        next_apply: usize,
+        ready_to_commit: VecDeque<SearchTaskResult<T, Ops, D>>,
+    },
+}
+
+impl<T: Float + AddAssign, Ops, const D: usize> ResultHandling<T, Ops, D> {
+    fn new(deterministic: bool, n_pops: usize, n_tasks: usize) -> Self {
+        if deterministic {
+            Self::WaitUntilInTaskOrder {
+                pending: (0..n_pops).map(|_| None).collect(),
+                task_spawned: vec![false; n_tasks],
+                next_apply: 0,
+                ready_to_commit: VecDeque::new(),
+            }
+        } else {
+            Self::ApplyAsCompleted {
+                ready_to_commit: VecDeque::new(),
+            }
+        }
+    }
+
+    fn backlog_count(&self) -> usize {
+        match self {
+            Self::ApplyAsCompleted { ready_to_commit } => ready_to_commit.len(),
+            Self::WaitUntilInTaskOrder {
+                pending,
+                ready_to_commit,
+                ..
+            } => pending.iter().filter(|p| p.is_some()).count() + ready_to_commit.len(),
+        }
+    }
+
+    fn note_task_spawned(&mut self, task_pos: usize) {
+        if let Self::WaitUntilInTaskOrder { task_spawned, .. } = self {
+            task_spawned[task_pos] = true;
+        }
+    }
+
+    fn on_result(&mut self, res: SearchTaskResult<T, Ops, D>, task_order: &[usize], next_task: usize) {
+        match self {
+            Self::ApplyAsCompleted { ready_to_commit } => ready_to_commit.push_back(res),
+            Self::WaitUntilInTaskOrder { pending, .. } => {
+                let pop_idx = res.pop_idx;
+                assert!(
+                    pending[pop_idx].is_none(),
+                    "received multiple results for pop_idx={pop_idx}"
+                );
+                pending[pop_idx] = Some(res);
+                self.release_in_task_order(task_order, next_task);
+            }
+        }
+    }
+
+    fn release_in_task_order(&mut self, task_order: &[usize], next_task: usize) {
+        let Self::WaitUntilInTaskOrder {
+            pending,
+            task_spawned,
+            next_apply,
+            ready_to_commit,
+        } = self
+        else {
+            return;
+        };
+
+        while *next_apply < next_task {
+            if !task_spawned[*next_apply] {
+                *next_apply += 1;
+                continue;
+            }
+
+            let pop_idx = task_order[*next_apply];
+            let Some(res) = pending[pop_idx].take() else {
+                break;
+            };
+            ready_to_commit.push_back(res);
+            *next_apply += 1;
+        }
+    }
+
+    fn pop_ready(&mut self) -> Option<SearchTaskResult<T, Ops, D>> {
+        match self {
+            Self::ApplyAsCompleted { ready_to_commit } => ready_to_commit.pop_front(),
+            Self::WaitUntilInTaskOrder { ready_to_commit, .. } => ready_to_commit.pop_front(),
+        }
+    }
+
+    fn assert_fully_applied(&self, next_task: usize) {
+        let Self::WaitUntilInTaskOrder {
+            next_apply,
+            ready_to_commit,
+            ..
+        } = self
+        else {
+            return;
+        };
+
+        assert!(
+            ready_to_commit.is_empty(),
+            "deterministic scheduler drained with ready results"
+        );
+        assert_eq!(
+            *next_apply, next_task,
+            "deterministic scheduler drained without applying all dispatched tasks"
+        );
+    }
 }
 
 fn usable_rayon_threads() -> usize {
@@ -165,6 +280,7 @@ where
     let mut core = SearchCore {
         counters,
         stats,
+        iter_stats_snapshot: None,
         hall,
         progress,
         pools,
@@ -188,6 +304,7 @@ where
 struct SearchCore<T: Float + AddAssign, Ops, const D: usize> {
     counters: SearchCounters,
     stats: RunningSearchStatistics,
+    iter_stats_snapshot: Option<RunningSearchStatistics>,
     hall: HallOfFame<T, Ops, D>,
     progress: SearchProgress,
     pools: PopPools<T, Ops, D>,
@@ -199,8 +316,8 @@ struct SearchCore<T: Float + AddAssign, Ops, const D: usize> {
 }
 
 impl<T: Float + AddAssign, Ops, const D: usize> SearchCore<T, Ops, D> {
-    fn prepare_iteration_state(&mut self, niterations: usize) {
-        if self.cur_iter >= niterations {
+    fn prepare_iteration_state(&mut self, options: &Options<T, D>) {
+        if self.cur_iter >= options.niterations {
             return;
         }
         if !self.task_order.is_empty() && self.next_task < self.task_order.len() {
@@ -211,6 +328,14 @@ impl<T: Float + AddAssign, Ops, const D: usize> SearchCore<T, Ops, D> {
         shuffle(&mut self.order_rng, &mut self.task_order);
         self.next_task = 0;
         self.cur_iter += 1;
+
+        if options.deterministic {
+            let mut snapshot = self.stats.clone();
+            snapshot.normalize();
+            self.iter_stats_snapshot = Some(snapshot);
+        } else {
+            self.iter_stats_snapshot = None;
+        }
     }
 
     #[inline]
@@ -227,6 +352,33 @@ where
     T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + AddAssign + Send + Sync,
     Ops: dynamic_expressions::OperatorSet<T = T> + Send + Sync,
 {
+    fn apply_ready_results(
+        &mut self,
+        result_handling: &mut ResultHandling<T, Ops, D>,
+        options: &Options<T, D>,
+        controller: &StopController,
+    ) -> usize {
+        result_handling.release_in_task_order(&self.task_order, self.next_task);
+        let mut applied = 0usize;
+        while let Some(res) = result_handling.pop_ready() {
+            apply_task_result(
+                options,
+                &mut self.counters,
+                &mut self.stats,
+                &mut self.hall,
+                &mut self.progress,
+                &mut self.pools,
+                res,
+            );
+            applied += 1;
+
+            if controller.should_stop(self.pools.total_evals) {
+                controller.cancel();
+            }
+        }
+        applied
+    }
+
     fn step(
         &mut self,
         dataset: &Dataset<T>,
@@ -252,11 +404,15 @@ where
 
         let completed_total = rayon::scope(|scope| {
             let (result_tx, result_rx) = std::sync::mpsc::channel::<SearchTaskResult<T, Ops, D>>();
+            let mut result_handling =
+                ResultHandling::<T, Ops, D>::new(options.deterministic, self.pools.pops.len(), self.task_order.len());
             let mut in_flight = 0usize;
             let mut completed_total = 0usize;
             let mut stop_dispatching = false;
 
-            while completed_total < n_cycles && (!stop_dispatching || in_flight > 0) {
+            while completed_total < n_cycles
+                && (!stop_dispatching || in_flight > 0 || result_handling.backlog_count() > 0)
+            {
                 if is_finished(&self.counters) {
                     stop_dispatching = true;
                 }
@@ -266,8 +422,21 @@ where
                     controller.cancel();
                 }
 
-                if !stop_dispatching && in_flight == 0 && self.next_task >= self.task_order.len() {
-                    self.prepare_iteration_state(options.niterations);
+                if !stop_dispatching
+                    && in_flight == 0
+                    && result_handling.backlog_count() == 0
+                    && self.next_task >= self.task_order.len()
+                {
+                    if options.deterministic {
+                        result_handling.assert_fully_applied(self.next_task);
+                    }
+
+                    self.prepare_iteration_state(options);
+                    result_handling = ResultHandling::<T, Ops, D>::new(
+                        options.deterministic,
+                        self.pools.pops.len(),
+                        self.task_order.len(),
+                    );
                     if self.next_task >= self.task_order.len() {
                         stop_dispatching = true;
                     }
@@ -275,7 +444,7 @@ where
 
                 while !stop_dispatching
                     && in_flight < n_workers
-                    && completed_total + in_flight < n_cycles
+                    && completed_total + in_flight + result_handling.backlog_count() < n_cycles
                     && self.next_task < self.task_order.len()
                 {
                     if is_finished(&self.counters) {
@@ -289,7 +458,8 @@ where
                         break;
                     }
 
-                    let pop_idx = self.task_order[self.next_task];
+                    let task_pos = self.next_task;
+                    let pop_idx = self.task_order[task_pos];
                     self.next_task += 1;
 
                     let Some(pop_state) = self.pools.pops[pop_idx].take() else {
@@ -299,8 +469,16 @@ where
                     let cycles_remaining_start = self.counters.cycles_remaining_start_for_next_dispatch();
                     let curmaxsize =
                         warmup::get_cur_maxsize(options, self.counters.total_cycles, cycles_remaining_start);
-                    let mut stats_snapshot = self.stats.clone();
-                    stats_snapshot.normalize();
+                    let stats_snapshot = match &self.iter_stats_snapshot {
+                        Some(snapshot) => snapshot.clone(),
+                        None => {
+                            let mut snapshot = self.stats.clone();
+                            snapshot.normalize();
+                            snapshot
+                        }
+                    };
+
+                    result_handling.note_task_spawned(task_pos);
 
                     if need_inline {
                         // Inline exec avoids deadlock in 1-thread pools, while preserving the same
@@ -319,6 +497,9 @@ where
                     } else {
                         let result_tx = result_tx.clone();
                         scope.spawn(move |_| {
+                            #[cfg(test)]
+                            let _task_guard = test_hooks::active_task_guard();
+
                             let full_dataset = TaggedDataset::new(dataset, baseline_loss);
                             let res = execute_task(
                                 full_dataset,
@@ -335,6 +516,8 @@ where
                     in_flight += 1;
                 }
 
+                completed_total += self.apply_ready_results(&mut result_handling, options, controller);
+
                 if in_flight == 0 {
                     if stop_dispatching {
                         break;
@@ -344,21 +527,19 @@ where
 
                 let res = result_rx.recv().expect("worker result channel closed early");
                 in_flight -= 1;
-                apply_task_result(
-                    options,
-                    &mut self.counters,
-                    &mut self.stats,
-                    &mut self.hall,
-                    &mut self.progress,
-                    &mut self.pools,
-                    res,
-                );
-                completed_total += 1;
+                result_handling.on_result(res, &self.task_order, self.next_task);
+                completed_total += self.apply_ready_results(&mut result_handling, options, controller);
 
                 if controller.should_stop(self.pools.total_evals) {
                     stop_dispatching = true;
                     controller.cancel();
                 }
+            }
+
+            completed_total += self.apply_ready_results(&mut result_handling, options, controller);
+
+            if options.deterministic {
+                result_handling.assert_fully_applied(self.next_task);
             }
 
             completed_total
@@ -413,6 +594,7 @@ where
         let core = SearchCore {
             counters,
             stats,
+            iter_stats_snapshot: None,
             hall,
             progress,
             pools,
@@ -507,7 +689,7 @@ where
     Ops: dynamic_expressions::OperatorSet<T = T>,
 {
     if controller.is_cancelled() {
-        return SearchTaskResult {
+        let res = SearchTaskResult {
             pop_idx,
             curmaxsize,
             evals: 0,
@@ -515,6 +697,9 @@ where
             best_sub_pop: migration::best_sub_pop(&pop_state.pop, options.topn),
             pop_state,
         };
+        #[cfg(test)]
+        crate::search_utils::test_hooks::maybe_jitter_for_pop(pop_idx);
+        return res;
     }
     let (evals1, best_seen) = pop_state.run_iteration_phase(
         single_iteration::s_r_cycle,
@@ -537,14 +722,19 @@ where
 
     let best_sub_pop = migration::best_sub_pop(&pop_state.pop, options.topn);
 
-    SearchTaskResult {
+    let res = SearchTaskResult {
         pop_idx,
         curmaxsize,
         evals,
         best_seen,
         best_sub_pop,
         pop_state,
-    }
+    };
+
+    #[cfg(test)]
+    crate::search_utils::test_hooks::maybe_jitter_for_pop(pop_idx);
+
+    res
 }
 
 fn apply_task_result<T, Ops, const D: usize>(
@@ -702,6 +892,77 @@ where
         best_sub_pops,
         best,
         total_evals,
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod test_hooks {
+    use std::sync::OnceLock;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    static GLOBAL_LOCK: OnceLock<std::sync::Mutex<()>> = OnceLock::new();
+    static POP_DELAYS_MS: OnceLock<std::sync::Mutex<Vec<u64>>> = OnceLock::new();
+    static ACTIVE_TASKS: AtomicUsize = AtomicUsize::new(0);
+    static MAX_ACTIVE_TASKS: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn exclusive_guard() -> std::sync::MutexGuard<'static, ()> {
+        let lock = GLOBAL_LOCK.get_or_init(|| std::sync::Mutex::new(()));
+        let guard = lock.lock().expect("test_hooks global lock poisoned");
+
+        ACTIVE_TASKS.store(0, Ordering::Relaxed);
+        MAX_ACTIVE_TASKS.store(0, Ordering::Relaxed);
+        *POP_DELAYS_MS
+            .get_or_init(|| std::sync::Mutex::new(Vec::new()))
+            .lock()
+            .expect("test_hooks pop delays lock poisoned") = Vec::new();
+
+        guard
+    }
+
+    pub(crate) fn set_pop_jitter_ms(delays: Vec<u64>) {
+        *POP_DELAYS_MS
+            .get_or_init(|| std::sync::Mutex::new(Vec::new()))
+            .lock()
+            .expect("test_hooks pop delays lock poisoned") = delays;
+    }
+
+    pub(crate) fn maybe_jitter_for_pop(pop_idx: usize) {
+        let delay_ms = POP_DELAYS_MS
+            .get_or_init(|| std::sync::Mutex::new(Vec::new()))
+            .lock()
+            .expect("test_hooks pop delays lock poisoned")
+            .get(pop_idx)
+            .copied()
+            .unwrap_or(0);
+
+        if delay_ms > 0 {
+            std::thread::sleep(Duration::from_millis(delay_ms));
+        }
+    }
+
+    pub(crate) fn max_active_tasks() -> usize {
+        MAX_ACTIVE_TASKS.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn active_task_guard() -> TaskGuard {
+        let cur = ACTIVE_TASKS.fetch_add(1, Ordering::Relaxed).saturating_add(1);
+        let mut prev = MAX_ACTIVE_TASKS.load(Ordering::Relaxed);
+        while cur > prev {
+            match MAX_ACTIVE_TASKS.compare_exchange_weak(prev, cur, Ordering::Relaxed, Ordering::Relaxed) {
+                Ok(_) => break,
+                Err(next_prev) => prev = next_prev,
+            }
+        }
+        TaskGuard
+    }
+
+    pub(crate) struct TaskGuard;
+
+    impl Drop for TaskGuard {
+        fn drop(&mut self) {
+            ACTIVE_TASKS.fetch_sub(1, Ordering::Relaxed);
+        }
     }
 }
 
