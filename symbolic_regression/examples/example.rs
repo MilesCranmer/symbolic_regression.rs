@@ -32,11 +32,14 @@ fn main() {
     let options = Options::<f32, D> {
         operators,
         niterations: if is_gpu { 10 } else { 200 },
-        population_size: if is_gpu { 1024 } else { 27 },
-        populations: if is_gpu { 4 } else { 31 },
+        population_size: if is_gpu { 8192 } else { 27 },
+        populations: if is_gpu { 16 } else { 31 },
+        tournament_selection_n: 15,
         should_simplify: !is_gpu,
         ..Default::default()
     };
+
+    // Target: population_size / tournament_selection_n ~ 512
 
     #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
     let result = {

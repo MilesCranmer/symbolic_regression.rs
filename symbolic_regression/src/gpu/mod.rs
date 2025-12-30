@@ -926,7 +926,7 @@ impl GpuClient {
         })
     }
 
-    /// Convenience single-program MSE.
+    /// Maximum number of programs per GPU batch.
     pub fn max_batch(&self) -> usize {
         self.p_max
     }

@@ -261,6 +261,8 @@ fn bench_utils(c: &mut Criterion) {
                             stats: &stats,
                             options: &options,
                             evaluator: &mut evaluator,
+                            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+                            gpu: None,
                             _ops: PhantomData::<Ops>,
                         };
                         let _ = next_generation(member, ctx);

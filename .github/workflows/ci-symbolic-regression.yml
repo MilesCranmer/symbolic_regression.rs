@@ -99,6 +99,58 @@ jobs:
       - name: cargo test
         run: cargo test -p symbolic_regression --all-targets --all-features
 
+  cargo-test-gpu-lavapipe:
+    name: cargo test (gpu lavapipe)
+    runs-on: ubuntu-latest
+    env:
+      PROPTEST_CASES: "64"
+      RUST_TEST_THREADS: "1"
+      SYMBOLIC_REGRESSION_GPU_PRINT_ADAPTER: "1"
+      SYMBOLIC_REGRESSION_GPU_TEST_REQUIRED: "1"
+      WGPU_BACKEND: vulkan
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Vulkan (lavapipe)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mesa-vulkan-drivers
+          echo "Available Vulkan ICDs:"
+          ls -lah /usr/share/vulkan/icd.d || true
+          echo "VK_ICD_FILENAMES=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -n1)" >> "$GITHUB_ENV"
+
+      - name: cargo test (gpu)
+        run: cargo test -p symbolic_regression --features gpu --lib
+
+  cargo-test-gpu-metal:
+    name: cargo test (gpu metal)
+    runs-on: macos-latest
+    env:
+      PROPTEST_CASES: "64"
+      RUST_TEST_THREADS: "1"
+      SYMBOLIC_REGRESSION_GPU_PRINT_ADAPTER: "1"
+      SYMBOLIC_REGRESSION_GPU_TEST_REQUIRED: "1"
+      WGPU_BACKEND: metal
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo test (gpu)
+        run: cargo test -p symbolic_regression --features gpu --lib
+
   coverage:
     name: coverage (codecov)
     runs-on: ubuntu-latest

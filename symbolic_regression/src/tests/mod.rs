@@ -6,6 +6,8 @@ mod test_cost_normalization;
 mod test_count_depth_proptests;
 mod test_equation_search_runs;
 mod test_frequency_in_tournament;
+#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+mod test_gpu_eval_proptests;
 mod test_loss;
 mod test_mutate_constant_regressions;
 mod test_mutation_regressions;
