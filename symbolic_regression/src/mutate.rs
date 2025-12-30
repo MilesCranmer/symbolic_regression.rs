@@ -13,7 +13,7 @@ use crate::dataset::TaggedDataset;
 use crate::loss_functions::loss_to_cost;
 use crate::mutation_functions;
 use crate::options::{MutationWeights, Options};
-use crate::pop_member::{Evaluator, MemberId, PopMember};
+use crate::pop_member::{Evaluator, PopMember};
 use crate::random::usize_range_inclusive;
 use crate::selection::weighted_index;
 
@@ -41,7 +41,6 @@ pub struct NextGenerationCtx<'a, T: Float + AddAssign, Ops, const D: usize> {
     pub stats: &'a RunningSearchStatistics,
     pub options: &'a Options<T, D>,
     pub evaluator: &'a mut Evaluator<T, D>,
-    pub next_id: &'a mut u64,
     pub _ops: core::marker::PhantomData<Ops>,
 }
 
@@ -51,7 +50,6 @@ pub struct CrossoverCtx<'a, T: Float, Ops, const D: usize> {
     pub curmaxsize: usize,
     pub options: &'a Options<T, D>,
     pub evaluator: &'a mut Evaluator<T, D>,
-    pub next_id: &'a mut u64,
     pub _ops: core::marker::PhantomData<Ops>,
 }
 
@@ -199,7 +197,7 @@ impl MutationChoice {
             }
             MutationChoice::Simplify => {
                 let _ = dynamic_expressions::simplify_in_place(&mut expr, &evaluator.eval_opts);
-                let mut out = PopMember::from_expr(MemberId(0), Some(member.id), expr, n_features, options);
+                let mut out = PopMember::from_expr(expr, n_features, options);
 
                 // Match the intended behavior (and current SymbolicRegression.jl main):
                 // simplify returns immediately and keeps the old loss, but refreshes complexity/cost.
@@ -228,7 +226,7 @@ impl MutationChoice {
             MutationChoice::DoNothing => {
                 // Match SymbolicRegression.jl: identity mutation is accepted immediately and keeps
                 // the old loss/cost.
-                let mut out = PopMember::from_expr(MemberId(0), Some(member.id), expr, n_features, options);
+                let mut out = PopMember::from_expr(expr, n_features, options);
                 out.plan = member.plan.clone();
                 out.complexity = member.complexity;
                 out.loss = member.loss;
@@ -239,7 +237,7 @@ impl MutationChoice {
                 }
             }
             MutationChoice::Optimize => {
-                let mut out = PopMember::from_expr(MemberId(0), Some(member.id), expr, n_features, options);
+                let mut out = PopMember::from_expr(expr, n_features, options);
 
                 // Match SymbolicRegression.jl: optimize returns immediately with loss/cost already
                 // computed by constant optimization.
@@ -286,7 +284,6 @@ where
         stats,
         options,
         evaluator,
-        next_id,
         ..
     } = ctx;
 
@@ -324,36 +321,29 @@ where
                 }
             }
             MutationResult::ProposedMember {
-                member: mut out,
+                member: out,
                 evals: delta_evals,
             } => {
                 evals += delta_evals;
-                let id = MemberId(*next_id);
-                *next_id += 1;
-                out.id = id;
-                out.parent = Some(member.id);
                 return (out, true, evals);
             }
         }
     }
 
-    let id = MemberId(*next_id);
-    *next_id += 1;
-
     if !successful {
-        let mut baby = PopMember::from_expr(id, Some(member.id), member.expr.clone(), n_features, options);
+        let mut baby = PopMember::from_expr(member.expr.clone(), n_features, options);
         baby.complexity = member.complexity;
         baby.loss = member.loss;
         baby.cost = member.cost;
         return (baby, false, 0.0);
     }
 
-    let mut baby = PopMember::from_expr(id, Some(member.id), tree, n_features, options);
+    let mut baby = PopMember::from_expr(tree, n_features, options);
     let _ok = baby.evaluate(&dataset, options, evaluator);
     evals += 1.0;
     let after_cost = baby.cost.to_f64().unwrap_or(f64::INFINITY);
     if after_cost.is_nan() {
-        let mut reject = PopMember::from_expr(id, Some(member.id), member.expr.clone(), n_features, options);
+        let mut reject = PopMember::from_expr(member.expr.clone(), n_features, options);
         reject.complexity = member.complexity;
         reject.loss = member.loss;
         reject.cost = member.cost;
@@ -382,7 +372,7 @@ where
     }
 
     if prob < rng.f64() {
-        let mut reject = PopMember::from_expr(id, Some(member.id), member.expr.clone(), n_features, options);
+        let mut reject = PopMember::from_expr(member.expr.clone(), n_features, options);
         reject.complexity = member.complexity;
         reject.loss = member.loss;
         reject.cost = member.cost;
@@ -406,7 +396,6 @@ where
         curmaxsize,
         options,
         evaluator,
-        next_id,
         ..
     } = ctx;
 
@@ -416,13 +405,8 @@ where
         let (c1_expr, c2_expr) = mutation_functions::crossover_trees(rng, &member1.expr, &member2.expr);
         tries += 1;
         if check_constraints(&c1_expr, options, curmaxsize) && check_constraints(&c2_expr, options, curmaxsize) {
-            let id1 = MemberId(*next_id);
-            *next_id += 1;
-            let id2 = MemberId(*next_id);
-            *next_id += 1;
-
-            let mut baby1 = PopMember::from_expr(id1, Some(member1.id), c1_expr, dataset.n_features, options);
-            let mut baby2 = PopMember::from_expr(id2, Some(member2.id), c2_expr, dataset.n_features, options);
+            let mut baby1 = PopMember::from_expr(c1_expr, dataset.n_features, options);
+            let mut baby2 = PopMember::from_expr(c2_expr, dataset.n_features, options);
             let _ = baby1.evaluate(&dataset, options, evaluator);
             let _ = baby2.evaluate(&dataset, options, evaluator);
             return (baby1, baby2, true, 2.0);

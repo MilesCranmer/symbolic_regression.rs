@@ -7,7 +7,7 @@ use super::common::{D, T, TestOps};
 use crate::adaptive_parsimony::RunningSearchStatistics;
 use crate::dataset::TaggedDataset;
 use crate::operator_library::OperatorLibrary;
-use crate::pop_member::{Evaluator, MemberId, PopMember};
+use crate::pop_member::{Evaluator, PopMember};
 use crate::population::Population;
 use crate::{MutationWeights, Options, mutate, regularized_evolution};
 
@@ -52,7 +52,7 @@ fn next_generation_fails_constraints_after_retries() {
     };
 
     let mut evaluator = Evaluator::<T, D>::new(dataset.n_rows);
-    let mut member = PopMember::from_expr_with_birth(MemberId(0), None, 0, leaf_expr(), dataset.n_features);
+    let mut member = PopMember::from_expr_with_birth(0, leaf_expr(), dataset.n_features);
     let baseline_loss = if options.use_baseline {
         crate::loss_functions::baseline_loss_from_zero_expression::<T, TestOps, D>(&dataset, options.loss.as_ref())
     } else {
@@ -65,7 +65,6 @@ fn next_generation_fails_constraints_after_retries() {
     let mut stats = RunningSearchStatistics::new(options.maxsize, 1000);
     stats.normalize();
 
-    let mut next_id = 1u64;
     let (_baby, accepted, _evals) = mutate::next_generation::<T, TestOps, D>(
         &member,
         mutate::NextGenerationCtx {
@@ -76,7 +75,6 @@ fn next_generation_fails_constraints_after_retries() {
             stats: &stats,
             options: &options,
             evaluator: &mut evaluator,
-            next_id: &mut next_id,
             _ops: core::marker::PhantomData,
         },
     );
@@ -126,14 +124,13 @@ fn reg_evol_cycle_skips_replacement_when_configured() {
         None
     };
     let full_dataset = TaggedDataset::new(&dataset, baseline_loss);
-    let member = PopMember::from_expr_with_birth(MemberId(0), None, 0, leaf_expr(), dataset.n_features);
+    let member = PopMember::from_expr_with_birth(0, leaf_expr(), dataset.n_features);
     let mut pop = Population::new(vec![member]);
 
     let mut rng = Rng::with_seed(0);
     let mut stats = RunningSearchStatistics::new(options.maxsize, 1000);
     stats.normalize();
 
-    let mut next_id = 1u64;
     let controller = crate::stop_controller::StopController::from_options(&options);
     let ctx = regularized_evolution::RegEvolCtx::<T, TestOps, D> {
         rng: &mut rng,
@@ -141,7 +138,6 @@ fn reg_evol_cycle_skips_replacement_when_configured() {
         stats: &stats,
         options: &options,
         evaluator: &mut evaluator,
-        next_id: &mut next_id,
         controller: &controller,
         temperature: 1.0,
         curmaxsize: 1,

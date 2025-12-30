@@ -4,17 +4,24 @@ use crate::check_constraints::check_constraints;
 use crate::options::Options;
 use crate::pop_member::PopMember;
 
+/// Pareto-style hall-of-fame indexed by (discrete) complexity.
+///
+/// The engine maintains (at most) one best member per complexity, then derives an approximate
+/// Pareto front via [`HallOfFame::pareto_front`].
 pub struct HallOfFame<T: Float, Ops, const D: usize> {
+    /// Best member at each complexity (1..=max_complexity), with index equal to complexity.
     pub best_by_complexity: Vec<Option<PopMember<T, Ops, D>>>,
 }
 
 impl<T: Float, Ops, const D: usize> HallOfFame<T, Ops, D> {
+    /// Create a hall-of-fame with the given maximum complexity.
     pub fn new(max_complexity: usize) -> Self {
         Self {
             best_by_complexity: vec![None; max_complexity + 1],
         }
     }
 
+    /// Consider adding `member` to the hall-of-fame.
     pub fn consider(&mut self, member: &PopMember<T, Ops, D>, options: &Options<T, D>, curmaxsize: usize) {
         if !member.loss.is_finite() {
             return;
@@ -44,21 +51,21 @@ impl<T: Float, Ops, const D: usize> HallOfFame<T, Ops, D> {
         }
     }
 
-    pub fn update_from_members(
-        &mut self,
-        members: &[PopMember<T, Ops, D>],
-        options: &Options<T, D>,
-        curmaxsize: usize,
-    ) {
+    /// Consider a batch of members.
+    pub fn consider_members(&mut self, members: &[PopMember<T, Ops, D>], options: &Options<T, D>, curmaxsize: usize) {
         for m in members {
             self.consider(m, options, curmaxsize);
         }
     }
 
+    /// Iterate all stored members (unordered).
     pub fn members(&self) -> impl Iterator<Item = &PopMember<T, Ops, D>> {
         self.best_by_complexity.iter().flatten()
     }
 
+    /// Return a loss-improving sequence of members, scanning from low to high complexity.
+    ///
+    /// This is a convenient approximation of a Pareto front.
     pub fn pareto_front(&self) -> Vec<PopMember<T, Ops, D>> {
         let mut out = Vec::new();
         let mut best_loss = T::infinity();

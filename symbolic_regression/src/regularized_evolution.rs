@@ -20,7 +20,6 @@ pub struct RegEvolCtx<'a, T: Float + AddAssign, Ops, const D: usize> {
     pub stats: &'a RunningSearchStatistics,
     pub options: &'a Options<T, D>,
     pub evaluator: &'a mut Evaluator<T, D>,
-    pub next_id: &'a mut u64,
     pub controller: &'a StopController,
     pub _ops: core::marker::PhantomData<Ops>,
 }
@@ -49,7 +48,6 @@ where
                     stats: ctx.stats,
                     options: ctx.options,
                     evaluator: ctx.evaluator,
-                    next_id: ctx.next_id,
                     _ops: core::marker::PhantomData,
                 },
             );
@@ -70,7 +68,6 @@ where
                     curmaxsize: ctx.curmaxsize,
                     options: ctx.options,
                     evaluator: ctx.evaluator,
-                    next_id: ctx.next_id,
                     _ops: core::marker::PhantomData,
                 },
             );

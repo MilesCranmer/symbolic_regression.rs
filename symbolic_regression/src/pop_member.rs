@@ -14,18 +14,20 @@ use crate::dataset::TaggedDataset;
 use crate::loss_functions::loss_to_cost;
 use crate::options::Options;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct MemberId(pub u64);
-
 #[derive(Debug)]
+/// A candidate expression tracked by the search (with cached evaluation state).
 pub struct PopMember<T: Float, Ops, const D: usize> {
-    pub id: MemberId,
-    pub parent: Option<MemberId>,
+    /// Birth timestamp / order (used for tie-breaking and reporting).
     pub birth: u64,
+    /// Expression in postfix form.
     pub expr: PostfixExpr<T, Ops, D>,
+    /// Cached evaluation plan for fast array evaluation.
     pub plan: EvalPlan<D>,
+    /// Cached complexity.
     pub complexity: usize,
+    /// Cached loss value (as configured by [`Options::loss`]).
     pub loss: T,
+    /// Cached cost (loss normalized + parsimony term).
     pub cost: T,
 }
 
@@ -60,8 +62,6 @@ pub(crate) fn reset_pseudo_time_for_tests() {
 impl<T: Float, Ops, const D: usize> Clone for PopMember<T, Ops, D> {
     fn clone(&self) -> Self {
         Self {
-            id: self.id,
-            parent: self.parent,
             birth: self.birth,
             expr: self.expr.clone(),
             plan: self.plan.clone(),
@@ -72,14 +72,18 @@ impl<T: Float, Ops, const D: usize> Clone for PopMember<T, Ops, D> {
     }
 }
 
-pub struct Evaluator<T: Float, const D: usize> {
+pub(crate) struct Evaluator<T: Float, const D: usize> {
+    /// Evaluation configuration (finite checks, early exit, etc).
     pub eval_opts: EvalOptions,
+    /// Buffer for model predictions.
     pub yhat: Vec<T>,
+    /// Scratch buffer used by the evaluation kernel.
     pub scratch: ndarray::Array2<T>,
 }
 
 impl<T: Float, const D: usize> Evaluator<T, D> {
-    pub fn new(n_rows: usize) -> Self {
+    /// Create an evaluator with buffers sized for `n_rows`.
+    pub(crate) fn new(n_rows: usize) -> Self {
         Self {
             eval_opts: EvalOptions {
                 check_finite: true,
@@ -90,7 +94,8 @@ impl<T: Float, const D: usize> Evaluator<T, D> {
         }
     }
 
-    pub fn ensure_n_rows(&mut self, n_rows: usize) {
+    /// Resize internal buffers for a dataset with `n_rows`.
+    pub(crate) fn ensure_n_rows(&mut self, n_rows: usize) {
         if self.yhat.len() != n_rows {
             self.yhat.resize(n_rows, T::zero());
         }
@@ -101,17 +106,10 @@ impl<T: Float, Ops, const D: usize> PopMember<T, Ops, D>
 where
     Ops: dynamic_expressions::OperatorSet<T = T>,
 {
-    pub fn from_expr(
-        id: MemberId,
-        parent: Option<MemberId>,
-        expr: PostfixExpr<T, Ops, D>,
-        n_features: usize,
-        options: &Options<T, D>,
-    ) -> Self {
+    /// Create a member from an expression and compile its evaluation plan.
+    pub(crate) fn from_expr(expr: PostfixExpr<T, Ops, D>, n_features: usize, options: &Options<T, D>) -> Self {
         let plan = dynamic_expressions::compile_plan(&expr.nodes, n_features, expr.consts.len());
         Self {
-            id,
-            parent,
             birth: get_birth_order(options.deterministic),
             expr,
             plan,
@@ -121,17 +119,11 @@ where
         }
     }
 
-    pub fn from_expr_with_birth(
-        id: MemberId,
-        parent: Option<MemberId>,
-        birth: u64,
-        expr: PostfixExpr<T, Ops, D>,
-        n_features: usize,
-    ) -> Self {
+    /// Like [`PopMember::from_expr`], but with an explicit birth timestamp / order.
+    #[cfg(test)]
+    pub(crate) fn from_expr_with_birth(birth: u64, expr: PostfixExpr<T, Ops, D>, n_features: usize) -> Self {
         let plan = dynamic_expressions::compile_plan(&expr.nodes, n_features, expr.consts.len());
         Self {
-            id,
-            parent,
             birth,
             expr,
             plan,
@@ -141,11 +133,15 @@ where
         }
     }
 
+    /// Recompile the cached evaluation plan (e.g. if `n_features` changes).
     pub fn rebuild_plan(&mut self, n_features: usize) {
         self.plan = dynamic_expressions::compile_plan(&self.expr.nodes, n_features, self.expr.consts.len());
     }
 
-    pub fn evaluate(
+    /// Evaluate this member on the given dataset and update cached `loss` / `cost` / `complexity`.
+    ///
+    /// Returns `false` if evaluation fails (e.g. non-finite values or NaNs).
+    pub(crate) fn evaluate(
         &mut self,
         dataset: &TaggedDataset<'_, T>,
         options: &Options<T, D>,
@@ -169,11 +165,9 @@ where
             return false;
         }
 
-        let loss = options.loss.loss(
-            &evaluator.yhat,
-            dataset.y.as_slice().unwrap(),
-            dataset.weights.as_ref().and_then(|w| w.as_slice()),
-        );
+        let loss = options
+            .loss
+            .loss(&evaluator.yhat, dataset.y_slice(), dataset.weights_slice());
         if loss.is_nan() {
             self.loss = loss;
             self.cost = T::nan();

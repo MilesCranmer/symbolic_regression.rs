@@ -3,9 +3,17 @@ use fastrand::Rng;
 
 use crate::random::usize_range;
 
-pub trait OperatorsSampling {
+/// Sampling helpers for choosing operators by arity during mutations.
+///
+/// This is implemented for [`dynamic_expressions::Operators`] and is mostly useful for advanced
+/// integrations or custom search loops.
+pub(crate) trait OperatorsSampling {
+    /// Total number of operators with arity in `1..=max_arity` (clamped to the implementation's
+    /// maximum arity).
     fn total_ops_up_to(&self, max_arity: usize) -> usize;
+    /// Sample an arity in `1..=max_arity` proportional to the number of operators at that arity.
     fn sample_arity(&self, rng: &mut Rng, max_arity: usize) -> usize;
+    /// Sample an operator `OpId` with the given arity.
     fn sample_op(&self, rng: &mut Rng, arity: usize) -> OpId;
 }
 

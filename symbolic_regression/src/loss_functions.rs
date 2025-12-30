@@ -65,6 +65,10 @@ pub fn loss_to_cost<T: Float>(
 pub type LossObject<T> = Arc<dyn LossFn<T> + Send + Sync>;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
+/// Built-in loss function families.
+///
+/// Use [`make_loss`] to turn a [`LossKind`] into a concrete loss object suitable for
+/// [`crate::Options::loss`].
 pub enum LossKind {
     Mse,
     Mae,
@@ -77,6 +81,7 @@ pub enum LossKind {
 }
 
 impl LossKind {
+    /// Parse a loss kind name such as `"mse"` or `"huber"`.
     pub fn parse(s: &str) -> Option<Self> {
         match s.trim().to_ascii_lowercase().as_str() {
             "mse" => Some(Self::Mse),
@@ -94,6 +99,7 @@ impl LossKind {
     }
 }
 
+/// Construct a loss object for use in [`crate::Options::loss`].
 pub fn make_loss<T: Float + Send + Sync + 'static>(kind: LossKind) -> LossObject<T> {
     match kind {
         LossKind::Mse => mse::<T>(),
@@ -378,40 +384,48 @@ impl<T: Float> LossFn<T> for Rmse {
     }
 }
 
+/// Mean squared error.
 pub fn mse<T: Float>() -> LossObject<T> {
     Arc::new(MeanLoss(SquaredLoss))
 }
 
+/// Mean absolute error.
 pub fn mae<T: Float>() -> LossObject<T> {
     Arc::new(MeanLoss(AbsLoss))
 }
 
+/// Root mean squared error.
 pub fn rmse<T: Float>() -> LossObject<T> {
     Arc::new(Rmse)
 }
 
+/// Huber loss (with `delta` in `f64`).
 pub fn huber<T: Float + Send + Sync + 'static>(delta: f64) -> LossObject<T> {
     Arc::new(MeanLoss(HuberLoss {
         delta: T::from(delta).unwrap_or_else(T::one),
     }))
 }
 
+/// Log-cosh loss.
 pub fn log_cosh<T: Float>() -> LossObject<T> {
     Arc::new(MeanLoss(LogCoshLoss))
 }
 
+/// Lp loss (defaults to `p = 2`).
 pub fn lp<T: Float + Send + Sync + 'static>(p: f64) -> LossObject<T> {
     Arc::new(MeanLoss(LpLoss {
         p: T::from(p).unwrap_or_else(|| T::from(2.0).unwrap()),
     }))
 }
 
+/// Quantile loss (defaults to `tau = 0.5`).
 pub fn quantile<T: Float + Send + Sync + 'static>(tau: f64) -> LossObject<T> {
     Arc::new(MeanLoss(QuantileLoss {
         tau: T::from(tau).unwrap_or_else(|| T::from(0.5).unwrap()),
     }))
 }
 
+/// Epsilon-insensitive loss (defaults to `eps = 0.1`).
 pub fn epsilon_insensitive<T: Float + Send + Sync + 'static>(eps: f64) -> LossObject<T> {
     Arc::new(MeanLoss(EpsilonInsensitiveLoss {
         eps: T::from(eps).unwrap_or_else(|| T::from(0.1).unwrap()),

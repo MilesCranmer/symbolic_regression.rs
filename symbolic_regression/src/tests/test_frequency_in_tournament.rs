@@ -7,7 +7,7 @@ use super::common::{D, T, TestOps};
 use crate::Options;
 use crate::adaptive_parsimony::RunningSearchStatistics;
 use crate::operator_library::OperatorLibrary;
-use crate::pop_member::{MemberId, PopMember};
+use crate::pop_member::PopMember;
 use crate::population::Population;
 use crate::selection::best_of_sample;
 
@@ -27,8 +27,8 @@ fn tournament_penalizes_frequent_sizes_when_enabled() {
     };
     let mut rng = Rng::with_seed(0);
 
-    let mut a = PopMember::from_expr_with_birth(MemberId(1), None, 0, leaf_expr(), 1);
-    let mut b = PopMember::from_expr_with_birth(MemberId(2), None, 0, leaf_expr(), 1);
+    let mut a = PopMember::from_expr_with_birth(0, leaf_expr(), 1);
+    let mut b = PopMember::from_expr_with_birth(0, leaf_expr(), 1);
     a.complexity = 1;
     b.complexity = 3;
     a.cost = T::one();
@@ -47,5 +47,5 @@ fn tournament_penalizes_frequent_sizes_when_enabled() {
     let chosen = best_of_sample::<T, TestOps, D>(&mut rng, &pop, &stats, &options);
 
     // If frequency is used in tournament, the rare (larger) member should be favored here.
-    assert_eq!(chosen.id, MemberId(2));
+    assert_eq!(chosen.complexity, 3);
 }

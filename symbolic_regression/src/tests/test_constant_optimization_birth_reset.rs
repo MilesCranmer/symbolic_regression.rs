@@ -8,7 +8,7 @@ use crate::Options;
 use crate::constant_optimization::{OptimizeConstantsCtx, optimize_constants};
 use crate::dataset::TaggedDataset;
 use crate::operator_library::OperatorLibrary;
-use crate::pop_member::{Evaluator, MemberId, PopMember, reset_pseudo_time_for_tests};
+use crate::pop_member::{Evaluator, PopMember, reset_pseudo_time_for_tests};
 
 fn var(feature: u16) -> PostfixExpr<T, TestOps, D> {
     PostfixExpr::new(vec![PNode::Var { feature }], Vec::new(), Metadata::default())
@@ -42,7 +42,7 @@ fn optimize_constants_resets_birth_on_improvement() {
 
     let zero = PostfixExpr::<T, TestOps, D>::zero();
     let expr = (zero.clone() * var(0)) + zero;
-    let mut member = PopMember::from_expr(MemberId(0), None, expr, dataset.n_features, &options);
+    let mut member = PopMember::from_expr(expr, dataset.n_features, &options);
     let mut evaluator = Evaluator::<T, D>::new(dataset.n_rows);
     let mut grad_ctx = dynamic_expressions::GradContext::<T, D>::new(dataset.n_rows);
     let baseline_loss = if options.use_baseline {

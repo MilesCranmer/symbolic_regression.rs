@@ -8,39 +8,43 @@ use num_traits::Float;
 use crate::complexity;
 use crate::options::Options;
 
-#[derive(Clone, Debug)]
-pub struct OpConstraints<const D: usize> {
-    /// Per-operator, per-argument complexity limits.
+#[derive(Clone, Debug, Default)]
+/// Operator constraints used to restrict the search space.
+///
+/// This bundles two independent kinds of restrictions:
+/// - per-operator, per-argument maximum complexity (roughly "limit how big a subtree can be plugged into a specific
+///   operator argument"), and
+/// - nestedness limits ("limit how deeply one operator may appear under another").
+///
+/// The fields are public so you can construct this directly; the helper methods exist purely for
+/// convenience.
+pub struct OperatorConstraints<const D: usize> {
+    /// Per-operator, per-argument max complexity.
+    ///
     /// `None` means no constraint for that argument.
-    pub limits: HashMap<OpId, [Option<u16>; D]>,
+    pub op_arg_max_complexity: HashMap<OpId, [Option<u16>; D]>,
+    /// Root operator -> list of (nested operator, max nestedness).
+    pub nested_limits: HashMap<OpId, Vec<(OpId, u8)>>,
 }
 
-impl<const D: usize> Default for OpConstraints<D> {
-    fn default() -> Self {
-        Self { limits: HashMap::new() }
-    }
-}
-
-impl<const D: usize> OpConstraints<D> {
-    pub fn set_op_arg_constraint(&mut self, op: OpId, arg_idx: usize, max_complexity: u16) {
+impl<const D: usize> OperatorConstraints<D> {
+    /// Set a max complexity for a given operator argument.
+    pub fn set_op_arg_max_complexity(&mut self, op: OpId, arg_idx: usize, max_complexity: u16) {
         assert!(arg_idx < D);
-        let entry = self.limits.entry(op).or_insert([None; D]);
+        let entry = self.op_arg_max_complexity.entry(op).or_insert([None; D]);
         entry[arg_idx] = Some(max_complexity);
     }
-}
 
-#[derive(Clone, Debug, Default)]
-pub struct NestedConstraints {
-    /// Root operator -> list of (nested operator, max nestedness).
-    pub limits: HashMap<OpId, Vec<(OpId, u8)>>,
-}
-
-impl NestedConstraints {
-    pub fn add_nested_constraint(&mut self, root: OpId, nested: OpId, max_nestedness: u8) {
-        self.limits.entry(root).or_default().push((nested, max_nestedness));
+    /// Add a nestedness constraint rule.
+    pub fn add_nested_limit(&mut self, root: OpId, nested: OpId, max_nestedness: u8) {
+        self.nested_limits
+            .entry(root)
+            .or_default()
+            .push((nested, max_nestedness));
     }
 }
 
+/// Return `true` if `expr` satisfies the size/depth/constraint rules from `options`.
 pub fn check_constraints<T: Float, Ops, const D: usize>(
     expr: &PostfixExpr<T, Ops, D>,
     options: &Options<T, D>,
@@ -59,9 +63,11 @@ pub fn check_constraints<T: Float, Ops, const D: usize>(
             return false;
         }
     } else {
-        let Some(total) =
-            complexity::compute_custom_complexity_checked(&expr.nodes, options, Some(&options.op_constraints.limits))
-        else {
+        let Some(total) = complexity::compute_custom_complexity_checked(
+            &expr.nodes,
+            options,
+            Some(&options.operator_constraints.op_arg_max_complexity),
+        ) else {
             return false;
         };
         if total > curmaxsize {
@@ -69,11 +75,11 @@ pub fn check_constraints<T: Float, Ops, const D: usize>(
         }
     }
 
-    check_nested_constraints::<D>(&expr.nodes, &options.nested_constraints)
+    check_nested_constraints::<D>(&expr.nodes, &options.operator_constraints.nested_limits)
 }
 
 fn check_default_op_arg_constraints<T: Float, const D: usize>(nodes: &[PNode], options: &Options<T, D>) -> bool {
-    if options.op_constraints.limits.is_empty() {
+    if options.operator_constraints.op_arg_max_complexity.is_empty() {
         return true;
     }
     let sizes = node_utils::subtree_sizes(nodes);
@@ -82,7 +88,7 @@ fn check_default_op_arg_constraints<T: Float, const D: usize>(nodes: &[PNode], o
             continue;
         };
         let oid = OpId { arity, id: op };
-        let Some(lims) = options.op_constraints.limits.get(&oid) else {
+        let Some(lims) = options.operator_constraints.op_arg_max_complexity.get(&oid) else {
             continue;
         };
         let a = arity as usize;
@@ -101,8 +107,8 @@ fn check_default_op_arg_constraints<T: Float, const D: usize>(nodes: &[PNode], o
     true
 }
 
-fn check_nested_constraints<const D: usize>(nodes: &[PNode], nested: &NestedConstraints) -> bool {
-    if nested.limits.is_empty() {
+fn check_nested_constraints<const D: usize>(nodes: &[PNode], nested_limits: &HashMap<OpId, Vec<(OpId, u8)>>) -> bool {
+    if nested_limits.is_empty() {
         return true;
     }
 
@@ -138,7 +144,7 @@ fn check_nested_constraints<const D: usize>(nodes: &[PNode], nested: &NestedCons
     }
 
     let mut nested_cache: HashMap<OpId, Vec<u16>> = HashMap::new();
-    for rules in nested.limits.values() {
+    for rules in nested_limits.values() {
         for (nested_op, _max) in rules {
             if !nested_cache.contains_key(nested_op) {
                 let Some(v) = nestedness_vec(nodes, *nested_op) else {
@@ -154,7 +160,7 @@ fn check_nested_constraints<const D: usize>(nodes: &[PNode], nested: &NestedCons
             continue;
         };
         let root = OpId { arity, id: op };
-        let Some(rules) = nested.limits.get(&root) else {
+        let Some(rules) = nested_limits.get(&root) else {
             continue;
         };
         for (nested_op, max_n) in rules {

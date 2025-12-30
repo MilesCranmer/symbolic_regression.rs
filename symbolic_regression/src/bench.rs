@@ -1,8 +1,9 @@
 use dynamic_expressions::expression::{Metadata, PostfixExpr};
 use dynamic_expressions::node::PNode;
+use dynamic_expressions::operator_enum::builtin;
 use dynamic_expressions::operator_enum::presets::BuiltinOpsF64;
 use dynamic_expressions::utils::ZipEq;
-use dynamic_expressions::{HasOp, OpId, OperatorSet, Operators, builtin};
+use dynamic_expressions::{HasOp, OpId, OperatorSet, Operators};
 use fastrand::Rng;
 use ndarray::{Array1, Array2};
 use rand::rngs::StdRng;

@@ -10,15 +10,18 @@ use crate::dataset::{Dataset, TaggedDataset};
 use crate::hall_of_fame::HallOfFame;
 use crate::loss_functions::baseline_loss_from_zero_expression;
 use crate::options::Options;
-use crate::pop_member::{Evaluator, MemberId, PopMember};
+use crate::pop_member::{Evaluator, PopMember};
 use crate::population::Population;
 use crate::progress_bars::SearchProgress;
 use crate::random::shuffle;
 use crate::stop_controller::StopController;
 use crate::{migration, single_iteration, warmup};
 
+/// Output of a full equation search run.
 pub struct SearchResult<T: Float + AddAssign, Ops, const D: usize> {
+    /// Hall-of-fame containing the best expressions seen during the search.
     pub hall_of_fame: HallOfFame<T, Ops, D>,
+    /// Best (lowest-cost) member seen during the search.
     pub best: PopMember<T, Ops, D>,
 }
 
@@ -70,7 +73,6 @@ pub(crate) struct PopState<T: Float + AddAssign, Ops, const D: usize> {
     pub(crate) grad_ctx: dynamic_expressions::GradContext<T, D>,
     pub(crate) rng: Rng,
     pub(crate) batch_dataset: Option<Dataset<T>>,
-    pub(crate) next_id: u64,
 }
 
 impl<T: Float + AddAssign, Ops, const D: usize> PopState<T, Ops, D> {
@@ -121,7 +123,6 @@ impl<T: Float + AddAssign, Ops, const D: usize> PopState<T, Ops, D> {
             options,
             evaluator: &mut self.evaluator,
             grad_ctx: &mut self.grad_ctx,
-            next_id: &mut self.next_id,
             controller,
             _ops: core::marker::PhantomData,
         };
@@ -137,6 +138,9 @@ struct PopPools<T: Float + AddAssign, Ops, const D: usize> {
     total_evals: u64,
 }
 
+/// Run a complete symbolic regression search in one call.
+///
+/// For incremental/interactive use, see [`SearchEngine`].
 pub fn equation_search<T, Ops, const D: usize>(dataset: &Dataset<T>, options: &Options<T, D>) -> SearchResult<T, Ops, D>
 where
     T: Float + AddAssign + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + Send + Sync,
@@ -374,6 +378,10 @@ where
     }
 }
 
+/// Incremental / resumable equation search engine.
+///
+/// This is the lower-level interface behind [`equation_search`]; it can be stepped manually
+/// (e.g. for driving a UI, reporting progress, or adding cancellation).
 pub struct SearchEngine<T: Float + AddAssign, Ops, const D: usize> {
     dataset: Dataset<T>,
     baseline_loss: Option<T>,
@@ -387,6 +395,7 @@ where
     T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + AddAssign,
     Ops: dynamic_expressions::OperatorSet<T = T>,
 {
+    /// Create a new search engine from an owned dataset and options.
     pub fn new(dataset: Dataset<T>, options: Options<T, D>) -> Self {
         let baseline_loss = if options.use_baseline {
             baseline_loss_from_zero_expression::<T, Ops, D>(&dataset, options.loss.as_ref())
@@ -434,38 +443,59 @@ where
         }
     }
 
+    /// Total number of cycles planned for this run.
+    ///
+    /// This is mainly intended for UIs (e.g. the wasm wrapper).
+    #[cfg(any(test, feature = "wasm-ui"))]
     pub fn total_cycles(&self) -> usize {
         self.core.counters.total_cycles
     }
 
+    /// Number of cycles completed so far.
+    ///
+    /// This is mainly intended for UIs (e.g. the wasm wrapper).
+    #[cfg(any(test, feature = "wasm-ui"))]
     pub fn cycles_completed(&self) -> usize {
         self.core.counters.cycles_completed
     }
 
+    /// Total number of expression evaluations performed so far.
+    ///
+    /// This is mainly intended for UIs (e.g. the wasm wrapper).
+    #[cfg(any(test, feature = "wasm-ui"))]
     pub fn total_evals(&self) -> u64 {
         self.core.pools.total_evals
     }
 
+    /// Returns `true` if the run is finished (or was cancelled).
+    ///
+    /// This is mainly intended for UIs (e.g. the wasm wrapper).
+    #[cfg(any(test, feature = "wasm-ui"))]
     pub fn is_finished(&self) -> bool {
         self.core.counters.cycles_remaining() == 0 || self.controller.is_cancelled()
     }
 
+    /// Borrow the current hall-of-fame.
     pub fn hall_of_fame(&self) -> &HallOfFame<T, Ops, D> {
         &self.core.hall
     }
 
+    /// Borrow the current best member.
     pub fn best(&self) -> &PopMember<T, Ops, D> {
         &self.core.pools.best
     }
 
+    /// Borrow the dataset used for this run.
     pub fn dataset(&self) -> &Dataset<T> {
         &self.dataset
     }
 
+    /// Borrow the options used for this run.
     pub fn options(&self) -> &Options<T, D> {
         &self.options
     }
 
+    /// Run up to `n_cycles` cycles and return how many were completed.
     pub fn step(&mut self, n_cycles: usize) -> usize
     where
         T: Send + Sync,
@@ -480,6 +510,7 @@ where
         )
     }
 
+    /// Run until completion (or cancellation) and return a [`SearchResult`].
     pub fn run_to_completion(mut self) -> SearchResult<T, Ops, D>
     where
         T: Send + Sync,
@@ -493,6 +524,8 @@ where
             best: pools.best,
         }
     }
+
+    // (UI helper methods live above under `cfg(any(test, feature="wasm-ui"))`.)
 }
 
 fn execute_task<T, Ops, const D: usize>(
@@ -595,7 +628,6 @@ fn apply_task_result<T, Ops, const D: usize>(
             &candidates,
             options.fraction_replaced,
             &mut st.rng,
-            &mut st.next_id,
             options.deterministic,
         );
     }
@@ -607,7 +639,6 @@ fn apply_task_result<T, Ops, const D: usize>(
             &dominating,
             options.fraction_replaced_hof,
             &mut st.rng,
-            &mut st.next_id,
             options.deterministic,
         );
     }
@@ -638,8 +669,6 @@ where
         let mut evaluator = Evaluator::new(dataset.n_rows);
         let grad_ctx = dynamic_expressions::GradContext::new(dataset.n_rows);
 
-        let mut next_id = (pop_i as u64) << 32;
-
         let nlength = 3usize;
         let mut members = Vec::with_capacity(options.population_size);
         for _ in 0..options.population_size {
@@ -653,8 +682,7 @@ where
                 nlength,
                 options.maxsize,
             );
-            let mut m = PopMember::from_expr(MemberId(next_id), None, expr, dataset.n_features, options);
-            next_id += 1;
+            let mut m = PopMember::from_expr(expr, dataset.n_features, options);
             let _ = m.evaluate(&full_dataset, options, &mut evaluator);
             total_evals += 1;
             hall.consider(&m, options, options.maxsize);
@@ -670,7 +698,6 @@ where
             grad_ctx,
             rng,
             batch_dataset: None,
-            next_id,
         }));
     }
 

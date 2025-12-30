@@ -10,7 +10,7 @@ use crate::adaptive_parsimony::RunningSearchStatistics;
 use crate::dataset::TaggedDataset;
 use crate::operator_library::OperatorLibrary;
 use crate::options::MutationWeights;
-use crate::pop_member::{Evaluator, MemberId, PopMember};
+use crate::pop_member::{Evaluator, PopMember};
 use crate::{Options, mutate};
 
 fn leaf_expr(feature: u16) -> PostfixExpr<T, TestOps, D> {
@@ -56,11 +56,10 @@ fn randomize_mutation_can_succeed_below_size_3() {
     let full_dataset = TaggedDataset::new(&dataset, baseline_loss);
     let stats = RunningSearchStatistics::new(options.maxsize, 10_000);
 
-    let mut parent = PopMember::from_expr_with_birth(MemberId(0), None, 0, leaf_expr(0), dataset.n_features);
+    let mut parent = PopMember::from_expr_with_birth(0, leaf_expr(0), dataset.n_features);
     assert!(parent.evaluate(&full_dataset, &options, &mut evaluator));
 
     let mut rng = Rng::with_seed(0);
-    let mut next_id = 1u64;
     let (child, ok, _) = mutate::next_generation::<T, TestOps, D>(
         &parent,
         mutate::NextGenerationCtx {
@@ -71,7 +70,6 @@ fn randomize_mutation_can_succeed_below_size_3() {
             stats: &stats,
             options: &options,
             evaluator: &mut evaluator,
-            next_id: &mut next_id,
             _ops: core::marker::PhantomData,
         },
     );
@@ -91,8 +89,6 @@ fn rotate_tree_is_not_disabled_on_non_binary_trees() {
         ..Default::default()
     };
     let member = PopMember::from_expr(
-        MemberId(0),
-        None,
         PostfixExpr::<T, TestOps, D>::new(
             vec![PNode::Var { feature: 0 }, PNode::Op { arity: 1, op: 0 }],
             Vec::new(),
@@ -197,11 +193,10 @@ fn add_node_includes_append_at_leaf_move() {
     let full_dataset = TaggedDataset::new(&dataset, baseline_loss);
     let stats = RunningSearchStatistics::new(options.maxsize, 10_000);
 
-    let mut parent = PopMember::from_expr_with_birth(MemberId(0), None, 0, expr, dataset.n_features);
+    let mut parent = PopMember::from_expr_with_birth(0, expr, dataset.n_features);
     assert!(parent.evaluate(&full_dataset, &options, &mut evaluator));
 
     let mut rng = Rng::with_seed(0);
-    let mut next_id = 1u64;
     let parent_nodes = parent.expr.nodes.clone();
     let mut saw_prepend = false;
     let mut saw_append = false;
@@ -217,7 +212,6 @@ fn add_node_includes_append_at_leaf_move() {
                 stats: &stats,
                 options: &options,
                 evaluator: &mut evaluator,
-                next_id: &mut next_id,
                 _ops: core::marker::PhantomData,
             },
         );
@@ -294,11 +288,10 @@ fn mutate_operator_can_be_a_noop_and_still_succeeds() {
     let full_dataset = TaggedDataset::new(&dataset, baseline_loss);
     let stats = RunningSearchStatistics::new(options.maxsize, 10_000);
 
-    let mut parent = PopMember::from_expr_with_birth(MemberId(0), None, 0, expr, dataset.n_features);
+    let mut parent = PopMember::from_expr_with_birth(0, expr, dataset.n_features);
     assert!(parent.evaluate(&full_dataset, &options, &mut evaluator));
 
     let mut rng = Rng::with_seed(0);
-    let mut next_id = 1u64;
     let (child, ok, _) = mutate::next_generation::<T, TestOps, D>(
         &parent,
         mutate::NextGenerationCtx {
@@ -309,7 +302,6 @@ fn mutate_operator_can_be_a_noop_and_still_succeeds() {
             stats: &stats,
             options: &options,
             evaluator: &mut evaluator,
-            next_id: &mut next_id,
             _ops: core::marker::PhantomData,
         },
     );

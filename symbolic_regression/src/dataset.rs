@@ -6,13 +6,17 @@ use num_traits::Float;
 use crate::random::usize_range;
 
 #[derive(Copy, Clone, Debug)]
-pub struct TaggedDataset<'a, T: Float> {
+/// A [`Dataset`] paired with an optional baseline loss.
+///
+/// This is internal search-engine state when `Options::use_baseline` is enabled.
+pub(crate) struct TaggedDataset<'a, T: Float> {
     pub data: &'a Dataset<T>,
     pub baseline_loss: Option<T>,
 }
 
 impl<'a, T: Float> TaggedDataset<'a, T> {
-    pub fn new(data: &'a Dataset<T>, baseline_loss: Option<T>) -> Self {
+    /// Create a tagged dataset.
+    pub(crate) fn new(data: &'a Dataset<T>, baseline_loss: Option<T>) -> Self {
         Self { data, baseline_loss }
     }
 }
@@ -25,6 +29,12 @@ impl<'a, T: Float> std::ops::Deref for TaggedDataset<'a, T> {
 }
 
 #[derive(Clone, Debug)]
+/// A supervised regression dataset used by the symbolic regression engine.
+///
+/// - `x` is expected to have shape `(n_features, n_rows)` (i.e. column-major with each column a row / sample).
+/// - `y` has length `n_rows`.
+///
+/// Some internals assume `x` and `y` are contiguous; constructors will copy as needed.
 pub struct Dataset<T: Float> {
     /// Column-major contiguous data with shape `(n_features, n_rows)` for vectorization over rows.
     pub x: Array2<T>,
@@ -67,10 +77,14 @@ impl<T: Float> Dataset<T> {
         }
     }
 
+    /// Create a dataset without weights or variable names.
     pub fn new(x: Array2<T>, y: Array1<T>) -> Self {
         Self::build_dataset(x, y, None, Vec::new(), None)
     }
 
+    /// Create a dataset with optional per-row weights and variable names.
+    ///
+    /// When provided, `weights` must have length `n_rows`.
     pub fn with_weights_and_names(
         x: Array2<T>,
         y: Array1<T>,
@@ -80,15 +94,15 @@ impl<T: Float> Dataset<T> {
         Self::build_dataset(x, y, weights, variable_names, None)
     }
 
-    pub fn y_slice(&self) -> &[T] {
+    pub(crate) fn y_slice(&self) -> &[T] {
         self.y.as_slice().expect("y is contiguous")
     }
 
-    pub fn weights_slice(&self) -> Option<&[T]> {
+    pub(crate) fn weights_slice(&self) -> Option<&[T]> {
         self.weights.as_ref().and_then(|w| w.as_slice())
     }
 
-    pub fn compute_avg_y(y: &[T], weights: Option<&[T]>) -> T {
+    pub(crate) fn compute_avg_y(y: &[T], weights: Option<&[T]>) -> T {
         if y.is_empty() {
             return T::zero();
         }
@@ -109,7 +123,10 @@ impl<T: Float> Dataset<T> {
         }
     }
 
-    pub fn make_batch_buffer(full: &Dataset<T>, batch_size: usize) -> Dataset<T> {
+    /// Create a dataset-shaped buffer used for batching.
+    ///
+    /// This preserves the feature count and (optionally) the presence of weights.
+    pub(crate) fn make_batch_buffer(full: &Dataset<T>, batch_size: usize) -> Dataset<T> {
         if full.n_rows == 0 {
             panic!("Cannot batch from an empty dataset (n_rows = 0).");
         }
@@ -120,7 +137,11 @@ impl<T: Float> Dataset<T> {
         Self::build_dataset(x, y, weights, full.variable_names.clone(), Some(full.avg_y))
     }
 
-    pub fn resample_from(&mut self, full: &Dataset<T>, rng: &mut Rng) {
+    /// Resample rows (with replacement) from `full` into `self`.
+    ///
+    /// `self` must be a buffer created via [`Dataset::make_batch_buffer`] (same feature count,
+    /// batch size, and weight presence).
+    pub(crate) fn resample_from(&mut self, full: &Dataset<T>, rng: &mut Rng) {
         if full.n_rows == 0 {
             panic!("Cannot batch from an empty dataset (n_rows = 0).");
         }

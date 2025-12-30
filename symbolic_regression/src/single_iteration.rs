@@ -21,7 +21,6 @@ pub struct IterationCtx<'a, T: Float + AddAssign, Ops, const D: usize> {
     pub options: &'a Options<T, D>,
     pub evaluator: &'a mut Evaluator<T, D>,
     pub grad_ctx: &'a mut dynamic_expressions::GradContext<T, D>,
-    pub next_id: &'a mut u64,
     pub controller: &'a StopController,
     pub _ops: core::marker::PhantomData<Ops>,
 }
@@ -40,7 +39,7 @@ where
     let ncycles = ctx.options.ncycles_per_iteration.max(1);
     let mut num_evals = 0.0;
     let mut best_seen = HallOfFame::new(ctx.options.maxsize);
-    best_seen.update_from_members(&pop.members, ctx.options, ctx.curmaxsize);
+    best_seen.consider_members(&pop.members, ctx.options, ctx.curmaxsize);
 
     for i in 0..ncycles {
         if ctx.controller.is_cancelled() {
@@ -62,12 +61,11 @@ where
                 stats: ctx.stats,
                 options: ctx.options,
                 evaluator: ctx.evaluator,
-                next_id: ctx.next_id,
                 controller: ctx.controller,
                 _ops: core::marker::PhantomData,
             },
         );
-        best_seen.update_from_members(&pop.members, ctx.options, ctx.curmaxsize);
+        best_seen.consider_members(&pop.members, ctx.options, ctx.curmaxsize);
     }
     (num_evals, best_seen)
 }

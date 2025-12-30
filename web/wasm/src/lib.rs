@@ -329,7 +329,7 @@ fn snapshot(engine: &SearchEngine<f64, BuiltinOpsF64, 3>, pareto_k: usize) -> Se
     let pareto_points: Vec<EquationPoint> = pareto
         .into_iter()
         .map(|m| EquationPoint {
-            id: m.id.0.to_string(),
+            id: m.expr.hash_nodes().to_string(),
             complexity: m.complexity,
             loss: m.loss,
             cost: m.cost,
@@ -357,7 +357,7 @@ fn summary_from_member(
         },
     );
     EquationSummary {
-        id: m.id.0.to_string(),
+        id: m.expr.hash_nodes().to_string(),
         complexity: m.complexity,
         loss: m.loss,
         cost: m.cost,
@@ -372,11 +372,11 @@ fn find_member_by_id(
     engine
         .hall_of_fame()
         .members()
-        .find(|m| m.id.0 == member_id)
+        .find(|m| m.expr.hash_nodes() == member_id)
         .cloned()
         .or_else(|| {
             let b = engine.best();
-            (b.id.0 == member_id).then(|| b.clone())
+            (b.expr.hash_nodes() == member_id).then(|| b.clone())
         })
 }
 

@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 use fastrand::Rng;
 use num_traits::Float;
 
-use crate::pop_member::{MemberId, PopMember, get_birth_order};
+use crate::pop_member::{PopMember, get_birth_order};
 use crate::population::Population;
 use crate::random::{choose, poisson_sample, usize_range};
 
@@ -27,7 +27,6 @@ pub fn migrate_into<T: Float, Ops, const D: usize>(
     migrants: &[PopMember<T, Ops, D>],
     frac: f64,
     rng: &mut Rng,
-    next_id: &mut u64,
     deterministic: bool,
 ) {
     if migrants.is_empty() {
@@ -54,9 +53,6 @@ pub fn migrate_into<T: Float, Ops, const D: usize>(
         let loc = usize_range(rng, 0..dst.len());
         let src = choose(rng, migrants).expect("migrants is non-empty");
         let mut m = src.clone();
-        m.parent = Some(src.id);
-        m.id = MemberId(*next_id);
-        *next_id += 1;
         m.birth = get_birth_order(deterministic);
         dst.members[loc] = m;
     }

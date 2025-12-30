@@ -141,6 +141,10 @@ macro_rules! __define_mutation_weights {
         #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
         #[cfg_attr(feature = "serde", serde(default))]
         #[derive(Clone, Debug)]
+        /// Relative weights for the different mutation operators.
+        ///
+        /// These values influence how often each mutation is selected when generating new
+        /// candidate expressions.
         pub struct MutationWeights {
             $(pub $name: $ty,)*
         }
@@ -173,24 +177,35 @@ macro_rules! __define_options {
         pos_flags { $( $pname:ident: ($pdefault:expr, $cli_pname:ident, $cli_plong:literal), )* }
     ) => {
         #[derive(Clone)]
+        /// Configuration for an equation search run.
+        ///
+        /// Most fields are public "knobs" for the underlying SR engine. For a typical run you
+        /// usually only need to set [`Options::operators`] and a few high-level parameters like
+        /// [`Options::niterations`].
         pub struct Options<T: Float, const D: usize> {
             $(pub $name: $ty,)*
             $(pub $iname: bool,)*
             $(pub $pname: bool,)*
 
+            /// The set of allowed operators (as `OpId`s) up to arity `D`.
             pub operators: Operators<D>,
+            /// Mutation operator selection weights.
             pub mutation_weights: MutationWeights,
+            /// Loss function used to score candidate expressions.
             pub loss: LossObject<T>,
 
+            /// Output formatting policy (used for progress display).
             pub output_style: OutputStyle,
 
+            /// Optional per-variable complexity overrides (indexed by feature number).
             pub variable_complexities: Option<Vec<u16>>,
+            /// Per-operator complexity overrides (keyed by `OpId`).
             pub operator_complexity_overrides: std::collections::HashMap<
                 dynamic_expressions::OpId,
                 u16,
             >,
-            pub op_constraints: crate::check_constraints::OpConstraints<D>,
-            pub nested_constraints: crate::check_constraints::NestedConstraints,
+            /// Operator constraints used to restrict the search space.
+            pub operator_constraints: crate::OperatorConstraints<D>,
         }
 
         impl<T: Float, const D: usize> Default for Options<T, D> {
@@ -205,8 +220,7 @@ macro_rules! __define_options {
                     output_style: OutputStyle::Auto,
                     variable_complexities: None,
                     operator_complexity_overrides: std::collections::HashMap::new(),
-                    op_constraints: Default::default(),
-                    nested_constraints: Default::default(),
+                    operator_constraints: Default::default(),
                 }
             }
         }
@@ -261,7 +275,10 @@ macro_rules! __define_wasm_options_shim {
 sr_options_spec!(__define_wasm_options_shim);
 
 impl<T: Float, const D: usize> Options<T, D> {
-    pub fn uses_default_complexity(&self) -> bool {
+    /// Returns `true` if the default complexity model is in use.
+    ///
+    /// When this is true, complexity is just the number of nodes in the expression.
+    pub(crate) fn uses_default_complexity(&self) -> bool {
         self.complexity_of_constants == 1
             && self.complexity_of_variables == 1
             && self.variable_complexities.is_none()
