@@ -1,11 +1,10 @@
-use dynamic_expressions::OperatorSet;
 use dynamic_expressions::expression::{Metadata, PostfixExpr};
 use dynamic_expressions::node::PNode;
 use dynamic_expressions::operator_enum::presets::BuiltinOpsF64;
 use dynamic_expressions::utils::ZipEq;
+use dynamic_expressions::{HasOp, OpId, OperatorSet, Operators, builtin};
 use fastrand::Rng;
 use ndarray::{Array1, Array2};
-
 use rand::rngs::StdRng;
 use rand::{Rng as _, SeedableRng};
 use rand_distr::StandardNormal;
@@ -177,7 +176,7 @@ fn random_leaf<R: rand::Rng>(rng: &mut R, n_features: usize, consts: &mut Vec<Be
 
 fn random_expr<Ops2, const D2: usize, R: rand::Rng>(
     rng: &mut R,
-    operators: &dynamic_expressions::Operators<D2>,
+    operators: &Operators<D2>,
     n_features: usize,
     target_size: usize,
 ) -> PostfixExpr<BenchT, Ops2, D2> {
@@ -225,11 +224,11 @@ fn random_expr<Ops2, const D2: usize, R: rand::Rng>(
     PostfixExpr::new(nodes, consts, Default::default())
 }
 
-fn make_ops_search() -> dynamic_expressions::Operators<BENCH_D> {
+fn make_ops_search() -> Operators<BENCH_D> {
     BenchOps::from_names::<BENCH_D, _>(["exp", "abs", "+", "sub", "*", "/"]).expect("search operators")
 }
 
-fn make_ops_utils() -> dynamic_expressions::Operators<BENCH_D> {
+fn make_ops_utils() -> Operators<BENCH_D> {
     BenchOps::from_names::<BENCH_D, _>(["sin", "cos", "+", "sub", "*", "/"]).expect("utils operators")
 }
 
@@ -305,7 +304,10 @@ fn make_population(
     options: &Options<BenchT, BENCH_D>,
     pop_size: usize,
     tree_size: usize,
-) -> (crate::population::Population<BenchT, BenchOps, BENCH_D>, crate::adaptive_parsimony::RunningSearchStatistics) {
+) -> (
+    crate::population::Population<BenchT, BenchOps, BENCH_D>,
+    crate::adaptive_parsimony::RunningSearchStatistics,
+) {
     let mut rng = StdRng::seed_from_u64(seed);
     let tagged = TaggedDataset::new(dataset, None);
     let mut evaluator = Evaluator::new(dataset.n_rows);
@@ -535,11 +537,11 @@ pub fn constraints_env() -> ConstraintsBenchEnv {
     options.maxsize = 30;
     options.maxdepth = 20;
 
-    let add: dynamic_expressions::OpId = <BenchOps as dynamic_expressions::HasOp<dynamic_expressions::operator_enum::builtin::Add>>::op_id();
-    let sub: dynamic_expressions::OpId = <BenchOps as dynamic_expressions::HasOp<dynamic_expressions::operator_enum::builtin::Sub>>::op_id();
-    let div: dynamic_expressions::OpId = <BenchOps as dynamic_expressions::HasOp<dynamic_expressions::operator_enum::builtin::Div>>::op_id();
-    let sin: dynamic_expressions::OpId = <BenchOps as dynamic_expressions::HasOp<dynamic_expressions::operator_enum::builtin::Sin>>::op_id();
-    let cos: dynamic_expressions::OpId = <BenchOps as dynamic_expressions::HasOp<dynamic_expressions::operator_enum::builtin::Cos>>::op_id();
+    let add: OpId = <BenchOps as HasOp<builtin::Add>>::op_id();
+    let sub: OpId = <BenchOps as HasOp<builtin::Sub>>::op_id();
+    let div: OpId = <BenchOps as HasOp<builtin::Div>>::op_id();
+    let sin: OpId = <BenchOps as HasOp<builtin::Sin>>::op_id();
+    let cos: OpId = <BenchOps as HasOp<builtin::Cos>>::op_id();
 
     let mut constraints: OperatorConstraints<BENCH_D> = Default::default();
     constraints.set_op_arg_max_complexity(add, 1, 10);
