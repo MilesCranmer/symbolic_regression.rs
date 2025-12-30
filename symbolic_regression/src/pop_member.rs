@@ -182,8 +182,7 @@ where
     ) -> bool {
         #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
         if let Some(gpu) = gpu {
-            if !options.batching
-                && options.loss_kind == crate::loss_functions::LossKind::Mse
+            if options.loss_kind == crate::loss_functions::LossKind::Mse
                 && dataset.n_rows == gpu.n_rows
                 && dataset.n_features == gpu.n_features
             {

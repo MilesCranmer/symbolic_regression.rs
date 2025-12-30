@@ -744,21 +744,74 @@ where
                 nlength,
                 options.maxsize,
             );
-            let mut m = PopMember::from_expr(expr, dataset.n_features, options);
-            let _ = m.evaluate_with_gpu(
-                &full_dataset,
-                options,
-                &mut evaluator,
-                #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
-                gpu.as_ref(),
-            );
-            total_evals += 1;
-            hall.consider(&m, options, options.maxsize);
-            members.push(m);
+            members.push(PopMember::from_expr(expr, dataset.n_features, options));
         }
 
         if members.is_empty() {
             break;
+        }
+
+        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        let gpu_batch = gpu
+            .as_ref()
+            .filter(|g| {
+                options.loss_kind == crate::loss_functions::LossKind::Mse
+                    && full_dataset.n_rows == g.n_rows
+                    && full_dataset.n_features == g.n_features
+            })
+            .map(|g| {
+                let mut packed_programs: Vec<crate::gpu::PackedProgram> = Vec::new();
+                let mut packed_indices: Vec<usize> = Vec::new();
+                for (i, m) in members.iter().enumerate() {
+                    if let Some(packed) = crate::gpu::pack_expr(&m.expr) {
+                        packed_programs.push(packed);
+                        packed_indices.push(i);
+                    }
+                }
+
+                let mut losses: Vec<f32> = vec![0.0; packed_programs.len()];
+                let ok = g.eval_mse_many(&packed_programs, &mut losses);
+                (ok, packed_indices, losses)
+            });
+
+        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        let mut packed_cursor: usize = 0;
+        for (_i, m) in members.iter_mut().enumerate() {
+            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+            let mut used_gpu = false;
+            #[cfg(not(all(feature = "gpu", not(target_arch = "wasm32"))))]
+            let used_gpu = false;
+
+            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+            if let Some((ok, packed_indices, losses)) = &gpu_batch {
+                if *ok && packed_cursor < packed_indices.len() && packed_indices[packed_cursor] == _i {
+                    used_gpu = true;
+                    m.complexity = crate::complexity::compute_complexity(&m.expr.nodes, options);
+                    let loss = T::from(losses[packed_cursor]).unwrap_or_else(T::nan);
+                    packed_cursor += 1;
+
+                    if !loss.is_finite() {
+                        m.loss = T::infinity();
+                        m.cost = T::infinity();
+                    } else {
+                        m.loss = loss;
+                        m.cost = crate::loss_functions::loss_to_cost(
+                            loss,
+                            m.complexity,
+                            options.parsimony,
+                            options.use_baseline,
+                            full_dataset.baseline_loss,
+                        );
+                    }
+                }
+            }
+
+            if !used_gpu {
+                let _ = m.evaluate(&full_dataset, options, &mut evaluator);
+            }
+
+            total_evals += 1;
+            hall.consider(m, options, options.maxsize);
         }
         pops.push(Some(PopState {
             pop: Population::new(members),

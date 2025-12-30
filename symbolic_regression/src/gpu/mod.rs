@@ -1,4 +1,4 @@
-use std::thread;
+use std::{thread, time};
 
 use bytemuck::{Pod, Zeroable};
 use crossbeam_channel as channel;
@@ -129,6 +129,23 @@ pub enum GpuInitError {
     RequestDeviceFailed,
 }
 
+impl core::fmt::Display for GpuInitError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::BatchingEnabled => write!(f, "GPU path does not support dataset batching"),
+            Self::UnsupportedLoss => write!(f, "GPU path currently only supports MSE loss"),
+            Self::NoAdapter => write!(
+                f,
+                "no compatible GPU adapter found (if running under a sandbox, try rerunning with full permissions; set SYMBOLIC_REGRESSION_GPU_DEBUG=1 to print adapters)"
+            ),
+            Self::NoCompute => write!(f, "GPU adapter does not support compute shaders"),
+            Self::RequestDeviceFailed => write!(f, "failed to request GPU device"),
+        }
+    }
+}
+
+impl std::error::Error for GpuInitError {}
+
 #[repr(C, align(16))]
 #[derive(Copy, Clone, Pod, Zeroable)]
 struct Params {
@@ -156,20 +173,53 @@ struct GpuMseBatchEvaluator {
     out_grad_buf: wgpu::Buffer,
     readback_grad_buf: wgpu::Buffer,
 
-    params: Params,
-    params_buf: wgpu::Buffer,
+    _params_buf: wgpu::Buffer,
 
     p_max: usize,
 }
 
 impl GpuMseBatchEvaluator {
     fn new(dataset: &Dataset<f32>, p_max: usize) -> Result<Self, GpuInitError> {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::PRIMARY,
+            ..Default::default()
+        });
+
+        if std::env::var("SYMBOLIC_REGRESSION_GPU_DEBUG")
+            .ok()
+            .is_some_and(|v| v != "0")
+        {
+            for (i, a) in pollster::block_on(instance.enumerate_adapters(wgpu::Backends::PRIMARY))
+                .into_iter()
+                .enumerate()
+            {
+                let info = a.get_info();
+                eprintln!(
+                    "wgpu adapter[{i}]: name={} vendor={:#x} device={:#x} device_type={:?} backend={:?}",
+                    info.name, info.vendor, info.device, info.device_type, info.backend
+                );
+            }
+        }
+
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
             compatible_surface: None,
             force_fallback_adapter: false,
         }))
+        .or_else(|_| {
+            pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::LowPower,
+                compatible_surface: None,
+                force_fallback_adapter: false,
+            }))
+        })
+        .or_else(|_| {
+            pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                compatible_surface: None,
+                force_fallback_adapter: true,
+            }))
+        })
         .map_err(|_| GpuInitError::NoAdapter)?;
 
         let downlevel = adapter.get_downlevel_capabilities();
@@ -558,8 +608,7 @@ impl GpuMseBatchEvaluator {
             readback_loss_buf,
             out_grad_buf,
             readback_grad_buf,
-            params,
-            params_buf,
+            _params_buf: params_buf,
             p_max,
         })
     }
@@ -574,8 +623,6 @@ impl GpuMseBatchEvaluator {
             .write_buffer(&self.programs_buf, 0, bytemuck::cast_slice(programs));
         self.queue
             .write_buffer(&self.consts_buf, 0, bytemuck::cast_slice(consts));
-        self.queue
-            .write_buffer(&self.params_buf, 0, bytemuck::bytes_of(&self.params));
 
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("gpu_eval_encoder"),
@@ -628,8 +675,6 @@ impl GpuMseBatchEvaluator {
             .write_buffer(&self.programs_buf, 0, bytemuck::cast_slice(programs));
         self.queue
             .write_buffer(&self.consts_buf, 0, bytemuck::cast_slice(consts));
-        self.queue
-            .write_buffer(&self.params_buf, 0, bytemuck::bytes_of(&self.params));
 
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("gpu_eval_grad_encoder"),
@@ -702,11 +747,19 @@ enum EvalResponse {
     LossGrad(LossGrad),
 }
 
-struct EvalRequest {
-    kind: EvalKind,
-    program: [u32; MAX_NODES],
-    consts: [f32; MAX_CONSTS],
-    resp: channel::Sender<EvalResponse>,
+enum EvalRequest {
+    Single {
+        kind: EvalKind,
+        program: [u32; MAX_NODES],
+        consts: [f32; MAX_CONSTS],
+        resp: channel::Sender<EvalResponse>,
+    },
+    BatchLoss {
+        programs: Vec<u32>,
+        consts: Vec<f32>,
+        p: usize,
+        resp: channel::Sender<Vec<f32>>,
+    },
 }
 
 #[derive(Clone)]
@@ -735,7 +788,7 @@ impl GpuClient {
 
     pub fn eval_mse(&self, program: PackedProgram) -> f32 {
         let (tx, rx) = channel::bounded(1);
-        let req = EvalRequest {
+        let req = EvalRequest::Single {
             kind: EvalKind::LossOnly,
             program: program.program,
             consts: program.consts,
@@ -752,7 +805,7 @@ impl GpuClient {
 
     pub fn eval_mse_grad(&self, program: PackedProgram) -> LossGrad {
         let (tx, rx) = channel::bounded(1);
-        let req = EvalRequest {
+        let req = EvalRequest::Single {
             kind: EvalKind::LossGrad,
             program: program.program,
             consts: program.consts,
@@ -772,9 +825,52 @@ impl GpuClient {
             },
         }
     }
+
+    pub fn eval_mse_many(&self, programs: &[PackedProgram], out: &mut [f32]) -> bool {
+        assert_eq!(programs.len(), out.len());
+
+        let p = programs.len();
+        let mut packed_programs: Vec<u32> = Vec::with_capacity(p * MAX_NODES);
+        let mut packed_consts: Vec<f32> = Vec::with_capacity(p * MAX_CONSTS);
+        for program in programs {
+            packed_programs.extend_from_slice(&program.program);
+            packed_consts.extend_from_slice(&program.consts);
+        }
+
+        let (tx, rx) = channel::bounded(1);
+        let req = EvalRequest::BatchLoss {
+            programs: packed_programs,
+            consts: packed_consts,
+            p,
+            resp: tx,
+        };
+        if self.tx.send(req).is_err() {
+            return false;
+        }
+
+        let got = match rx.recv() {
+            Ok(v) => v,
+            Err(_) => return false,
+        };
+        if got.len() != p {
+            return false;
+        }
+        out.copy_from_slice(&got);
+        true
+    }
 }
 
 fn gpu_server_loop(mut evaluator: GpuMseBatchEvaluator, rx: channel::Receiver<EvalRequest>, batch_max: usize) {
+    let batch_wait = time::Duration::from_micros(
+        std::env::var("SYMBOLIC_REGRESSION_GPU_BATCH_WAIT_US")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(200),
+    );
+    let stats_enabled = std::env::var("SYMBOLIC_REGRESSION_GPU_STATS")
+        .ok()
+        .is_some_and(|v| v != "0");
+
     let mut pending: Vec<EvalRequest> = Vec::new();
 
     let mut reqs: Vec<EvalRequest> = Vec::with_capacity(batch_max);
@@ -783,6 +879,14 @@ fn gpu_server_loop(mut evaluator: GpuMseBatchEvaluator, rx: channel::Receiver<Ev
 
     let mut out_loss: Vec<f32> = vec![0.0; batch_max];
     let mut out_grad: Vec<f32> = vec![0.0; batch_max * MAX_CONSTS];
+
+    let mut last_report = time::Instant::now();
+    let mut batches: u64 = 0;
+    let mut total_programs: u64 = 0;
+    let mut max_batch: usize = 0;
+    let mut total_time = time::Duration::ZERO;
+    let mut total_time_loss_only = time::Duration::ZERO;
+    let mut total_time_loss_grad = time::Duration::ZERO;
 
     loop {
         reqs.clear();
@@ -797,36 +901,130 @@ fn gpu_server_loop(mut evaluator: GpuMseBatchEvaluator, rx: channel::Receiver<Ev
                 Err(_) => return,
             }
         };
-        reqs.push(first);
-
-        let kind = reqs[0].kind;
-        while reqs.len() < batch_max {
-            match rx.try_recv() {
-                Ok(r) => {
-                    if r.kind == kind {
-                        reqs.push(r);
-                    } else {
-                        pending.push(r);
-                    }
+        match first {
+            EvalRequest::BatchLoss {
+                programs,
+                consts,
+                p,
+                resp,
+            } => {
+                if p == 0 {
+                    let _ = resp.send(Vec::new());
+                    continue;
                 }
-                Err(channel::TryRecvError::Empty) => break,
-                Err(channel::TryRecvError::Disconnected) => break,
+                if programs.len() != p * MAX_NODES || consts.len() != p * MAX_CONSTS {
+                    let _ = resp.send(vec![f32::NAN; p]);
+                    continue;
+                }
+
+                let t0 = time::Instant::now();
+                let mut out = vec![0.0f32; p];
+                let mut scratch = vec![0.0f32; batch_max];
+                for chunk_start in (0..p).step_by(batch_max) {
+                    let chunk_p = (p - chunk_start).min(batch_max);
+                    let prog_start = chunk_start * MAX_NODES;
+                    let prog_end = prog_start + chunk_p * MAX_NODES;
+                    let const_start = chunk_start * MAX_CONSTS;
+                    let const_end = const_start + chunk_p * MAX_CONSTS;
+
+                    evaluator.eval_mse_batch(
+                        &programs[prog_start..prog_end],
+                        &consts[const_start..const_end],
+                        chunk_p,
+                        &mut scratch[..chunk_p],
+                    );
+                    out[chunk_start..(chunk_start + chunk_p)].copy_from_slice(&scratch[..chunk_p]);
+                }
+                let _ = resp.send(out);
+
+                let dt = t0.elapsed();
+                batches += 1;
+                total_programs += p as u64;
+                max_batch = max_batch.max(p);
+                total_time += dt;
+                total_time_loss_only += dt;
+
+                if stats_enabled && last_report.elapsed() >= time::Duration::from_secs(2) {
+                    let avg_batch = (total_programs as f64) / (batches as f64).max(1.0);
+                    eprintln!(
+                        "gpu server: batches={batches} programs={total_programs} avg_batch={avg_batch:.1} max_batch={max_batch} total_time_ms={} loss_only_ms={} loss_grad_ms={} batch_wait_us={}",
+                        total_time.as_millis(),
+                        total_time_loss_only.as_millis(),
+                        total_time_loss_grad.as_millis(),
+                        batch_wait.as_micros(),
+                    );
+                    last_report = time::Instant::now();
+                }
+                continue;
+            }
+            EvalRequest::Single { .. } => {
+                reqs.push(first);
+            }
+        }
+
+        let kind = match reqs[0] {
+            EvalRequest::Single { kind, .. } => kind,
+            EvalRequest::BatchLoss { .. } => unreachable!("batch handled above"),
+        };
+        let deadline = time::Instant::now().checked_add(batch_wait);
+        while reqs.len() < batch_max {
+            loop {
+                match rx.try_recv() {
+                    Ok(r) => match r {
+                        EvalRequest::Single { kind: k, .. } if k == kind => reqs.push(r),
+                        _ => pending.push(r),
+                    },
+                    Err(channel::TryRecvError::Empty) => break,
+                    Err(channel::TryRecvError::Disconnected) => break,
+                }
+                if reqs.len() >= batch_max {
+                    break;
+                }
+            }
+
+            let Some(deadline) = deadline else {
+                break;
+            };
+            let now = time::Instant::now();
+            if now >= deadline {
+                break;
+            }
+
+            match rx.recv_timeout(deadline.saturating_duration_since(now)) {
+                Ok(r) => match r {
+                    EvalRequest::Single { kind: k, .. } if k == kind => reqs.push(r),
+                    _ => pending.push(r),
+                },
+                Err(channel::RecvTimeoutError::Timeout) => break,
+                Err(channel::RecvTimeoutError::Disconnected) => break,
             }
         }
 
         let p = reqs.len();
+        batches += 1;
+        total_programs += p as u64;
+        max_batch = max_batch.max(p);
         programs.reserve(p * MAX_NODES);
         consts.reserve(p * MAX_CONSTS);
         for r in &reqs {
-            programs.extend_from_slice(&r.program);
-            consts.extend_from_slice(&r.consts);
+            let (program, consts_i) = match r {
+                EvalRequest::Single { program, consts, .. } => (program, consts),
+                EvalRequest::BatchLoss { .. } => unreachable!("only single reqs in this vec"),
+            };
+            programs.extend_from_slice(program);
+            consts.extend_from_slice(consts_i);
         }
 
+        let t0 = time::Instant::now();
         match kind {
             EvalKind::LossOnly => {
                 evaluator.eval_mse_batch(&programs, &consts, p, &mut out_loss[..p]);
                 for (i, r) in reqs.drain(..).enumerate() {
-                    let _ = r.resp.send(EvalResponse::Loss(out_loss[i]));
+                    let resp = match r {
+                        EvalRequest::Single { resp, .. } => resp,
+                        EvalRequest::BatchLoss { .. } => unreachable!("only single reqs in this vec"),
+                    };
+                    let _ = resp.send(EvalResponse::Loss(out_loss[i]));
                 }
             }
             EvalKind::LossGrad => {
@@ -841,12 +1039,35 @@ fn gpu_server_loop(mut evaluator: GpuMseBatchEvaluator, rx: channel::Receiver<Ev
                     let mut g = [0.0f32; MAX_CONSTS];
                     let base = i * MAX_CONSTS;
                     g.copy_from_slice(&out_grad[base..base + MAX_CONSTS]);
-                    let _ = r.resp.send(EvalResponse::LossGrad(LossGrad {
+                    let resp = match r {
+                        EvalRequest::Single { resp, .. } => resp,
+                        EvalRequest::BatchLoss { .. } => unreachable!("only single reqs in this vec"),
+                    };
+                    let _ = resp.send(EvalResponse::LossGrad(LossGrad {
                         loss: out_loss[i],
                         grad: g,
                     }));
                 }
             }
+        }
+
+        let dt = t0.elapsed();
+        total_time += dt;
+        match kind {
+            EvalKind::LossOnly => total_time_loss_only += dt,
+            EvalKind::LossGrad => total_time_loss_grad += dt,
+        }
+
+        if stats_enabled && last_report.elapsed() >= time::Duration::from_secs(2) {
+            let avg_batch = (total_programs as f64) / (batches as f64).max(1.0);
+            eprintln!(
+                "gpu server: batches={batches} programs={total_programs} avg_batch={avg_batch:.1} max_batch={max_batch} total_time_ms={} loss_only_ms={} loss_grad_ms={} batch_wait_us={}",
+                total_time.as_millis(),
+                total_time_loss_only.as_millis(),
+                total_time_loss_grad.as_millis(),
+                batch_wait.as_micros(),
+            );
+            last_report = time::Instant::now();
         }
     }
 }

@@ -127,6 +127,62 @@ where
     // batching is enabled (i.e., members were evolved on a batch and need final losses/costs).
     if ctx.options.batching {
         ctx.evaluator.ensure_n_rows(ctx.full_dataset.n_rows);
+        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        if let Some(gpu) = ctx.gpu.filter(|g| {
+            ctx.options.loss_kind == crate::loss_functions::LossKind::Mse
+                && ctx.full_dataset.n_rows == g.n_rows
+                && ctx.full_dataset.n_features == g.n_features
+        }) {
+            let mut packed_programs: Vec<crate::gpu::PackedProgram> = Vec::new();
+            let mut packed_indices: Vec<usize> = Vec::new();
+            for (i, m) in pop.members.iter().enumerate() {
+                if let Some(packed) = crate::gpu::pack_expr(&m.expr) {
+                    packed_programs.push(packed);
+                    packed_indices.push(i);
+                }
+            }
+
+            let mut losses: Vec<f32> = vec![0.0; packed_programs.len()];
+            if gpu.eval_mse_many(&packed_programs, &mut losses) {
+                let mut packed_cursor: usize = 0;
+                for (i, m) in pop.members.iter_mut().enumerate() {
+                    if ctx.controller.is_cancelled() {
+                        return num_evals;
+                    }
+
+                    let mut used_gpu = false;
+                    if packed_cursor < packed_indices.len() && packed_indices[packed_cursor] == i {
+                        used_gpu = true;
+                        m.complexity = crate::complexity::compute_complexity(&m.expr.nodes, ctx.options);
+                        let loss = T::from(losses[packed_cursor]).unwrap_or_else(T::nan);
+                        packed_cursor += 1;
+
+                        if !loss.is_finite() {
+                            m.loss = T::infinity();
+                            m.cost = T::infinity();
+                        } else {
+                            m.loss = loss;
+                            m.cost = crate::loss_functions::loss_to_cost(
+                                loss,
+                                m.complexity,
+                                ctx.options.parsimony,
+                                ctx.options.use_baseline,
+                                ctx.full_dataset.baseline_loss,
+                            );
+                        }
+                    }
+
+                    if !used_gpu {
+                        let _ = m.evaluate(&ctx.full_dataset, ctx.options, ctx.evaluator);
+                    }
+
+                    num_evals += 1.0;
+                }
+
+                return num_evals;
+            }
+        }
+
         for m in &mut pop.members {
             if ctx.controller.is_cancelled() {
                 return num_evals;

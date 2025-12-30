@@ -35,7 +35,7 @@ fn main() {
         populations: if is_gpu { 4 } else { 31 },
         population_size: if is_gpu { 32 } else { 27 },
         ncycles_per_iteration: if is_gpu { 50 } else { 380 },
-        should_optimize_constants: if is_gpu { false } else { true },
+        should_optimize_constants: true,
         should_simplify: if is_gpu { false } else { true },
         ..Default::default()
     };

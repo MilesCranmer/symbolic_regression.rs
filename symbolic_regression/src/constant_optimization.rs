@@ -63,7 +63,10 @@ impl Objective for GpuConstObjective<'_> {
             return None;
         }
 
-        for (dst, &src) in g_out.iter_mut().zip_eq(res.grad.iter()) {
+        debug_assert_eq!(g_out.len(), self.n_params);
+        debug_assert!(self.n_params <= crate::gpu::MAX_CONSTS);
+
+        for (dst, &src) in g_out.iter_mut().zip_eq(res.grad[..self.n_params].iter()) {
             let v = src as f64;
             if !v.is_finite() {
                 return None;
@@ -283,9 +286,6 @@ where
     #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
     let gpu_packed = gpu.and_then(|g| {
         if core::mem::size_of::<T>() != core::mem::size_of::<f32>() {
-            return None;
-        }
-        if options.batching {
             return None;
         }
         if options.loss_kind != crate::loss_functions::LossKind::Mse {
