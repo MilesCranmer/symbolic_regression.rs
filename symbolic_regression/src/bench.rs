@@ -15,10 +15,11 @@ use rand_distr::StandardNormal;
 use crate::constant_optimization::{OptimizeConstantsCtx, optimize_constants};
 use crate::dataset::TaggedDataset;
 use crate::loss_functions::baseline_loss_from_zero_expression;
+use crate::operator_library::OperatorLibrary;
 use crate::optim::{BackTracking, EvalBudget, Objective, OptimOptions, bfgs_minimize};
 use crate::pop_member::Evaluator;
 use crate::population::Population;
-use crate::{Dataset, OperatorConstraints, OperatorLibrary, Options, PopMember};
+use crate::{Dataset, OperatorConstraints, Options, PopMember};
 
 const D: usize = 3;
 type T = f64;
