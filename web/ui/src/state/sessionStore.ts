@@ -45,6 +45,8 @@ type SessionState = {
   csvText: string;
   parsed: ParsedDataset | null;
 
+  threadsEnabled: boolean;
+
   options: WasmSearchOptions | null;
   unaryOps: string[];
   binaryOps: string[];
@@ -58,6 +60,8 @@ type SessionState = {
   parseCsv: () => void;
   ensureParsedForRuntime: () => boolean;
   setOptionsPatch: (patch: Partial<WasmSearchOptions>) => void;
+
+  setThreadsEnabled: (enabled: boolean) => void;
 
   toggleOp: (arity: 1 | 2 | 3, name: string) => void;
   applyPreset: (preset: "basic" | "trig" | "explog" | "all") => void;
@@ -122,6 +126,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   csvText: DEFAULT_CSV,
   parsed: null,
+
+  threadsEnabled: false,
 
   options: null,
   unaryOps: [],
@@ -227,6 +233,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set((s) => ({
       options: s.options ? { ...s.options, ...patch } : s.options
     })),
+
+  setThreadsEnabled: (threadsEnabled) => set({ threadsEnabled }),
 
   toggleOp: (arity, name) =>
     set((s) => {

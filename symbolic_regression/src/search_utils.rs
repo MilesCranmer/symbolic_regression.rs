@@ -175,7 +175,7 @@ where
         progress_finished: false,
     };
 
-    let _ = core.step(dataset, baseline_loss, options, &controller, usize::MAX);
+    let _ = core.step(dataset, baseline_loss, options, &controller, false, usize::MAX);
     core.finish_progress_if_needed();
 
     let SearchCore { hall, pools, .. } = core;
@@ -233,6 +233,7 @@ where
         baseline_loss: Option<T>,
         options: &Options<T, D>,
         controller: &StopController,
+        force_single_thread: bool,
         n_cycles: usize,
     ) -> usize {
         if n_cycles == 0 {
@@ -244,6 +245,88 @@ where
         if is_finished(&self.counters) {
             self.finish_progress_if_needed();
             return 0;
+        }
+
+        if force_single_thread {
+            let mut completed_total = 0usize;
+            while completed_total < n_cycles {
+                if is_finished(&self.counters) {
+                    break;
+                }
+
+                if controller.should_stop(self.pools.total_evals) {
+                    controller.cancel();
+                    break;
+                }
+
+                if self.next_task >= self.task_order.len() {
+                    self.prepare_iteration_state(options.niterations);
+                    if self.next_task >= self.task_order.len() {
+                        break;
+                    }
+                }
+
+                let mut dispatched = false;
+                while !dispatched && completed_total < n_cycles && self.next_task < self.task_order.len() {
+                    if is_finished(&self.counters) {
+                        break;
+                    }
+
+                    if controller.should_stop(self.pools.total_evals) {
+                        controller.cancel();
+                        break;
+                    }
+
+                    let pop_idx = self.task_order[self.next_task];
+                    self.next_task += 1;
+
+                    let Some(pop_state) = self.pools.pops[pop_idx].take() else {
+                        continue;
+                    };
+
+                    let cycles_remaining_start = self.counters.cycles_remaining_start_for_next_dispatch();
+                    let curmaxsize =
+                        warmup::get_cur_maxsize(options, self.counters.total_cycles, cycles_remaining_start);
+                    let mut stats_snapshot = self.stats.clone();
+                    stats_snapshot.normalize();
+
+                    let full_dataset = TaggedDataset::new(dataset, baseline_loss);
+                    let res = execute_task(
+                        full_dataset,
+                        options,
+                        pop_idx,
+                        curmaxsize,
+                        stats_snapshot,
+                        pop_state,
+                        controller,
+                    );
+
+                    apply_task_result(
+                        options,
+                        &mut self.counters,
+                        &mut self.stats,
+                        &mut self.hall,
+                        &mut self.progress,
+                        &mut self.pools,
+                        res,
+                    );
+                    completed_total += 1;
+                    dispatched = true;
+
+                    if controller.should_stop(self.pools.total_evals) {
+                        controller.cancel();
+                    }
+                }
+
+                if !dispatched {
+                    break;
+                }
+            }
+
+            if is_finished(&self.counters) {
+                self.finish_progress_if_needed();
+            }
+            return completed_total;
         }
 
         let usable_threads = usable_rayon_threads();
@@ -376,6 +459,7 @@ pub struct SearchEngine<T: Float + AddAssign, Ops, const D: usize> {
     dataset: Dataset<T>,
     baseline_loss: Option<T>,
     options: Options<T, D>,
+    force_single_thread: bool,
     controller: StopController,
     core: SearchCore<T, Ops, D>,
 }
@@ -427,9 +511,18 @@ where
             dataset,
             baseline_loss,
             options,
+            force_single_thread: false,
             controller,
             core,
         }
+    }
+
+    pub fn set_parallelism(&mut self, enabled: bool) {
+        self.force_single_thread = !enabled;
+    }
+
+    pub fn parallelism_enabled(&self) -> bool {
+        !self.force_single_thread
     }
 
     pub fn total_cycles(&self) -> usize {
@@ -474,6 +567,7 @@ where
             self.baseline_loss,
             &self.options,
             &self.controller,
+            self.force_single_thread,
             n_cycles,
         )
     }

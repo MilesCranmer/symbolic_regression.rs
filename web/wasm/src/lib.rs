@@ -243,6 +243,10 @@ impl WasmSearch {
         self.engine.is_finished()
     }
 
+    pub fn set_parallelism(&mut self, enabled: bool) {
+        self.engine.set_parallelism(enabled);
+    }
+
     pub fn step(&mut self, n_cycles: usize) -> Result<JsValue, JsValue> {
         let _ = self.engine.step(n_cycles);
         let snap = snapshot(&self.engine, self.pareto_k);

@@ -12,6 +12,10 @@ export function ControlsCard(props: {
   setNiterations: (n: number) => void;
   canEditNiterations: boolean;
 
+  threadsEnabled: boolean;
+  setThreadsEnabled: (enabled: boolean) => void;
+  canEditThreadsEnabled: boolean;
+
   initSearch: () => void;
   start: () => void;
   pause: () => void;
@@ -45,6 +49,17 @@ export function ControlsCard(props: {
             data-testid="opt-niterations"
             disabled={!props.canEditNiterations || props.niterations == null}
             onChange={(e) => props.setNiterations(Number(e.target.value))}
+          />
+        </label>
+
+        <label className="toolbarField">
+          <span className="label">threads</span>
+          <input
+            type="checkbox"
+            checked={props.threadsEnabled}
+            disabled={!props.canEditThreadsEnabled}
+            onChange={(e) => props.setThreadsEnabled(e.target.checked)}
+            data-testid="threads-enabled"
           />
         </label>
 

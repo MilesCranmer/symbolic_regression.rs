@@ -14,6 +14,8 @@ export function SearchSolutions(): React.ReactElement {
   const c = useSearchController(SrWorkerClient);
   const options = useSessionStore((s) => s.options);
   const setOptionsPatch = useSessionStore((s) => s.setOptionsPatch);
+  const threadsEnabled = useSessionStore((s) => s.threadsEnabled);
+  const setThreadsEnabled = useSessionStore((s) => s.setThreadsEnabled);
 
   return (
     <div className="pane">
@@ -26,6 +28,9 @@ export function SearchSolutions(): React.ReactElement {
         niterations={options?.niterations ?? null}
         setNiterations={(n) => setOptionsPatch({ niterations: n })}
         canEditNiterations={c.runtime.status === "idle" || c.runtime.status === "error"}
+        threadsEnabled={threadsEnabled}
+        setThreadsEnabled={setThreadsEnabled}
+        canEditThreadsEnabled={c.runtime.status === "idle" || c.runtime.status === "error"}
         initSearch={c.initSearch}
         start={c.start}
         pause={c.pause}
