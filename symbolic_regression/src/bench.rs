@@ -13,7 +13,6 @@ use rand_distr::StandardNormal;
 use crate::constant_optimization::{OptimizeConstantsCtx, optimize_constants};
 use crate::dataset::TaggedDataset;
 use crate::loss_functions::baseline_loss_from_zero_expression;
-use crate::operator_selection::OperatorsSampling;
 use crate::optim::{BackTracking, EvalBudget, Objective, OptimOptions, bfgs_minimize};
 use crate::pop_member::Evaluator;
 use crate::{Dataset, OperatorConstraints, OperatorLibrary, Options, PopMember};
@@ -186,10 +185,13 @@ fn random_expr<Ops2, const D2: usize, R: rand::Rng>(
     let mut consts: Vec<BenchT> = Vec::new();
     nodes.push(random_leaf(rng, n_features, &mut consts));
 
-    while nodes.len() < target_size && operators.total_ops_up_to(D2.min(target_size - nodes.len())) > 0 {
+    while nodes.len() < target_size {
         let rem = target_size - nodes.len();
         let max_arity = rem.min(D2);
         let total: usize = (1..=max_arity).map(|a| operators.nops(a)).sum();
+        if total == 0 {
+            break;
+        }
         let mut r = rng.random_range(0..total);
         let mut arity = 1usize;
         for a in 1..=max_arity {
