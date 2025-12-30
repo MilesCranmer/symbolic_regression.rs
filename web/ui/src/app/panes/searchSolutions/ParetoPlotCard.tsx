@@ -1,5 +1,5 @@
 import React from "react";
-import Plot from "react-plotly.js";
+import Plot from "@/plotly/Plot";
 import type { EquationSummary } from "../../../types/srTypes";
 import { plotLayoutBase } from "./plotUtils";
 

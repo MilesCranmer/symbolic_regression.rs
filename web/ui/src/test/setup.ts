@@ -92,7 +92,7 @@ vi.mock("../pkg/symbolic_regression_wasm.js", () => {
 });
 
 // Mock Plotly React component (avoid pulling Plotly into jsdom and keep assertions simple).
-vi.mock("react-plotly.js", () => {
+vi.mock("@/plotly/Plot", () => {
   return {
     default: (props: any) => {
       const xTitle = props?.layout?.xaxis?.title;

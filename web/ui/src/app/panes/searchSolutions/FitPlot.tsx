@@ -1,5 +1,5 @@
 import React from "react";
-import Plot from "react-plotly.js";
+import Plot from "@/plotly/Plot";
 import type { FitPlotMode } from "./types";
 import { plotLayoutBase, sortXY } from "./plotUtils";
 
