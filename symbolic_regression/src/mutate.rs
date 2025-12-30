@@ -129,7 +129,7 @@ pub fn sample_mutation(rng: &mut Rng, weights: &MutationWeights) -> MutationChoi
     choices[idx].0
 }
 
-enum MutationResult<T: Float + AddAssign, Ops, const D: usize> {
+pub(crate) enum MutationResult<T: Float + AddAssign, Ops, const D: usize> {
     ProposedExpr { expr: PostfixExpr<T, Ops, D>, evals: f64 },
     ProposedMember { member: PopMember<T, Ops, D>, evals: f64 },
 }
@@ -273,6 +273,46 @@ impl MutationChoice {
             }
         }
     }
+}
+
+#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+pub(crate) fn apply_mutation_choice<
+    T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + AddAssign,
+    Ops,
+    const D: usize,
+>(
+    choice: MutationChoice,
+    member: &PopMember<T, Ops, D>,
+    ctx: NextGenerationCtx<'_, T, Ops, D>,
+) -> MutationResult<T, Ops, D>
+where
+    Ops: dynamic_expressions::OperatorSet<T = T>,
+{
+    let NextGenerationCtx {
+        rng,
+        dataset,
+        temperature,
+        curmaxsize,
+        stats: _,
+        options,
+        evaluator,
+        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        gpu,
+        _ops: _,
+    } = ctx;
+
+    choice.apply(MutationApplyCtx {
+        rng,
+        member,
+        expr: member.expr.clone(),
+        dataset,
+        temperature,
+        curmaxsize,
+        options,
+        evaluator,
+        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        gpu,
+    })
 }
 
 pub fn next_generation<

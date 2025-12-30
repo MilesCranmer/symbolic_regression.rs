@@ -12,6 +12,13 @@ use crate::pop_member::Evaluator;
 use crate::population::Population;
 use crate::regularized_evolution::{RegEvolCtx, reg_evol_cycle};
 use crate::stop_controller::StopController;
+#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+use crate::{
+    gpu::{AdamParams, MAX_CONSTS, pack_expr},
+    loss_functions::{LossKind, loss_to_cost},
+    pop_member::get_birth_order,
+    random::standard_normal,
+};
 
 pub struct IterationCtx<'a, T: Float + AddAssign, Ops, const D: usize> {
     pub rng: &'a mut Rng,
@@ -98,14 +105,159 @@ where
     }
 
     if ctx.options.should_optimize_constants && ctx.options.optimizer_probability > 0.0 {
-        ctx.evaluator.ensure_n_rows(opt_dataset.n_rows);
-        ctx.grad_ctx.n_rows = opt_dataset.n_rows;
-        for m in &mut pop.members {
-            if ctx.controller.is_cancelled() {
-                return num_evals;
+        ctx.evaluator.ensure_n_rows(opt_dataset.data.n_rows);
+        ctx.grad_ctx.n_rows = opt_dataset.data.n_rows;
+
+        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        if let Some(gpu) = ctx.gpu.filter(|g| {
+            ctx.options.loss_kind == LossKind::Mse
+                && opt_dataset.data.n_rows == g.n_rows
+                && opt_dataset.data.n_features == g.n_features
+        }) {
+            // Batched GPU constant optimization:
+            // Optimize many members (and their random restarts) in a single fused Adam kernel call.
+            let n_restarts = 1 + ctx.options.optimizer_nrestarts;
+            let iters = (ctx.options.optimizer_iterations as u32)
+                .saturating_mul(16)
+                .clamp(16, 1024);
+            let params = AdamParams {
+                iters,
+                ..Default::default()
+            };
+
+            let mut packed_programs: Vec<crate::gpu::PackedProgram> = Vec::new();
+            let mut map: Vec<(usize, usize)> = Vec::new(); // packed_idx -> (member_idx, restart_idx)
+            let mut selected_members: Vec<usize> = Vec::new();
+            let mut cpu_fallback: Vec<usize> = Vec::new();
+
+            for (mi, m) in pop.members.iter().enumerate() {
+                if ctx.controller.is_cancelled() {
+                    break;
+                }
+                if ctx.rng.f64() >= ctx.options.optimizer_probability {
+                    continue;
+                }
+                if m.expr.consts.is_empty() {
+                    continue;
+                }
+
+                if let Some(base) = pack_expr(&m.expr) {
+                    selected_members.push(mi);
+
+                    let n_consts = m.expr.consts.len().min(MAX_CONSTS);
+                    for r in 0..n_restarts {
+                        let mut p = base;
+                        if r > 0 {
+                            for (dst, &src) in p
+                                .consts
+                                .iter_mut()
+                                .take(n_consts)
+                                .zip(base.consts.iter().take(n_consts))
+                            {
+                                let scale = 1.0 + 0.5 * (standard_normal(ctx.rng) as f32);
+                                *dst = src * scale;
+                            }
+                        }
+                        packed_programs.push(p);
+                        map.push((mi, r));
+                    }
+                } else {
+                    cpu_fallback.push(mi);
+                }
             }
+
+            if !packed_programs.is_empty() {
+                let mut losses = vec![0.0f32; packed_programs.len()];
+                gpu.optimize_adam_many(&mut packed_programs, params, &mut losses);
+
+                let mut best_loss: Vec<f32> = vec![f32::INFINITY; pop.members.len()];
+                let mut best_consts: Vec<[f32; MAX_CONSTS]> = vec![[0.0f32; MAX_CONSTS]; pop.members.len()];
+                let mut has_best: Vec<bool> = vec![false; pop.members.len()];
+
+                for (pi, (mi, _r)) in map.iter().enumerate() {
+                    let l = losses[pi];
+                    if l.is_finite() && l < best_loss[*mi] {
+                        best_loss[*mi] = l;
+                        best_consts[*mi] = packed_programs[pi].consts;
+                        has_best[*mi] = true;
+                    }
+                }
+
+                for &mi in &selected_members {
+                    if !has_best[mi] {
+                        continue;
+                    }
+
+                    // Only accept if it actually improved the member (same semantics as CPU path).
+                    let baseline = pop.members[mi].loss.to_f32().unwrap_or(f32::INFINITY);
+                    if best_loss[mi] < baseline {
+                        let n_consts = pop.members[mi].expr.consts.len().min(MAX_CONSTS);
+                        for (dst, &src) in pop.members[mi]
+                            .expr
+                            .consts
+                            .iter_mut()
+                            .take(n_consts)
+                            .zip(best_consts[mi].iter().take(n_consts))
+                        {
+                            *dst = T::from_f32(src).unwrap_or_else(T::nan);
+                        }
+
+                        pop.members[mi].loss = T::from_f32(best_loss[mi]).unwrap_or_else(T::nan);
+                        pop.members[mi].cost = loss_to_cost(
+                            pop.members[mi].loss,
+                            pop.members[mi].complexity,
+                            ctx.options.parsimony,
+                            ctx.options.use_baseline,
+                            opt_dataset.baseline_loss,
+                        );
+                        pop.members[mi].birth = get_birth_order(ctx.options.deterministic);
+                    }
+                }
+
+                num_evals += (params.iters as f64) * (n_restarts as f64) * (selected_members.len() as f64);
+            }
+
+            // CPU fallback for programs that can't be represented on the GPU.
+            for mi in cpu_fallback {
+                if ctx.controller.is_cancelled() {
+                    break;
+                }
+                let (_, evals) = optimize_constants(
+                    ctx.rng,
+                    &mut pop.members[mi],
+                    OptimizeConstantsCtx {
+                        dataset: opt_dataset,
+                        options: ctx.options,
+                        evaluator: ctx.evaluator,
+                        grad_ctx: ctx.grad_ctx,
+                        gpu: ctx.gpu,
+                    },
+                );
+                num_evals += evals;
+            }
+        } else {
+            for m in &mut pop.members {
+                if ctx.rng.f64() < ctx.options.optimizer_probability {
+                    let (_, evals) = optimize_constants(
+                        ctx.rng,
+                        m,
+                        OptimizeConstantsCtx {
+                            dataset: opt_dataset,
+                            options: ctx.options,
+                            evaluator: ctx.evaluator,
+                            grad_ctx: ctx.grad_ctx,
+                            gpu: ctx.gpu,
+                        },
+                    );
+                    num_evals += evals;
+                }
+            }
+        }
+
+        #[cfg(not(all(feature = "gpu", not(target_arch = "wasm32"))))]
+        for m in &mut pop.members {
             if ctx.rng.f64() < ctx.options.optimizer_probability {
-                let (improved, evals) = optimize_constants(
+                let (_, evals) = optimize_constants(
                     ctx.rng,
                     m,
                     OptimizeConstantsCtx {
@@ -113,11 +265,8 @@ where
                         options: ctx.options,
                         evaluator: ctx.evaluator,
                         grad_ctx: ctx.grad_ctx,
-                        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
-                        gpu: ctx.gpu,
                     },
                 );
-                let _ = improved;
                 num_evals += evals;
             }
         }
@@ -143,7 +292,8 @@ where
             }
 
             let mut losses: Vec<f32> = vec![0.0; packed_programs.len()];
-            if gpu.eval_mse_many(&packed_programs, &mut losses) {
+            gpu.eval_mse_many(&packed_programs, &mut losses);
+            {
                 let mut packed_cursor: usize = 0;
                 for (i, m) in pop.members.iter_mut().enumerate() {
                     if ctx.controller.is_cancelled() {

@@ -201,7 +201,7 @@ pub fn equation_search_gpu<Ops, const D: usize>(
     dataset: &Dataset<f32>,
     options: &Options<f32, D>,
     batch_max: usize,
-) -> Result<SearchResult<f32, Ops, D>, crate::gpu::GpuInitError>
+) -> Result<SearchResult<f32, Ops, D>, GpuSearchInitError>
 where
     Ops: dynamic_expressions::OperatorSet<T = f32> + Send + Sync,
 {
@@ -525,6 +525,40 @@ where
 }
 
 #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+#[derive(Debug)]
+pub enum GpuSearchInitError {
+    BatchingEnabled,
+    UnsupportedLoss { requested: crate::loss_functions::LossKind },
+    GpuInit(crate::gpu::GpuInitError),
+}
+
+#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+impl core::fmt::Display for GpuSearchInitError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::BatchingEnabled => write!(f, "GPU search does not support dataset batching"),
+            Self::UnsupportedLoss { requested } => {
+                write!(
+                    f,
+                    "GPU search currently only supports MSE loss (requested {requested:?})"
+                )
+            }
+            Self::GpuInit(e) => write!(f, "GPU initialization failed ({e:?})"),
+        }
+    }
+}
+
+#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+impl std::error::Error for GpuSearchInitError {}
+
+#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+impl From<crate::gpu::GpuInitError> for GpuSearchInitError {
+    fn from(value: crate::gpu::GpuInitError) -> Self {
+        Self::GpuInit(value)
+    }
+}
+
+#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
 impl<Ops, const D: usize> SearchEngine<f32, Ops, D>
 where
     Ops: dynamic_expressions::OperatorSet<T = f32>,
@@ -533,12 +567,14 @@ where
         dataset: Dataset<f32>,
         options: Options<f32, D>,
         batch_max: usize,
-    ) -> Result<Self, crate::gpu::GpuInitError> {
+    ) -> Result<Self, GpuSearchInitError> {
         if options.batching {
-            return Err(crate::gpu::GpuInitError::BatchingEnabled);
+            return Err(GpuSearchInitError::BatchingEnabled);
         }
         if options.loss_kind != crate::loss_functions::LossKind::Mse {
-            return Err(crate::gpu::GpuInitError::UnsupportedLoss);
+            return Err(GpuSearchInitError::UnsupportedLoss {
+                requested: options.loss_kind,
+            });
         }
 
         let baseline_loss = if options.use_baseline {
@@ -552,7 +588,17 @@ where
         let stats = RunningSearchStatistics::new(options.maxsize, 100_000);
         let mut hall = HallOfFame::new(options.maxsize);
 
-        let gpu = crate::gpu::GpuClient::spawn(&dataset, batch_max)?;
+        let mut effective_batch_max = if batch_max == 0 { 8192 } else { batch_max };
+        // For very small datasets the per-dispatch map/sync overhead dominates; prefer large batches.
+        if dataset.n_rows <= 2048 {
+            effective_batch_max = effective_batch_max.max(8192);
+        } else {
+            effective_batch_max = effective_batch_max.max(4096);
+        }
+        // `dispatch_workgroups(x, ..)` has a per-dimension limit (commonly 65535).
+        effective_batch_max = effective_batch_max.min(65535);
+
+        let gpu = crate::gpu::GpuClient::spawn(&dataset, effective_batch_max)?;
 
         let full_dataset = TaggedDataset::new(&dataset, baseline_loss);
         let pools = init_populations(full_dataset, &options, &controller, &mut hall, Some(gpu));
@@ -770,8 +816,8 @@ where
                 }
 
                 let mut losses: Vec<f32> = vec![0.0; packed_programs.len()];
-                let ok = g.eval_mse_many(&packed_programs, &mut losses);
-                (ok, packed_indices, losses)
+                g.eval_mse_many(&packed_programs, &mut losses);
+                (packed_indices, losses)
             });
 
         #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
@@ -783,8 +829,8 @@ where
             let used_gpu = false;
 
             #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
-            if let Some((ok, packed_indices, losses)) = &gpu_batch {
-                if *ok && packed_cursor < packed_indices.len() && packed_indices[packed_cursor] == _i {
+            if let Some((packed_indices, losses)) = &gpu_batch {
+                if packed_cursor < packed_indices.len() && packed_indices[packed_cursor] == _i {
                     used_gpu = true;
                     m.complexity = crate::complexity::compute_complexity(&m.expr.nodes, options);
                     let loss = T::from(losses[packed_cursor]).unwrap_or_else(T::nan);

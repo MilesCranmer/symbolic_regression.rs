@@ -37,7 +37,7 @@ fn main() {
         ncycles_per_iteration: if is_gpu { 50 } else { 380 },
         should_optimize_constants: true,
         optimizer_probability: if is_gpu { 0.02 } else { 0.14 },
-        should_simplify: if is_gpu { false } else { true },
+        should_simplify: !is_gpu,
         ..Default::default()
     };
 

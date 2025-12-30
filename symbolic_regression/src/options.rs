@@ -1,3 +1,4 @@
+pub use dynamic_expressions::OperatorSet;
 use dynamic_expressions::Operators;
 use num_traits::Float;
 

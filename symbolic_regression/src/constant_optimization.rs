@@ -6,6 +6,8 @@ use fastrand::Rng;
 use num_traits::{Float, FromPrimitive, ToPrimitive};
 
 use crate::dataset::{Dataset, TaggedDataset};
+#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+use crate::loss_functions::{LossKind, loss_to_cost};
 use crate::optim::{BackTracking, Objective, OptimOptions, bfgs_minimize, newton_1d_minimize};
 use crate::options::Options;
 use crate::pop_member::{Evaluator, PopMember, get_birth_order};
@@ -23,14 +25,14 @@ impl Objective for GpuConstObjective<'_> {
     fn f_only(&mut self, x: &[f64], budget: &mut crate::optim::EvalBudget) -> Option<f64> {
         budget.f_calls += 1;
 
+        let xs = x.get(..self.n_params)?;
         let mut c = [0.0f32; crate::gpu::MAX_CONSTS];
-        for i in 0..self.n_params {
-            let v = *x.get(i)?;
-            let vf = v as f32;
+        for (dst, &src) in c.iter_mut().take(self.n_params).zip(xs.iter()) {
+            let vf = src as f32;
             if !vf.is_finite() {
                 return None;
             }
-            c[i] = vf;
+            *dst = vf;
         }
 
         let packed = crate::gpu::PackedProgram {
@@ -44,14 +46,14 @@ impl Objective for GpuConstObjective<'_> {
     fn fg(&mut self, x: &[f64], g_out: &mut [f64], budget: &mut crate::optim::EvalBudget) -> Option<f64> {
         budget.f_calls += 1;
 
+        let xs = x.get(..self.n_params)?;
         let mut c = [0.0f32; crate::gpu::MAX_CONSTS];
-        for i in 0..self.n_params {
-            let v = *x.get(i)?;
-            let vf = v as f32;
+        for (dst, &src) in c.iter_mut().take(self.n_params).zip(xs.iter()) {
+            let vf = src as f32;
             if !vf.is_finite() {
                 return None;
             }
-            c[i] = vf;
+            *dst = vf;
         }
 
         let packed = crate::gpu::PackedProgram {
@@ -275,6 +277,81 @@ where
     if n_params == 0 {
         return (false, 0.0);
     }
+    // Fast-path: if a GPU client is available, do a fused Adam optimization entirely on-GPU.
+    // This avoids the disastrous CPU↔GPU round-trip that happens if we use a CPU optimizer that
+    // calls into the GPU objective/gradient one evaluation at a time.
+    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+    {
+        let enable_gpu_const_opt = std::env::var("SYMBOLIC_REGRESSION_GPU_CONST_OPT")
+            .map(|v| v != "0")
+            .unwrap_or(true);
+
+        if enable_gpu_const_opt {
+            if let Some(g) = gpu.filter(|g| {
+                options.loss_kind == LossKind::Mse && dataset.n_rows == g.n_rows && dataset.n_features == g.n_features
+            }) {
+                if let Some(base) = crate::gpu::pack_expr(&member.expr) {
+                    let n_consts = n_params.min(crate::gpu::MAX_CONSTS);
+                    let n_restarts = 1 + options.optimizer_nrestarts;
+                    let iters = (options.optimizer_iterations as u32).saturating_mul(16).clamp(16, 1024);
+                    let params = crate::gpu::AdamParams {
+                        iters,
+                        ..Default::default()
+                    };
+
+                    let mut programs: Vec<crate::gpu::PackedProgram> = Vec::with_capacity(n_restarts);
+                    for r in 0..n_restarts {
+                        let mut p = base;
+                        if r > 0 {
+                            for j in 0..n_consts {
+                                let scale = 1.0 + 0.5 * (standard_normal(rng) as f32);
+                                p.consts[j] = base.consts[j] * scale;
+                            }
+                        }
+                        programs.push(p);
+                    }
+
+                    let mut losses = vec![0.0f32; programs.len()];
+                    g.optimize_adam_many(&mut programs, params, &mut losses);
+
+                    let mut best_loss = f32::INFINITY;
+                    let mut best_consts = base.consts;
+                    for (p, &l) in programs.iter().zip(losses.iter()) {
+                        if l.is_finite() && l < best_loss {
+                            best_loss = l;
+                            best_consts = p.consts;
+                        }
+                    }
+
+                    let baseline = member.loss.to_f32().unwrap_or(f32::INFINITY);
+                    let evals = (params.iters as f64) * (programs.len() as f64);
+
+                    if best_loss.is_finite() && best_loss < baseline {
+                        for (dst, &src) in member
+                            .expr
+                            .consts
+                            .iter_mut()
+                            .take(n_consts)
+                            .zip(best_consts.iter().take(n_consts))
+                        {
+                            *dst = T::from_f32(src).unwrap_or_else(T::nan);
+                        }
+                        member.loss = T::from_f32(best_loss).unwrap_or_else(T::nan);
+                        member.cost = loss_to_cost(
+                            member.loss,
+                            member.complexity,
+                            options.parsimony,
+                            options.use_baseline,
+                            dataset.baseline_loss,
+                        );
+                        member.birth = get_birth_order(options.deterministic);
+                        return (true, evals);
+                    }
+                    return (false, evals);
+                }
+            }
+        }
+    }
 
     let orig_consts = member.expr.consts.clone();
     let orig_birth = member.birth;
@@ -285,6 +362,15 @@ where
 
     #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
     let gpu_packed = gpu.and_then(|g| {
+        // Constant optimization calls the objective/gradient many times; doing those calls on the GPU
+        // requires a dispatch + readback each time and is often dramatically slower unless batching is
+        // very large. Keep this opt-in until we have a fused on-GPU optimizer loop.
+        if std::env::var("SYMBOLIC_REGRESSION_GPU_CONST_OPT")
+            .ok()
+            .is_none_or(|v| v == "0")
+        {
+            return None;
+        }
         if core::mem::size_of::<T>() != core::mem::size_of::<f32>() {
             return None;
         }
