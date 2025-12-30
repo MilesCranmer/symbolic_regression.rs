@@ -1,5 +1,5 @@
+use core::hash::{Hash, Hasher};
 use core::marker::PhantomData;
-use std::hash::{Hash, Hasher};
 
 use rustc_hash::FxHasher;
 

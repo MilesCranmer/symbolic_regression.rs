@@ -6,6 +6,37 @@ use symbolic_regression::prelude::*;
 // Mirrors `SymbolicRegression.jl/example.jl`.
 
 fn main() {
+    fn usage() {
+        eprintln!("Usage: example [--niterations <n>]");
+    }
+
+    let mut args = std::env::args().skip(1);
+    let mut niterations: usize = 1_000;
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "-h" | "--help" => {
+                usage();
+                return;
+            }
+            "-n" | "--niterations" => {
+                let value = args.next().unwrap_or_else(|| {
+                    eprintln!("Missing value for {arg}");
+                    usage();
+                    std::process::exit(2);
+                });
+                niterations = value.parse().unwrap_or_else(|_| {
+                    eprintln!("Expected `--niterations` as an integer, got: {value}");
+                    std::process::exit(2);
+                });
+            }
+            _ => {
+                eprintln!("Unknown arg: {arg}");
+                usage();
+                std::process::exit(2);
+            }
+        }
+    }
+
     const N_FEATURES: usize = 5;
     const D: usize = 3;
     let n_rows = 100;
@@ -30,7 +61,7 @@ fn main() {
 
     let options = Options::<f32, D> {
         operators,
-        niterations: 200,
+        niterations,
         ..Default::default()
     };
 

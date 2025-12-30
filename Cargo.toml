@@ -5,3 +5,7 @@ members = [
     "symbolic_regression",
     "web/wasm",
 ]
+
+[profile.profiling]
+inherits = "release"
+debug = true

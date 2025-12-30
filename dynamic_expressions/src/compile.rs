@@ -20,12 +20,6 @@ pub struct Instr<const D: usize> {
     pub dst: u16,
 }
 
-pub(crate) fn build_node_hash(nodes: &[PNode]) -> u64 {
-    let mut hasher = FxHasher::default();
-    nodes.hash(&mut hasher);
-    hasher.finish()
-}
-
 pub fn compile_plan<const D: usize>(nodes: &[PNode], n_features: usize, n_consts: usize) -> EvalPlan<D> {
     assert!(
         n_features <= (u16::MAX as usize),
@@ -99,7 +93,9 @@ pub fn compile_plan<const D: usize>(nodes: &[PNode], n_features: usize, n_consts
     assert_eq!(stack.len(), 1, "Postfix did not reduce to a single root");
     let root = stack.pop().unwrap();
     let n_slots = max_slot as usize;
-    let hash = build_node_hash(nodes);
+    let mut hasher = FxHasher::default();
+    nodes.hash(&mut hasher);
+    let hash = hasher.finish();
     EvalPlan {
         instrs,
         n_slots,

@@ -1,7 +1,7 @@
 use ndarray::{Array2, ArrayView2};
 use num_traits::Float;
 
-use crate::compile::{EvalPlan, build_node_hash, compile_plan};
+use crate::compile::{EvalPlan, compile_plan};
 use crate::dispatch::{GradKernelCtx, GradRef, SrcRef};
 use crate::evaluate::{EvalOptions, resolve_val_src};
 use crate::expression::PostfixExpr;
@@ -141,7 +141,7 @@ where
     let needs_recompile = ctx.plan_nodes_len != expr.nodes.len()
         || ctx.plan_n_consts != expr.consts.len()
         || ctx.plan_n_features != n_features
-        || ctx.plan.as_ref().is_none_or(|p| p.hash != build_node_hash(&expr.nodes));
+        || ctx.plan.as_ref().is_none_or(|p| p.hash != expr.hash_nodes());
     if needs_recompile {
         ctx.plan = Some(compile_plan::<D>(&expr.nodes, n_features, expr.consts.len()));
         ctx.plan_nodes_len = expr.nodes.len();

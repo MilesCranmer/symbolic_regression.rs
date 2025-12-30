@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.3](https://github.com/astroautomata/symbolic_regression.rs/compare/symbolic_regression_wasm-v0.7.2...symbolic_regression_wasm-v0.7.3) (2025-12-30)
+
+
+### Features
+
+* remove unused member id's ([be2fa95](https://github.com/astroautomata/symbolic_regression.rs/commit/be2fa95fba4f3a07e0a4f763cfae539824debede))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * symbolic_regression bumped from 0.12.0 to 0.12.1
+    * dynamic_expressions bumped from 0.9.1 to 0.10.0
+
 ## [0.7.2](https://github.com/astroautomata/symbolic_regression.rs/compare/symbolic_regression_wasm-v0.7.1...symbolic_regression_wasm-v0.7.2) (2025-12-28)
 
 

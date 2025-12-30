@@ -1,7 +1,7 @@
 use std::hint::black_box;
 
 use dynamic_expressions::dispatch::{GradKernelCtx, GradRef, SrcRef};
-use dynamic_expressions::evaluate::kernels::{__maybe_mark_nonfinite, diff_nary, eval_nary, grad_nary};
+use dynamic_expressions::evaluate::kernels::{diff_nary, eval_nary, grad_nary};
 use dynamic_expressions::operator_enum::builtin::Add;
 use dynamic_expressions::{EvalOptions, Operator};
 
@@ -299,32 +299,4 @@ fn grad_nary_checks_after_loop_when_no_early_exit() {
         opts: &opts,
     }));
     assert!(out_val[1].is_nan());
-}
-
-#[test]
-fn maybe_mark_nonfinite_can_early_exit() {
-    let opts = black_box(EvalOptions {
-        check_finite: true,
-        early_exit: true,
-    });
-    let mut complete = true;
-    let f: fn(f64, &EvalOptions, &mut bool) -> bool = __maybe_mark_nonfinite::<f64>;
-    let f = black_box(f);
-    let ok = f(black_box(f64::INFINITY), &opts, &mut complete);
-    assert!(!ok);
-    assert!(!complete);
-}
-
-#[test]
-fn maybe_mark_nonfinite_marks_complete_without_early_exit() {
-    let opts = black_box(EvalOptions {
-        check_finite: true,
-        early_exit: false,
-    });
-    let mut complete = true;
-    let f: fn(f64, &EvalOptions, &mut bool) -> bool = __maybe_mark_nonfinite::<f64>;
-    let f = black_box(f);
-    let ok = f(black_box(f64::INFINITY), &opts, &mut complete);
-    assert!(ok);
-    assert!(!complete);
 }

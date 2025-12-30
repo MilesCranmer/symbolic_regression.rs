@@ -668,7 +668,6 @@ where
         let mut rng = Rng::with_seed(options.seed.wrapping_add(pop_i as u64));
         let mut evaluator = Evaluator::new(dataset.n_rows);
         let grad_ctx = dynamic_expressions::GradContext::new(dataset.n_rows);
-
         let nlength = 3usize;
         let mut members = Vec::with_capacity(options.population_size);
         for _ in 0..options.population_size {

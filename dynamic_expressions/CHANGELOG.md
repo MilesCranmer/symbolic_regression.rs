@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.10.0](https://github.com/astroautomata/symbolic_regression.rs/compare/dynamic_expressions-v0.9.1...dynamic_expressions-v0.10.0) (2025-12-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* simple and minimal operator syntax
+* nicer syntax for operator definitions
+
+### Features
+
+* remove unused member id's ([be2fa95](https://github.com/astroautomata/symbolic_regression.rs/commit/be2fa95fba4f3a07e0a4f763cfae539824debede))
+* simple and minimal operator syntax ([b8f3f4f](https://github.com/astroautomata/symbolic_regression.rs/commit/b8f3f4f27e9ed1fdf1371ab59af1015d00b7ea5d))
+
+
+### Performance Improvements
+
+* better vectorization for finite checks ([813f73a](https://github.com/astroautomata/symbolic_regression.rs/commit/813f73aead3514ee5edf4a3de891b02f1ef5731c))
+* better vectorization for finite checks ([233af1c](https://github.com/astroautomata/symbolic_regression.rs/commit/233af1c355bec882ae0c241368e62acce5b9ecc1))
+
+
+### Code Refactoring
+
+* nicer syntax for operator definitions ([e51cabb](https://github.com/astroautomata/symbolic_regression.rs/commit/e51cabbadba355f1180a4beb6d853492874ff67e))
+
 ## [0.9.1](https://github.com/astroautomata/symbolic_regression.rs/compare/dynamic_expressions-v0.9.0...dynamic_expressions-v0.9.1) (2025-12-27)
 
 
