@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use dynamic_expressions::expression::PostfixExpr;
 use dynamic_expressions::node::PNode;
 use dynamic_expressions::{Operators, node_utils};
@@ -270,22 +272,119 @@ pub(crate) fn swap_operands_in_place<T, Ops, const D: usize>(rng: &mut Rng, expr
     true
 }
 
+struct RotateTreeScratch {
+    sizes: Vec<usize>,
+    stack: Vec<usize>,
+    valid_roots: Vec<usize>,
+    buf: Vec<PNode>,
+}
+
+impl RotateTreeScratch {
+    const fn new() -> Self {
+        Self {
+            sizes: Vec::new(),
+            stack: Vec::new(),
+            valid_roots: Vec::new(),
+            buf: Vec::new(),
+        }
+    }
+}
+
+std::thread_local! {
+    static ROTATE_TREE_SCRATCH: RefCell<RotateTreeScratch> = const { RefCell::new(RotateTreeScratch::new()) };
+}
+
+fn subtree_sizes_into(nodes: &[PNode], sizes: &mut Vec<usize>, stack: &mut Vec<usize>) {
+    sizes.resize(nodes.len(), 0);
+    stack.clear();
+    stack.reserve(nodes.len());
+
+    for (i, n) in nodes.iter().enumerate() {
+        match *n {
+            PNode::Var { .. } | PNode::Const { .. } => {
+                sizes[i] = 1;
+                stack.push(1);
+            }
+            PNode::Op { arity, .. } => {
+                let a = arity as usize;
+                let mut sum = 1usize;
+                for _ in 0..a {
+                    sum += stack.pop().expect("invalid postfix (stack underflow)");
+                }
+                sizes[i] = sum;
+                stack.push(sum);
+            }
+        }
+    }
+
+    debug_assert_eq!(stack.len(), 1, "invalid postfix (did not reduce to one root)");
+}
+
+fn has_op_child(nodes: &[PNode], sizes: &[usize], root_idx: usize, arity: usize) -> bool {
+    let mut end = root_idx;
+    for _ in 0..arity {
+        end = end.checked_sub(1).expect("invalid postfix (child end underflow)");
+        let child_end = end;
+        if matches!(nodes[child_end], PNode::Op { .. }) {
+            return true;
+        }
+        end = child_end + 1 - sizes[child_end];
+    }
+    false
+}
+
+fn fill_child_ranges<const D: usize>(sizes: &[usize], root_idx: usize, arity: usize, out: &mut [(usize, usize); D]) {
+    debug_assert!(arity > 0);
+
+    let mut end = root_idx;
+    for k in (0..arity).rev() {
+        end = end.checked_sub(1).expect("invalid postfix (child end underflow)");
+        let child_end = end;
+        let sz = sizes[child_end];
+        let child_start = child_end + 1 - sz;
+        out[k] = (child_start, child_end);
+        end = child_start;
+    }
+}
+
 pub fn rotate_tree_in_place<T, Ops, const D: usize>(rng: &mut Rng, expr: &mut PostfixExpr<T, Ops, D>) -> bool {
+    ROTATE_TREE_SCRATCH.with(|cell| rotate_tree_in_place_impl(cell, rng, expr))
+}
+
+fn rotate_tree_in_place_impl<T, Ops, const D: usize>(
+    cell: &RefCell<RotateTreeScratch>,
+    rng: &mut Rng,
+    expr: &mut PostfixExpr<T, Ops, D>,
+) -> bool {
     // Match SymbolicRegression.jl's `randomly_rotate_tree!`:
     // pick a random rotation root where some child is an operator, then
     // rotate along a random internal edge (root -> pivot) using a random grandchild.
-    let sizes = node_utils::subtree_sizes(&expr.nodes);
-    let mut valid_roots: Vec<usize> = Vec::new();
-    for (i, n) in expr.nodes.iter().enumerate() {
-        let PNode::Op { arity, .. } = *n else {
+    let mut sc = cell.borrow_mut();
+    let nodes = &mut expr.nodes;
+    let n = nodes.len();
+
+    let RotateTreeScratch {
+        sizes,
+        stack,
+        valid_roots,
+        buf,
+    } = &mut *sc;
+
+    subtree_sizes_into(nodes, sizes, stack);
+
+    // Build valid_roots in the same order as the reference (left-to-right scan).
+    valid_roots.clear();
+    valid_roots.reserve(n / 2);
+    for (i, node) in nodes.iter().enumerate() {
+        let PNode::Op { arity, .. } = *node else {
             continue;
         };
         let a = arity as usize;
         if a == 0 {
             continue;
         }
-        let children = child_ranges(&sizes, i, a);
-        if children.iter().any(|c| matches!(expr.nodes[c.1], PNode::Op { .. })) {
+        assert!(a <= D);
+        if has_op_child(nodes, sizes, i, a) {
             valid_roots.push(i);
         }
     }
@@ -293,78 +392,105 @@ pub fn rotate_tree_in_place<T, Ops, const D: usize>(rng: &mut Rng, expr: &mut Po
         return false;
     }
 
+    // RNG draw #1: choose root among valid_roots.
     let root_idx = valid_roots[usize_range(rng, 0..valid_roots.len())];
     let PNode::Op {
         arity: root_arity_u8,
         op: op_root,
-    } = expr.nodes[root_idx]
+    } = nodes[root_idx]
     else {
         return false;
     };
     let root_arity = root_arity_u8 as usize;
-    if root_arity == 0 {
+
+    let mut root_children: [(usize, usize); D] = [(0, 0); D];
+    fill_child_ranges(sizes, root_idx, root_arity, &mut root_children);
+
+    // RNG draw #2: choose pivot among op-children of root (same ordering as pivot_positions vec).
+    let mut n_pivots = 0usize;
+    for &(_, end) in root_children.iter().take(root_arity) {
+        if matches!(nodes[end], PNode::Op { .. }) {
+            n_pivots += 1;
+        }
+    }
+    if n_pivots == 0 {
         return false;
     }
-    let root_children = child_ranges(&sizes, root_idx, root_arity);
-
-    let pivot_positions: Vec<usize> = root_children
-        .iter()
-        .enumerate()
-        .filter_map(|(j, c)| matches!(expr.nodes[c.1], PNode::Op { .. }).then_some(j))
-        .collect();
-    if pivot_positions.is_empty() {
-        return false;
+    let mut rem = usize_range(rng, 0..n_pivots);
+    let mut pivot_pos = 0usize;
+    let mut pivot_root_idx = 0usize;
+    for (j, &(_, end)) in root_children.iter().enumerate().take(root_arity) {
+        if matches!(nodes[end], PNode::Op { .. }) {
+            if rem == 0 {
+                pivot_pos = j;
+                pivot_root_idx = end;
+                break;
+            }
+            rem -= 1;
+        }
     }
 
-    let pivot_pos = pivot_positions[usize_range(rng, 0..pivot_positions.len())];
-    let pivot_root_idx = root_children[pivot_pos].1;
     let PNode::Op {
         arity: pivot_arity_u8,
         op: op_pivot,
-    } = expr.nodes[pivot_root_idx]
+    } = nodes[pivot_root_idx]
     else {
-        return false;
+        panic!("expected op node");
     };
     let pivot_arity = pivot_arity_u8 as usize;
-    if pivot_arity == 0 {
-        return false;
-    }
-    let pivot_children = child_ranges(&sizes, pivot_root_idx, pivot_arity);
+    assert!(pivot_arity > 0 && pivot_arity <= D);
 
+    let mut pivot_children: [(usize, usize); D] = [(0, 0); D];
+    fill_child_ranges(sizes, pivot_root_idx, pivot_arity, &mut pivot_children);
+
+    // RNG draw #3: choose grandchild among pivot children.
     let grandchild_pos = usize_range(rng, 0..pivot_arity);
     let grandchild = pivot_children[grandchild_pos];
 
-    let (sub_start, sub_end) = node_utils::subtree_range(&sizes, root_idx);
+    let root_end = root_idx;
+    let root_start = root_end + 1 - sizes[root_end];
+    let subtree_len = sizes[root_end];
 
-    // Build the rotated version of the old root, with its `pivot_pos` child replaced by `grandchild`.
-    let mut rotated_root: Vec<PNode> = Vec::with_capacity(sub_end + 1 - sub_start);
-    for (j, c) in root_children.iter().enumerate() {
-        if j == pivot_pos {
-            rotated_root.extend_from_slice(&expr.nodes[grandchild.0..=grandchild.1]);
-        } else {
-            rotated_root.extend_from_slice(&expr.nodes[c.0..=c.1]);
-        }
+    // Cheap unary cases: memmove only.
+    if root_arity == 1 {
+        let insert_pos = grandchild.1 + 1;
+        let root_node = nodes[root_end];
+        nodes.copy_within(insert_pos..root_end, insert_pos + 1);
+        nodes[insert_pos] = root_node;
+        return true;
     }
-    rotated_root.push(PNode::Op {
-        arity: root_arity_u8,
-        op: op_root,
-    });
+    if pivot_arity == 1 {
+        let pivot_node = nodes[pivot_root_idx];
+        nodes.copy_within((pivot_root_idx + 1)..(root_end + 1), pivot_root_idx);
+        nodes[root_end] = pivot_node;
+        return true;
+    }
 
-    // Build the new subtree rooted at `pivot`, replacing its `grandchild_pos` with `rotated_root`.
-    let mut new_sub: Vec<PNode> = Vec::with_capacity(sub_end + 1 - sub_start);
-    for (k, c) in pivot_children.iter().enumerate() {
+    // General case: rebuild subtree into reusable buffer; copy back (no splice).
+    buf.clear();
+    buf.reserve(subtree_len);
+
+    for (k, &(start, end)) in pivot_children.iter().enumerate().take(pivot_arity) {
         if k == grandchild_pos {
-            new_sub.extend_from_slice(&rotated_root);
+            for (j, &(cs, ce)) in root_children.iter().enumerate().take(root_arity) {
+                let (s, e) = if j == pivot_pos { grandchild } else { (cs, ce) };
+                buf.extend_from_slice(&nodes[s..(e + 1)]);
+            }
+            buf.push(PNode::Op {
+                arity: root_arity_u8,
+                op: op_root,
+            });
         } else {
-            new_sub.extend_from_slice(&expr.nodes[c.0..=c.1]);
+            buf.extend_from_slice(&nodes[start..(end + 1)]);
         }
     }
-    new_sub.push(PNode::Op {
+    buf.push(PNode::Op {
         arity: pivot_arity_u8,
         op: op_pivot,
     });
 
-    expr.nodes.splice(sub_start..=sub_end, new_sub);
+    debug_assert_eq!(buf.len(), subtree_len);
+    nodes[root_start..=root_end].copy_from_slice(buf);
     true
 }
 
