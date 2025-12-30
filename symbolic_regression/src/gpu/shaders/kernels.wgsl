@@ -19,6 +19,8 @@ const MAX_CONSTS: u32 = 8u;
 // Must be a power of two for the reductions.
 const WG: u32 = 64u;
 
+const NAN_F32: f32 = f32(0x7fc00000);
+
 // Buffers
 @group(0) @binding(0) var<storage, read> X: array<f32>;
 @group(0) @binding(1) var<storage, read> y: array<f32>;
@@ -66,7 +68,7 @@ fn op_unary_value(op: u32, a: f32) -> f32 {
         case 4u: { return log(a); }
         // 5: Sqrt
         case 5u: { return sqrt(a); }
-        default: { return a; }
+        default: { return NAN_F32; }
     }
 }
 
@@ -84,7 +86,7 @@ fn op_unary_deriv(op: u32, a: f32, out: f32) -> f32 {
         case 4u: { return 1.0 / a; }
         // 5: Sqrt
         case 5u: { return 0.5 / out; } // 0.5 / sqrt(a)
-        default: { return 0.0; }
+        default: { return NAN_F32; }
     }
 }
 
@@ -98,7 +100,7 @@ fn op_binary_value(op: u32, a: f32, b: f32) -> f32 {
         case 2u: { return a * b; }
         // 3: Div
         case 3u: { return a / b; }
-        default: { return a; }
+        default: { return NAN_F32; }
     }
 }
 
@@ -113,7 +115,7 @@ fn op_binary_deriv(op: u32, a: f32, b: f32, out: f32) -> vec2<f32> {
         case 2u: { return vec2<f32>(b, a); }
         // 3: Div
         case 3u: { return vec2<f32>(1.0 / b, -a / (b * b)); }
-        default: { return vec2<f32>(0.0, 0.0); }
+        default: { return vec2<f32>(NAN_F32, NAN_F32); }
     }
 }
 
@@ -534,8 +536,9 @@ fn optimize_adam(
             var step0 = lr * m0_hat / (sqrt(v0_hat) + vec4<f32>(eps));
             var step1 = lr * m1_hat / (sqrt(v1_hat) + vec4<f32>(eps));
 
-            step0 = clamp(step0, -step_clip, step_clip);
-            step1 = clamp(step1, -step_clip, step_clip);
+            let clip = vec4<f32>(step_clip);
+            step0 = clamp(step0, -clip, clip);
+            step1 = clamp(step1, -clip, clip);
 
             wg_c0 = wg_c0 - step0;
             wg_c1 = wg_c1 - step1;
