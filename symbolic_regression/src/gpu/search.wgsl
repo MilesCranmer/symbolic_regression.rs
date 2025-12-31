@@ -19,6 +19,7 @@ const MAX_NODES: u32 = 32u;
 const MAX_STACK: u32 = 64u;
 const MAX_CONSTS: u32 = 8u;
 const WG: u32 = 64u;
+const NAN_F32: f32 = 0x7fc00000;
 
 const KIND_VAR: u32 = 0u;
 const KIND_CONST: u32 = 1u;
@@ -42,17 +43,17 @@ const OP_DIV: u32 = 3u;
 const N_BINARY: u32 = 4u;
 
 struct SearchParams {
-  u0: vec4<u32>; // (n_rows, n_features, pop_total, pop_per_island)
-  u1: vec4<u32>; // (gen, parity_in, tournament_k, opt_iters)
-  u2: vec4<u32>; // (allowed_unary_mask, allowed_binary_mask, mutate_rate_ppm, regen_rate_ppm)
-  u3: vec4<u32>; // (seed, reserved, reserved, reserved)
-  f0: vec4<f32>; // (sum_w, adam_lr, beta1, beta2)
-  f1: vec4<f32>; // (adam_eps, step_clip, const_sigma, reserved)
+  u0: vec4<u32>, // (n_rows, n_features, pop_total, pop_per_island)
+  u1: vec4<u32>, // (gen, parity_in, tournament_k, opt_iters)
+  u2: vec4<u32>, // (allowed_unary_mask, allowed_binary_mask, mutate_rate_ppm, regen_rate_ppm)
+  u3: vec4<u32>, // (seed, reserved, reserved, reserved)
+  f0: vec4<f32>, // (sum_w, adam_lr, beta1, beta2)
+  f1: vec4<f32>, // (adam_eps, step_clip, const_sigma, reserved)
 };
 
 struct State {
-  best_loss_bits: atomic<u32>;
-  best_index: atomic<u32>; // global index into the packed buffers (0..2*pop_total)
+  best_loss_bits: atomic<u32>,
+  best_index: atomic<u32>, // global index into the packed buffers (0..2*pop_total)
 };
 
 @group(0) @binding(0) var<storage, read> x: array<f32>;
@@ -207,20 +208,32 @@ fn eval_postfix_value(row: u32) -> f32 {
     let payload = instr >> 2u;
 
     if (kind == KIND_VAR) {
+      if (sp >= MAX_STACK) {
+        return NAN_F32;
+      }
       let feat = payload;
       let idx = feat * n_rows + row;
       stack[sp] = x[idx];
       sp = sp + 1u;
     } else if (kind == KIND_CONST) {
+      if (sp >= MAX_STACK) {
+        return NAN_F32;
+      }
       stack[sp] = const_value(payload);
       sp = sp + 1u;
     } else if (kind == KIND_OP) {
       let op_code = payload & 255u;
       let arity = payload >> 8u;
       if (arity == 1u) {
+        if (sp < 1u) {
+          return NAN_F32;
+        }
         let a0 = stack[sp - 1u];
         stack[sp - 1u] = op_unary(op_code, a0);
       } else {
+        if (sp < 2u) {
+          return NAN_F32;
+        }
         let b0 = stack[sp - 1u];
         let a0 = stack[sp - 2u];
         sp = sp - 1u;
@@ -228,7 +241,10 @@ fn eval_postfix_value(row: u32) -> f32 {
       }
     }
   }
-  return stack[sp - 1u];
+  if (sp != 1u) {
+    return NAN_F32;
+  }
+  return stack[0u];
 }
 
 // Forward-mode gradient wrt each constant.
@@ -249,6 +265,11 @@ fn eval_postfix_value_and_grad(row: u32) -> array<f32, 9> {
     let payload = instr >> 2u;
 
     if (kind == KIND_VAR) {
+      if (sp >= MAX_STACK) {
+        var out: array<f32, 9>;
+        for (var j: u32 = 0u; j < 9u; j = j + 1u) { out[j] = NAN_F32; }
+        return out;
+      }
       let feat = payload;
       let idx = feat * n_rows + row;
       val_stack[sp] = x[idx];
@@ -256,6 +277,11 @@ fn eval_postfix_value_and_grad(row: u32) -> array<f32, 9> {
       grad_stack2[sp] = vec4<f32>(0.0);
       sp = sp + 1u;
     } else if (kind == KIND_CONST) {
+      if (sp >= MAX_STACK) {
+        var out: array<f32, 9>;
+        for (var j: u32 = 0u; j < 9u; j = j + 1u) { out[j] = NAN_F32; }
+        return out;
+      }
       val_stack[sp] = const_value(payload);
       // derivative is 1 for the referenced constant slot
       var g0 = vec4<f32>(0.0);
@@ -272,6 +298,11 @@ fn eval_postfix_value_and_grad(row: u32) -> array<f32, 9> {
       let op_code = payload & 255u;
       let arity = payload >> 8u;
       if (arity == 1u) {
+        if (sp < 1u) {
+          var out: array<f32, 9>;
+          for (var j: u32 = 0u; j < 9u; j = j + 1u) { out[j] = NAN_F32; }
+          return out;
+        }
         let a = val_stack[sp - 1u];
         let g0a = grad_stack[sp - 1u];
         let g1a = grad_stack2[sp - 1u];
@@ -290,6 +321,11 @@ fn eval_postfix_value_and_grad(row: u32) -> array<f32, 9> {
         grad_stack[sp - 1u] = g0a * d;
         grad_stack2[sp - 1u] = g1a * d;
       } else {
+        if (sp < 2u) {
+          var out: array<f32, 9>;
+          for (var j: u32 = 0u; j < 9u; j = j + 1u) { out[j] = NAN_F32; }
+          return out;
+        }
         let b = val_stack[sp - 1u];
         let a = val_stack[sp - 2u];
         let g0b = grad_stack[sp - 1u];
@@ -338,10 +374,15 @@ fn eval_postfix_value_and_grad(row: u32) -> array<f32, 9> {
   }
 
   // Output: [value, grad0..grad7]
+  if (sp != 1u) {
+    var out: array<f32, 9>;
+    for (var j: u32 = 0u; j < 9u; j = j + 1u) { out[j] = NAN_F32; }
+    return out;
+  }
   var out: array<f32, 9>;
-  out[0] = val_stack[sp - 1u];
-  let g0 = grad_stack[sp - 1u];
-  let g1 = grad_stack2[sp - 1u];
+  out[0] = val_stack[0u];
+  let g0 = grad_stack[0u];
+  let g1 = grad_stack2[0u];
   out[1] = g0.x;
   out[2] = g0.y;
   out[3] = g0.z;
@@ -590,7 +631,7 @@ fn update_best(p_global: u32, loss: f32) {
   if (safe_loss < 0.0) {
     safe_loss = 0.0;
   }
-  let bits = floatBitsToUint(safe_loss);
+  let bits = bitcast<u32>(safe_loss);
 
   loop {
     let old = atomicLoad(&state.best_loss_bits);

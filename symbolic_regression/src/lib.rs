@@ -42,6 +42,8 @@ pub use dataset::{Dataset, TaggedDataset};
 pub use dynamic_expressions::{OperatorSelectError, Operators, op, opset};
 #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
 pub use gpu::full_search::{GpuFullSearchConfig, equation_search_gpu_full};
+#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+pub use gpu::{GpuClient, pack_expr};
 pub use hall_of_fame::HallOfFame;
 pub use loss_functions::{LossKind, epsilon_insensitive, huber, log_cosh, lp, mae, make_loss, mse, quantile, rmse};
 pub use operator_library::OperatorLibrary;

@@ -1,5 +1,6 @@
 pub mod full_search;
 use std::thread;
+use std::time::{Duration, Instant};
 
 use bytemuck::{Pod, Zeroable};
 use crossbeam_channel as channel;
@@ -20,6 +21,88 @@ const KIND_CONST: u32 = 1;
 const KIND_OP: u32 = 2;
 const KIND_END: u32 = 3;
 const END_TOKEN: u32 = KIND_END;
+
+// -----------------------------------------------------------------------------
+// Lightweight (opt-in) GPU dispatch profiling
+// -----------------------------------------------------------------------------
+//
+// The goal is to answer: "are we compute-bound or sync/driver-bound?" without
+// requiring external tools.
+//
+// Enable by setting:
+//   SYMBOLIC_REGRESSION_GPU_PROFILE=1
+// Optional:
+//   SYMBOLIC_REGRESSION_GPU_PROFILE_PATH=/tmp/gpu_profile.log
+//   SYMBOLIC_REGRESSION_GPU_PROFILE_EVERY=1   (log every dispatch; default=100)
+//
+// Output lines look like:
+//   gpu_profile,kind=mse,p=2048,collect_us=12,write_us=80,encode_us=40,submit_us=20,map_wait_us=350,total_us=520
+//
+// NOTE: When enabled with EVERY=1 this will *slow things down* due to I/O. For
+// realistic timings use EVERY=100 or higher.
+
+struct GpuProfiler {
+    enabled: bool,
+    every: u64,
+    ctr: u64,
+    out: Option<std::io::LineWriter<std::fs::File>>,
+}
+
+impl GpuProfiler {
+    fn new() -> Self {
+        let enabled = std::env::var("SYMBOLIC_REGRESSION_GPU_PROFILE")
+            .ok()
+            .as_deref()
+            .is_some_and(|v| v != "0" && !v.eq_ignore_ascii_case("false"));
+
+        let every = std::env::var("SYMBOLIC_REGRESSION_GPU_PROFILE_EVERY")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .filter(|&v| v > 0)
+            .unwrap_or(100);
+
+        let out = if enabled {
+            let path = std::env::var("SYMBOLIC_REGRESSION_GPU_PROFILE_PATH")
+                .unwrap_or_else(|_| "/tmp/gpu_profile.log".to_string());
+            match std::fs::File::create(path) {
+                Ok(f) => Some(std::io::LineWriter::new(f)),
+                Err(_) => None,
+            }
+        } else {
+            None
+        };
+
+        Self {
+            enabled,
+            every,
+            ctr: 0,
+            out,
+        }
+    }
+
+    #[inline]
+    fn should_log(&mut self) -> bool {
+        if !self.enabled {
+            return false;
+        }
+        self.ctr += 1;
+        self.ctr.is_multiple_of(self.every)
+    }
+
+    fn log_line(&mut self, line: &str) {
+        if let Some(out) = self.out.as_mut() {
+            use std::io::Write;
+            let _ = out.write_all(line.as_bytes());
+            let _ = out.write_all(b"\n");
+            // Don't flush every line; rely on OS buffering.
+        }
+    }
+}
+
+#[inline]
+fn us(d: Duration) -> u64 {
+    d.as_micros() as u64
+}
 
 fn pack_var(feature: u16) -> u32 {
     KIND_VAR | ((feature as u32) << 2)
@@ -192,6 +275,8 @@ struct Params {
 struct GpuBatchEvaluator {
     device: wgpu::Device,
     queue: wgpu::Queue,
+
+    profiler: GpuProfiler,
 
     pipeline_mse: wgpu::ComputePipeline,
     pipeline_mse_grad: wgpu::ComputePipeline,
@@ -521,6 +606,7 @@ impl GpuBatchEvaluator {
         Ok(Self {
             device,
             queue,
+            profiler: GpuProfiler::new(),
             pipeline_mse,
             pipeline_mse_grad,
             pipeline_opt_adam,
@@ -572,9 +658,11 @@ impl GpuBatchEvaluator {
         out
     }
 
-    fn eval_mse_batch(&mut self, programs: &[u32], consts: &[f32], p: usize, out_loss: &mut [f32]) {
+    fn eval_mse_batch(&mut self, programs: &[u32], consts: &[f32], p: usize, out_loss: &mut [f32], collect_us: u64) {
         assert_eq!(out_loss.len(), p);
 
+        let t_total0 = Instant::now();
+        let t0 = Instant::now();
         self.write_inputs(programs, consts, p);
 
         // Params: only base (sum_w, n_rows)
@@ -584,7 +672,9 @@ impl GpuBatchEvaluator {
         self.params.f0[3] = 0.0;
         self.params.f1 = [0.0; 4];
         self.write_params_base();
+        let write_d = t0.elapsed();
 
+        let t1 = Instant::now();
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("gpu_eval_encoder_mse"),
         });
@@ -602,9 +692,27 @@ impl GpuBatchEvaluator {
         let loss_bytes = (p * core::mem::size_of::<f32>()) as u64;
         encoder.copy_buffer_to_buffer(&self.out_loss_buf, 0, &self.readback_buf, 0, loss_bytes);
 
-        self.queue.submit([encoder.finish()]);
+        let encode_d = t1.elapsed();
 
+        let t2 = Instant::now();
+        self.queue.submit([encoder.finish()]);
+        let submit_d = t2.elapsed();
+
+        let t3 = Instant::now();
         let got = self.map_readback_f32(p);
+        let map_wait_d = t3.elapsed();
+
+        let total_d = t_total0.elapsed();
+        if self.profiler.should_log() {
+            self.profiler.log_line(&format!(
+                "gpu_profile,kind=mse,p={p},collect_us={collect_us},write_us={},encode_us={},submit_us={},map_wait_us={},total_us={}",
+                us(write_d),
+                us(encode_d),
+                us(submit_d),
+                us(map_wait_d),
+                us(total_d)
+            ));
+        }
         out_loss.copy_from_slice(&got);
     }
 
@@ -615,10 +723,13 @@ impl GpuBatchEvaluator {
         p: usize,
         out_loss: &mut [f32],
         out_grad: &mut [f32], // length p*MAX_CONSTS
+        collect_us: u64,
     ) {
         assert_eq!(out_loss.len(), p);
         assert_eq!(out_grad.len(), p * MAX_CONSTS);
 
+        let t_total0 = Instant::now();
+        let t0 = Instant::now();
         self.write_inputs(programs, consts, p);
 
         // Params: only base
@@ -628,7 +739,9 @@ impl GpuBatchEvaluator {
         self.params.f0[3] = 0.0;
         self.params.f1 = [0.0; 4];
         self.write_params_base();
+        let write_d = t0.elapsed();
 
+        let t1 = Instant::now();
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("gpu_eval_encoder_mse_grad"),
         });
@@ -650,13 +763,32 @@ impl GpuBatchEvaluator {
         encoder.copy_buffer_to_buffer(&self.out_loss_buf, 0, &self.readback_buf, 0, loss_bytes);
         encoder.copy_buffer_to_buffer(&self.out_extra_buf, 0, &self.readback_buf, grad_off, grad_bytes);
 
-        self.queue.submit([encoder.finish()]);
+        let encode_d = t1.elapsed();
 
+        let t2 = Instant::now();
+        self.queue.submit([encoder.finish()]);
+        let submit_d = t2.elapsed();
+
+        let t3 = Instant::now();
         let got = self.map_readback_f32(p * (1 + MAX_CONSTS));
+        let map_wait_d = t3.elapsed();
+
+        let total_d = t_total0.elapsed();
+        if self.profiler.should_log() {
+            self.profiler.log_line(&format!(
+                "gpu_profile,kind=mse_grad,p={p},collect_us={collect_us},write_us={},encode_us={},submit_us={},map_wait_us={},total_us={}",
+                us(write_d),
+                us(encode_d),
+                us(submit_d),
+                us(map_wait_d),
+                us(total_d)
+            ));
+        }
         out_loss.copy_from_slice(&got[..p]);
         out_grad.copy_from_slice(&got[p..(p + p * MAX_CONSTS)]);
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn optimize_adam_batch(
         &mut self,
         programs: &[u32],
@@ -665,10 +797,13 @@ impl GpuBatchEvaluator {
         adam: AdamParams,
         out_loss: &mut [f32],
         out_consts: &mut [f32], // length p*MAX_CONSTS
+        collect_us: u64,
     ) {
         assert_eq!(out_loss.len(), p);
         assert_eq!(out_consts.len(), p * MAX_CONSTS);
 
+        let t_total0 = Instant::now();
+        let t0 = Instant::now();
         self.write_inputs(programs, consts, p);
 
         self.params.u[2] = adam.iters;
@@ -680,7 +815,9 @@ impl GpuBatchEvaluator {
         self.params.f1[2] = 0.0;
         self.params.f1[3] = 0.0;
         self.write_params_base();
+        let write_d = t0.elapsed();
 
+        let t1 = Instant::now();
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("gpu_eval_encoder_opt_adam"),
         });
@@ -702,9 +839,28 @@ impl GpuBatchEvaluator {
         encoder.copy_buffer_to_buffer(&self.out_loss_buf, 0, &self.readback_buf, 0, loss_bytes);
         encoder.copy_buffer_to_buffer(&self.consts_buf, 0, &self.readback_buf, const_off, const_bytes);
 
-        self.queue.submit([encoder.finish()]);
+        let encode_d = t1.elapsed();
 
+        let t2 = Instant::now();
+        self.queue.submit([encoder.finish()]);
+        let submit_d = t2.elapsed();
+
+        let t3 = Instant::now();
         let got = self.map_readback_f32(p * (1 + MAX_CONSTS));
+        let map_wait_d = t3.elapsed();
+
+        let total_d = t_total0.elapsed();
+        if self.profiler.should_log() {
+            self.profiler.log_line(&format!(
+                "gpu_profile,kind=opt_adam,iters={},p={p},collect_us={collect_us},write_us={},encode_us={},submit_us={},map_wait_us={},total_us={}",
+                adam.iters,
+                us(write_d),
+                us(encode_d),
+                us(submit_d),
+                us(map_wait_d),
+                us(total_d)
+            ));
+        }
         out_loss.copy_from_slice(&got[..p]);
         out_consts.copy_from_slice(&got[p..(p + p * MAX_CONSTS)]);
     }
@@ -761,18 +917,26 @@ fn gpu_server_loop(mut evaluator: GpuBatchEvaluator, rx: channel::Receiver<Job>)
 
         // push first
         total_p += first.p;
-        jobs.push(first); // pull more, merge if same kind and capacity allows.
+        jobs.push(first);
+
+        // Measure how long we spend waiting to accumulate a batch.
+        // (Useful to interpret profile logs: big collect_us means we're waiting for work,
+        // small collect_us but huge map_wait_us means we're sync/driver bound.)
+        let collect_t0 = Instant::now();
+
+        // pull more, merge if same kind and capacity allows.
+        //
         // NOTE: On Metal (and sometimes Vulkan), the dominant per-dispatch cost is often the
         // "submit + map/readback wait". To amortize that, we opportunistically coalesce jobs
         // for a very short window after receiving the first request.
         let max_wait_us: u64 = std::env::var("SYMBOLIC_REGRESSION_GPU_BATCH_WAIT_US")
             .ok()
             .and_then(|v| v.parse().ok())
-            .unwrap_or(2000);
+            .unwrap_or(0);
         let mut min_fill: usize = std::env::var("SYMBOLIC_REGRESSION_GPU_BATCH_MIN_FILL")
             .ok()
             .and_then(|v| v.parse().ok())
-            .unwrap_or_else(|| (evaluator.p_max / 2).clamp(64, 4096));
+            .unwrap_or_else(|| (evaluator.p_max / 8).clamp(64, 2048));
         min_fill = min_fill.min(evaluator.p_max).max(1);
 
         let deadline = std::time::Instant::now() + std::time::Duration::from_micros(max_wait_us);
@@ -816,6 +980,8 @@ fn gpu_server_loop(mut evaluator: GpuBatchEvaluator, rx: channel::Receiver<Job>)
             }
         }
 
+        let collect_us = us(collect_t0.elapsed());
+
         // Build merged inputs
         programs.reserve(total_p * MAX_NODES);
         consts.reserve(total_p * MAX_CONSTS);
@@ -829,7 +995,7 @@ fn gpu_server_loop(mut evaluator: GpuBatchEvaluator, rx: channel::Receiver<Job>)
 
         match kind {
             JobKind::Mse => {
-                evaluator.eval_mse_batch(&programs, &consts, total_p, &mut out_loss[..total_p]);
+                evaluator.eval_mse_batch(&programs, &consts, total_p, &mut out_loss[..total_p], collect_us);
 
                 let mut off = 0usize;
                 for j in jobs.drain(..) {
@@ -846,6 +1012,7 @@ fn gpu_server_loop(mut evaluator: GpuBatchEvaluator, rx: channel::Receiver<Job>)
                     total_p,
                     &mut out_loss[..total_p],
                     &mut out_extra[..(total_p * MAX_CONSTS)],
+                    collect_us,
                 );
 
                 let mut off = 0usize;
@@ -872,6 +1039,7 @@ fn gpu_server_loop(mut evaluator: GpuBatchEvaluator, rx: channel::Receiver<Job>)
                     adam,
                     &mut out_loss[..total_p],
                     &mut out_extra[..(total_p * MAX_CONSTS)], // reuse buffer for consts
+                    collect_us,
                 );
 
                 let mut off = 0usize;
