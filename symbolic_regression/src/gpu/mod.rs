@@ -1,3 +1,4 @@
+pub mod full_search;
 use std::thread;
 
 use bytemuck::{Pod, Zeroable};
@@ -12,7 +13,7 @@ use crate::Dataset;
 pub const MAX_NODES: usize = 32;
 pub const MAX_CONSTS: usize = 8;
 
-const KERNELS_WGSL: &str = include_str!("shaders/kernels.wgsl");
+const KERNELS_WGSL: &str = include_str!("kernels.wgsl");
 
 const KIND_VAR: u32 = 0;
 const KIND_CONST: u32 = 1;
@@ -127,7 +128,23 @@ pub enum GpuInitError {
     NoAdapter,
     NoCompute,
     RequestDeviceFailed,
+    BatchingEnabled,
+    UnsupportedLoss,
 }
+
+impl core::fmt::Display for GpuInitError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::NoAdapter => write!(f, "no compatible GPU adapter found"),
+            Self::NoCompute => write!(f, "GPU adapter does not support compute shaders"),
+            Self::RequestDeviceFailed => write!(f, "failed to request wgpu device"),
+            Self::BatchingEnabled => write!(f, "GPU search does not support dataset batching"),
+            Self::UnsupportedLoss => write!(f, "GPU search currently only supports MSE loss"),
+        }
+    }
+}
+
+impl std::error::Error for GpuInitError {}
 
 /// Parameters for the fused constant optimizer (Adam) in `kernels.wgsl`.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -181,11 +198,6 @@ struct GpuBatchEvaluator {
     pipeline_opt_adam: wgpu::ComputePipeline,
     bind_group: wgpu::BindGroup,
 
-    // Dataset buffers
-    _x_buf: wgpu::Buffer,
-    _y_buf: wgpu::Buffer,
-    _w_buf: wgpu::Buffer,
-
     // Inputs
     programs_buf: wgpu::Buffer,
     consts_buf: wgpu::Buffer,
@@ -229,17 +241,6 @@ impl GpuBatchEvaluator {
             }))
         })
         .map_err(|_| GpuInitError::NoAdapter)?;
-
-        if std::env::var("SYMBOLIC_REGRESSION_GPU_PRINT_ADAPTER")
-            .ok()
-            .is_some_and(|v| v != "0")
-        {
-            let info = adapter.get_info();
-            eprintln!(
-                "symbolic_regression: GPU adapter: {} (backend={:?}, device_type={:?}, vendor=0x{:x}, device=0x{:x})",
-                info.name, info.backend, info.device_type, info.vendor, info.device
-            );
-        }
 
         let downlevel = adapter.get_downlevel_capabilities();
         if !downlevel.flags.contains(wgpu::DownlevelFlags::COMPUTE_SHADERS) {
@@ -293,7 +294,7 @@ impl GpuBatchEvaluator {
 
         let w_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("w"),
-            size: core::mem::size_of_val(w_host.as_slice()) as u64,
+            size: (w_host.len() * core::mem::size_of::<f32>()) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -347,7 +348,7 @@ impl GpuBatchEvaluator {
 
         // Shader & pipelines
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("shaders/kernels.wgsl"),
+            label: Some("kernels.wgsl"),
             source: wgpu::ShaderSource::Wgsl(KERNELS_WGSL.into()),
         });
 
@@ -524,9 +525,6 @@ impl GpuBatchEvaluator {
             pipeline_mse_grad,
             pipeline_opt_adam,
             bind_group,
-            _x_buf: x_buf,
-            _y_buf: y_buf,
-            _w_buf: w_buf,
             programs_buf,
             consts_buf,
             params_buf,
