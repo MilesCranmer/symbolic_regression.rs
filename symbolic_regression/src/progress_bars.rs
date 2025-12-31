@@ -12,9 +12,6 @@ mod imp {
     use crate::options::{Options, OutputStyle};
 
     struct ProgressTracking {
-        last_speed_time: Instant,
-        evals_last: u64,
-        speeds: Vec<f64>,
         last_msg_update: Instant,
     }
 
@@ -69,18 +66,14 @@ mod imp {
                 start_time: Instant::now(),
                 msg_min_interval: Duration::from_millis(500),
                 tracking: ProgressTracking {
-                    last_speed_time: Instant::now(),
-                    evals_last: 0,
-                    speeds: Vec::new(),
                     last_msg_update: Instant::now(),
                 },
                 render,
             }
         }
 
-        pub(crate) fn set_initial_evals(&mut self, total_evals: u64) {
-            self.tracking.evals_last = total_evals;
-            self.tracking.last_speed_time = Instant::now();
+        pub(crate) fn set_initial_evals(&mut self, _total_evals: u64) {
+            // Intentionally ignored: eval/s is computed as total_evals / total_time.
         }
 
         pub(crate) fn on_cycle_complete<T, Ops, const D: usize>(
@@ -143,17 +136,6 @@ mod imp {
         } = ctx;
 
         let now = Instant::now();
-        if now.duration_since(progress.last_speed_time) >= Duration::from_secs(1) {
-            let dt = now.duration_since(progress.last_speed_time).as_secs_f64().max(1e-9);
-            let evals_since = total_evals.saturating_sub(progress.evals_last);
-            progress.speeds.push((evals_since as f64) / dt);
-            if progress.speeds.len() > 20 {
-                progress.speeds.remove(0);
-            }
-            progress.evals_last = total_evals;
-            progress.last_speed_time = now;
-        }
-
         if now.duration_since(progress.last_msg_update) < msg_min_interval && cycles_remaining != 0 {
             return;
         }
@@ -163,25 +145,12 @@ mod imp {
             (w as usize).max(80)
         };
 
-        let avg_speed = if progress.speeds.is_empty() {
-            None
-        } else {
-            Some(progress.speeds.iter().copied().sum::<f64>() / (progress.speeds.len() as f64))
-        };
-
-        let info_line = match avg_speed {
-            Some(s) => format!(
-                "Info: eval/s~{:<8.2e} | evals={} | t={:.1}s",
-                s,
-                total_evals,
-                start_time.elapsed().as_secs_f64()
-            ),
-            None => format!(
-                "Info: eval/s=[.....]  | evals={} | t={:.1}s",
-                total_evals,
-                start_time.elapsed().as_secs_f64()
-            ),
-        };
+        let elapsed_s = start_time.elapsed().as_secs_f64().max(1e-9);
+        let avg_evals_per_s = (total_evals as f64) / elapsed_s;
+        let info_line = format!(
+            "Info: eval/s~{:<8.2e} | evals={} | t={:.1}s",
+            avg_evals_per_s, total_evals, elapsed_s
+        );
 
         let hof = format_hall_of_fame(hall, term_width, usize::MAX, render);
         let hof_title = "Hall of Fame:".to_string();
