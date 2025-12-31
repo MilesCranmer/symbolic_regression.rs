@@ -184,6 +184,8 @@ where
         task_order: Vec::new(),
         next_task: 0,
         progress_finished: false,
+        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        gpu_crosspop: None,
     };
 
     let _ = core.step(dataset, baseline_loss, options, &controller, usize::MAX);
@@ -220,6 +222,8 @@ struct SearchCore<T: Float + AddAssign, Ops, const D: usize> {
     task_order: Vec<usize>,
     next_task: usize,
     progress_finished: bool,
+    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+    gpu_crosspop: Option<crate::gpu::GpuClient>,
 }
 
 impl<T: Float + AddAssign, Ops, const D: usize> SearchCore<T, Ops, D> {
@@ -259,6 +263,18 @@ where
         controller: &StopController,
         n_cycles: usize,
     ) -> usize {
+        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        {
+            let enabled = std::env::var("SYMBOLIC_REGRESSION_GPU_CROSSPOP")
+                .ok()
+                .is_none_or(|v| v != "0");
+            if enabled {
+                if let Some(gpu) = self.gpu_crosspop.clone() {
+                    return self.step_crosspop_gpu(dataset, baseline_loss, options, controller, n_cycles, &gpu);
+                }
+            }
+        }
+
         if n_cycles == 0 {
             return 0;
         }
@@ -394,6 +410,205 @@ where
 
         completed_total
     }
+
+    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+    fn step_crosspop_gpu(
+        &mut self,
+        dataset: &Dataset<T>,
+        baseline_loss: Option<T>,
+        options: &Options<T, D>,
+        controller: &StopController,
+        n_cycles: usize,
+        gpu: &crate::gpu::GpuClient,
+    ) -> usize {
+        if n_cycles == 0 {
+            return 0;
+        }
+
+        let is_finished = |counters: &SearchCounters| counters.cycles_remaining() == 0 || controller.is_cancelled();
+        if is_finished(&self.counters) {
+            self.finish_progress_if_needed();
+            return 0;
+        }
+
+        let group_max: usize = std::env::var("SYMBOLIC_REGRESSION_GPU_CROSSPOP_GROUP_MAX")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(64)
+            .max(1);
+
+        let mut completed_total = 0usize;
+        while completed_total < n_cycles {
+            if is_finished(&self.counters) {
+                break;
+            }
+            if controller.should_stop(self.pools.total_evals) {
+                controller.cancel();
+                break;
+            }
+
+            if self.next_task >= self.task_order.len() {
+                self.prepare_iteration_state(options.niterations);
+                if self.next_task >= self.task_order.len() {
+                    break;
+                }
+            }
+
+            let remaining_tasks = self.task_order.len().saturating_sub(self.next_task);
+            let remaining_budget = n_cycles.saturating_sub(completed_total);
+            let group_n = remaining_tasks.min(remaining_budget).min(group_max).max(1);
+
+            let mut batch: Vec<(usize, usize, RunningSearchStatistics, PopState<T, Ops, D>)> =
+                Vec::with_capacity(group_n);
+            for _ in 0..group_n {
+                if is_finished(&self.counters) {
+                    break;
+                }
+                if controller.should_stop(self.pools.total_evals) {
+                    controller.cancel();
+                    break;
+                }
+
+                let pop_idx = self.task_order[self.next_task];
+                self.next_task += 1;
+
+                let Some(pop_state) = self.pools.pops[pop_idx].take() else {
+                    continue;
+                };
+
+                let cycles_remaining_start = self.counters.cycles_remaining_start_for_next_dispatch();
+                let curmaxsize = warmup::get_cur_maxsize(options, self.counters.total_cycles, cycles_remaining_start);
+                let mut stats_snapshot = self.stats.clone();
+                stats_snapshot.normalize();
+                batch.push((pop_idx, curmaxsize, stats_snapshot, pop_state));
+            }
+
+            if batch.is_empty() {
+                continue;
+            }
+
+            // Phase 1: Regularized evolution for all pops, with cross-pop GPU batching.
+            let full_dataset = TaggedDataset::new(dataset, baseline_loss);
+            let ncycles = options.ncycles_per_iteration.max(1);
+            let mut best_seen: Vec<HallOfFame<T, Ops, D>> =
+                batch.iter().map(|_| HallOfFame::new(options.maxsize)).collect();
+            for (i, (_pop_idx, curmaxsize, _stats, pop_state)) in batch.iter_mut().enumerate() {
+                best_seen[i].update_from_members(&pop_state.pop.members, options, *curmaxsize);
+            }
+
+            let mut evals1: Vec<f64> = vec![0.0; batch.len()];
+            for cycle_i in 0..ncycles {
+                if controller.is_cancelled() {
+                    break;
+                }
+                let temperature = if ncycles <= 1 {
+                    1.0
+                } else {
+                    let max_temp = 1.0;
+                    let min_temp = if options.annealing { 0.0 } else { 1.0 };
+                    let t = (cycle_i as f64) / ((ncycles - 1) as f64);
+                    max_temp + t * (min_temp - max_temp)
+                };
+
+                let eval_dataset = full_dataset;
+                let mut ctxs: Vec<crate::regularized_evolution::CrossPopRegEvolCtx<'_, T, Ops, D>> =
+                    Vec::with_capacity(batch.len());
+                for (_pop_idx, curmaxsize, stats, pop_state) in batch.iter_mut() {
+                    ctxs.push(crate::regularized_evolution::CrossPopRegEvolCtx {
+                        pop: &mut pop_state.pop,
+                        rng: &mut pop_state.rng,
+                        evaluator: &mut pop_state.evaluator,
+                        stats,
+                        curmaxsize: *curmaxsize,
+                    });
+                }
+
+                let evals_step = crate::regularized_evolution::reg_evol_cycle_crosspop_batched_gpu(
+                    &mut ctxs,
+                    eval_dataset,
+                    options,
+                    temperature,
+                    gpu,
+                    controller,
+                );
+                for (i, e) in evals_step.into_iter().enumerate() {
+                    evals1[i] += e;
+                }
+
+                for (i, (_pop_idx, curmaxsize, _stats, pop_state)) in batch.iter_mut().enumerate() {
+                    best_seen[i].update_from_members(&pop_state.pop.members, options, *curmaxsize);
+                }
+            }
+
+            // Phase 2: optimize/simplify each pop (can use existing GPU optimizer batching).
+            for ((pop_idx, curmaxsize, stats, mut pop_state), (best_seen, evals1)) in
+                batch.into_iter().zip(best_seen.into_iter().zip(evals1.into_iter()))
+            {
+                if controller.is_cancelled() {
+                    let best_sub_pop = migration::best_sub_pop(&pop_state.pop, options.topn);
+                    let res = SearchTaskResult {
+                        pop_idx,
+                        curmaxsize,
+                        evals: 0,
+                        best_seen: HallOfFame::new(options.maxsize),
+                        best_sub_pop,
+                        pop_state,
+                    };
+                    apply_task_result(
+                        options,
+                        &mut self.counters,
+                        &mut self.stats,
+                        &mut self.hall,
+                        &mut self.progress,
+                        &mut self.pools,
+                        res,
+                    );
+                    completed_total += 1;
+                    continue;
+                }
+
+                let evals2 = pop_state.run_iteration_phase(
+                    single_iteration::optimize_and_simplify_population,
+                    full_dataset,
+                    options,
+                    curmaxsize,
+                    &stats,
+                    controller,
+                );
+                let evals = (evals1.max(0.0) + evals2.max(0.0)) as u64;
+                let best_sub_pop = migration::best_sub_pop(&pop_state.pop, options.topn);
+
+                let res = SearchTaskResult {
+                    pop_idx,
+                    curmaxsize,
+                    evals,
+                    best_seen,
+                    best_sub_pop,
+                    pop_state,
+                };
+
+                apply_task_result(
+                    options,
+                    &mut self.counters,
+                    &mut self.stats,
+                    &mut self.hall,
+                    &mut self.progress,
+                    &mut self.pools,
+                    res,
+                );
+                completed_total += 1;
+                if completed_total >= n_cycles {
+                    break;
+                }
+            }
+        }
+
+        if is_finished(&self.counters) {
+            self.finish_progress_if_needed();
+        }
+
+        completed_total
+    }
 }
 
 pub struct SearchEngine<T: Float + AddAssign, Ops, const D: usize> {
@@ -452,6 +667,8 @@ where
             task_order: Vec::new(),
             next_task: 0,
             progress_finished: false,
+            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+            gpu_crosspop: None,
         };
 
         Self {
@@ -552,20 +769,16 @@ where
         let stats = RunningSearchStatistics::new(options.maxsize, 100_000);
         let mut hall = HallOfFame::new(options.maxsize);
 
-        let mut effective_batch_max = if batch_max == 0 { 8192 } else { batch_max };
-        // For very small datasets the per-dispatch map/sync overhead dominates; prefer large batches.
-        if dataset.n_rows <= 2048 {
-            effective_batch_max = effective_batch_max.max(8192);
-        } else {
-            effective_batch_max = effective_batch_max.max(4096);
-        }
-        // `dispatch_workgroups(x, ..)` has a per-dimension limit (commonly 65535).
-        effective_batch_max = effective_batch_max.min(65535);
+        // On Metal the fixed per-dispatch overhead is significant; we want as much headroom as
+        // possible to coalesce small evaluation requests into fewer GPU dispatches.
+        //
+        // Note: `dispatch_workgroups(x, ..)` has a per-dimension limit (commonly 65535).
+        let effective_batch_max = if batch_max == 0 { 65535 } else { batch_max.min(65535) }.max(1);
 
         let gpu = crate::gpu::GpuClient::spawn(&dataset, effective_batch_max)?;
 
         let full_dataset = TaggedDataset::new(&dataset, baseline_loss);
-        let pools = init_populations(full_dataset, &options, &controller, &mut hall, Some(gpu));
+        let pools = init_populations(full_dataset, &options, &controller, &mut hall, Some(gpu.clone()));
         let counters = SearchCounters {
             total_cycles: options.niterations * pools.pops.len(),
             cycles_started: 0,
@@ -588,6 +801,8 @@ where
             task_order: Vec::new(),
             next_task: 0,
             progress_finished: false,
+            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+            gpu_crosspop: Some(gpu),
         };
 
         Ok(Self {
