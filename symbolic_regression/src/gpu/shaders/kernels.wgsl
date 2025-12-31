@@ -13,7 +13,7 @@
 // MAX_NODES and MAX_CONSTS must match Rust constants in gpu/mod.rs.
 
 const MAX_NODES: u32 = 32u;
-const MAX_CONSTS: u32 = 16u;
+const MAX_CONSTS: u32 = 8u;
 
 // Tuning knob: smaller workgroups reduce wasted lanes when n_rows is small.
 // Must be a power of two for the reductions.
