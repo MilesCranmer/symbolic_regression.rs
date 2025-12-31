@@ -490,32 +490,25 @@ impl GpuBatchEvaluator {
             immediate_size: 0,
         });
 
-        let pipeline_mse = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("gpu_eval_mse_pipeline"),
-            layout: Some(&pipeline_layout),
-            module: &shader,
-            entry_point: Some("eval_mse"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let shader_constants: [(&str, f64); 2] = [("MAX_NODES", MAX_NODES as f64), ("MAX_CONSTS", MAX_CONSTS as f64)];
 
-        let pipeline_mse_grad = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("gpu_eval_mse_grad_pipeline"),
-            layout: Some(&pipeline_layout),
-            module: &shader,
-            entry_point: Some("eval_mse_grad"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let create_pipeline = |label: &'static str, entry_point: &'static str| {
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some(label),
+                layout: Some(&pipeline_layout),
+                module: &shader,
+                entry_point: Some(entry_point),
+                compilation_options: wgpu::PipelineCompilationOptions {
+                    constants: &shader_constants,
+                    ..Default::default()
+                },
+                cache: None,
+            })
+        };
 
-        let pipeline_opt_adam = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("gpu_eval_opt_adam_pipeline"),
-            layout: Some(&pipeline_layout),
-            module: &shader,
-            entry_point: Some("optimize_adam"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let pipeline_mse = create_pipeline("gpu_eval_mse_pipeline", "eval_mse");
+        let pipeline_mse_grad = create_pipeline("gpu_eval_mse_grad_pipeline", "eval_mse_grad");
+        let pipeline_opt_adam = create_pipeline("gpu_eval_opt_adam_pipeline", "optimize_adam");
 
         Ok(Self {
             device,
