@@ -1,4 +1,3 @@
-pub mod full_search;
 use std::thread;
 use std::time::{Duration, Instant};
 
