@@ -11,18 +11,17 @@
 //!   N_ROWS=300 N_FEAT=5 P=8192 ITERS=200 BATCH_MAX=16384 \
 //!     cargo run -p symbolic_regression --example gpu_eval_bench --features gpu --release
 
-use std::time::Instant;
-
-use ndarray::{Array1, Array2};
-use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
-
 #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
 fn main() {
+    use std::time::Instant;
+
     use dynamic_expressions::OperatorSet;
     use dynamic_expressions::expression::{Metadata, PostfixExpr};
     use dynamic_expressions::node::PNode;
     use dynamic_expressions::operator_enum::presets::BuiltinOpsF32;
+    use ndarray::{Array1, Array2};
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
 
     // Sizes (defaults match a typical SR workload).
     let n_rows: usize = std::env::var("N_ROWS").ok().and_then(|v| v.parse().ok()).unwrap_or(300);
@@ -94,7 +93,7 @@ fn main() {
     );
 
     let packed_one = symbolic_regression::pack_expr(&expr).expect("expr should be gpu-packable");
-    let programs: Vec<_> = std::iter::repeat(packed_one).take(p).collect();
+    let programs: Vec<_> = std::iter::repeat_n(packed_one, p).collect();
 
     // Warmup (Metal drivers can have one-time costs).
     {
