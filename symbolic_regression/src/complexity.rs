@@ -61,6 +61,9 @@ pub(crate) fn compute_custom_complexity_checked<T: Float, const D: usize>(
     Some(st[0])
 }
 
+/// Compute the complexity of an expression under the given [`Options`].
+///
+/// When the default complexity model is in use, this is simply `nodes.len()`.
 pub fn compute_complexity<T: Float, const D: usize>(nodes: &[PNode], options: &Options<T, D>) -> usize {
     if options.uses_default_complexity() {
         return nodes.len();

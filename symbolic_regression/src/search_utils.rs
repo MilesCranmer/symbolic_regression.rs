@@ -17,8 +17,11 @@ use crate::random::shuffle;
 use crate::stop_controller::StopController;
 use crate::{migration, single_iteration, warmup};
 
+/// Output of a full equation search run.
 pub struct SearchResult<T: Float + AddAssign, Ops, const D: usize> {
+    /// Hall-of-fame containing the best expressions seen during the search.
     pub hall_of_fame: HallOfFame<T, Ops, D>,
+    /// Best member seen during the search.
     pub best: PopMember<T, Ops, D>,
 }
 
@@ -135,6 +138,9 @@ struct PopPools<T: Float + AddAssign, Ops, const D: usize> {
     total_evals: u64,
 }
 
+/// Run a complete symbolic regression search in one call.
+///
+/// For incremental/interactive use, see [`SearchEngine`].
 pub fn equation_search<T, Ops, const D: usize>(dataset: &Dataset<T>, options: &Options<T, D>) -> SearchResult<T, Ops, D>
 where
     T: Float + AddAssign + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + Send + Sync,
@@ -372,6 +378,10 @@ where
     }
 }
 
+/// Incremental / resumable equation search engine.
+///
+/// This is the lower-level interface behind [`equation_search`]; it can be stepped manually
+/// (e.g. for driving a UI, reporting progress, or adding cancellation).
 pub struct SearchEngine<T: Float + AddAssign, Ops, const D: usize> {
     dataset: Dataset<T>,
     baseline_loss: Option<T>,
@@ -385,6 +395,7 @@ where
     T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + AddAssign,
     Ops: dynamic_expressions::OperatorSet<T = T>,
 {
+    /// Create a new search engine from an owned dataset and options.
     pub fn new(dataset: Dataset<T>, options: Options<T, D>) -> Self {
         let baseline_loss = if options.use_baseline {
             baseline_loss_from_zero_expression::<T, Ops, D>(&dataset, options.loss.as_ref())
@@ -432,38 +443,51 @@ where
         }
     }
 
+    /// Total number of cycles planned for this run.
+    #[cfg(any(test, feature = "wasm-ui"))]
     pub fn total_cycles(&self) -> usize {
         self.core.counters.total_cycles
     }
 
+    /// Number of cycles completed so far.
+    #[cfg(any(test, feature = "wasm-ui"))]
     pub fn cycles_completed(&self) -> usize {
         self.core.counters.cycles_completed
     }
 
+    /// Total number of expression evaluations performed so far.
+    #[cfg(any(test, feature = "wasm-ui"))]
     pub fn total_evals(&self) -> u64 {
         self.core.pools.total_evals
     }
 
+    /// Returns `true` if the run is finished (or was cancelled).
+    #[cfg(any(test, feature = "wasm-ui"))]
     pub fn is_finished(&self) -> bool {
         self.core.counters.cycles_remaining() == 0 || self.controller.is_cancelled()
     }
 
+    /// Borrow the current hall-of-fame.
     pub fn hall_of_fame(&self) -> &HallOfFame<T, Ops, D> {
         &self.core.hall
     }
 
+    /// Borrow the current best member.
     pub fn best(&self) -> &PopMember<T, Ops, D> {
         &self.core.pools.best
     }
 
+    /// Borrow the dataset used for this run.
     pub fn dataset(&self) -> &Dataset<T> {
         &self.dataset
     }
 
+    /// Borrow the options used for this run.
     pub fn options(&self) -> &Options<T, D> {
         &self.options
     }
 
+    /// Run up to `n_cycles` cycles and return how many were completed.
     pub fn step(&mut self, n_cycles: usize) -> usize
     where
         T: Send + Sync,
@@ -478,6 +502,7 @@ where
         )
     }
 
+    /// Run until completion (or cancellation) and return a [`SearchResult`].
     pub fn run_to_completion(mut self) -> SearchResult<T, Ops, D>
     where
         T: Send + Sync,
@@ -491,6 +516,8 @@ where
             best: pools.best,
         }
     }
+
+    // (UI helper methods live above under `cfg(any(test, feature="wasm-ui"))`.)
 }
 
 fn execute_task<T, Ops, const D: usize>(

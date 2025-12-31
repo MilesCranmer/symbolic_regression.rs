@@ -8,7 +8,7 @@ use dynamic_expressions::operator_enum::presets::BuiltinOpsF64;
 use fastrand::Rng;
 use ndarray::{Array1, Array2};
 
-use crate::check_constraints::{NestedConstraints, OpConstraints, check_constraints};
+use crate::check_constraints::{OperatorConstraints, check_constraints};
 use crate::dataset::Dataset;
 use crate::{Options, compute_complexity};
 
@@ -117,9 +117,9 @@ fn constraints_op_arg_and_nested_constraints_work() {
     options.operator_complexity_overrides.insert(add, 0);
 
     // Require arg0 of Add to have complexity <= 1 (so (x0+x1) fails).
-    let mut op_constraints = OpConstraints::<D>::default();
-    op_constraints.set_op_arg_constraint(add, 0, 1);
-    options.op_constraints = op_constraints;
+    let mut constraints = OperatorConstraints::<D>::default();
+    constraints.set_op_arg_max_complexity(add, 0, 1);
+    options.operator_constraints = constraints;
 
     assert!(!check_constraints(&expr_add, &options, 10));
 
@@ -134,10 +134,9 @@ fn constraints_op_arg_and_nested_constraints_work() {
         Default::default(),
     );
 
-    let mut nested = NestedConstraints::default();
-    nested.add_nested_constraint(cos, cos, 0);
-    options.nested_constraints = nested;
-    options.op_constraints = Default::default();
+    let mut constraints = OperatorConstraints::<D>::default();
+    constraints.add_nested_limit(cos, cos, 0);
+    options.operator_constraints = constraints;
 
     assert!(!check_constraints(&expr_cos, &options, 10));
 }

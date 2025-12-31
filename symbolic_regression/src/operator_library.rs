@@ -1,7 +1,7 @@
 use dynamic_expressions::operator_enum::builtin;
 use dynamic_expressions::{HasOp, OperatorSet, Operators};
 
-pub struct OperatorLibrary;
+pub(crate) struct OperatorLibrary;
 
 impl OperatorLibrary {
     pub fn sr_default<Ops, const D: usize>() -> Operators<D>
