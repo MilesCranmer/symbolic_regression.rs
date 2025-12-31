@@ -5,7 +5,7 @@ use num_traits::{Float, FromPrimitive, ToPrimitive};
 
 use crate::adaptive_parsimony::RunningSearchStatistics;
 use crate::dataset::TaggedDataset;
-#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+#[cfg(wgpu)]
 use crate::gpu::pack_expr;
 use crate::mutate::{self, CrossoverCtx, NextGenerationCtx};
 use crate::options::{OperatorSet, Options};
@@ -13,7 +13,7 @@ use crate::pop_member::Evaluator;
 use crate::population::Population;
 use crate::selection::best_of_sample;
 use crate::stop_controller::StopController;
-#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+#[cfg(wgpu)]
 use crate::{
     check_constraints::check_constraints,
     complexity::compute_complexity,
@@ -30,7 +30,7 @@ pub struct RegEvolCtx<'a, T: Float + AddAssign, Ops, const D: usize> {
     pub stats: &'a RunningSearchStatistics,
     pub options: &'a Options<T, D>,
     pub evaluator: &'a mut Evaluator<T, D>,
-    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+    #[cfg(wgpu)]
     pub gpu: Option<&'a crate::gpu::GpuClient>,
     pub controller: &'a StopController,
     pub _ops: core::marker::PhantomData<Ops>,
@@ -43,7 +43,7 @@ where
 {
     let n_evol_cycles = ((pop.len() as f64) / (ctx.options.tournament_selection_n as f64)).ceil() as usize;
 
-    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+    #[cfg(wgpu)]
     {
         if let Some(gpu) = ctx.gpu.filter(|g| {
             ctx.options.loss_kind == LossKind::Mse
@@ -73,7 +73,7 @@ where
                     stats: ctx.stats,
                     options: ctx.options,
                     evaluator: ctx.evaluator,
-                    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+                    #[cfg(wgpu)]
                     gpu: ctx.gpu,
                     _ops: core::marker::PhantomData,
                 },
@@ -94,7 +94,7 @@ where
                     curmaxsize: ctx.curmaxsize,
                     options: ctx.options,
                     evaluator: ctx.evaluator,
-                    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+                    #[cfg(wgpu)]
                     gpu: ctx.gpu,
                     _ops: core::marker::PhantomData,
                 },
@@ -109,7 +109,7 @@ where
     num_evals
 }
 
-#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+#[cfg(wgpu)]
 pub(crate) struct CrossPopRegEvolCtx<'a, T: Float + AddAssign, Ops: OperatorSet<T = T>, const D: usize> {
     pub pop: &'a mut Population<T, Ops, D>,
     pub rng: &'a mut Rng,
@@ -118,7 +118,7 @@ pub(crate) struct CrossPopRegEvolCtx<'a, T: Float + AddAssign, Ops: OperatorSet<
     pub curmaxsize: usize,
 }
 
-#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+#[cfg(wgpu)]
 pub(crate) fn reg_evol_cycle_crosspop_batched_gpu<T, Ops, const D: usize>(
     pops: &mut [CrossPopRegEvolCtx<'_, T, Ops, D>],
     dataset: TaggedDataset<'_, T>,
@@ -595,7 +595,7 @@ where
     num_evals
 }
 
-#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+#[cfg(wgpu)]
 fn reg_evol_cycle_batched_gpu<T, Ops, const D: usize>(
     pop: &mut Population<T, Ops, D>,
     ctx: RegEvolCtx<'_, T, Ops, D>,

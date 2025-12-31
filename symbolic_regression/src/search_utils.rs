@@ -70,7 +70,7 @@ pub(crate) struct PopState<T: Float + AddAssign, Ops, const D: usize> {
     pub(crate) grad_ctx: dynamic_expressions::GradContext<T, D>,
     pub(crate) rng: Rng,
     pub(crate) batch_dataset: Option<Dataset<T>>,
-    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+    #[cfg(wgpu)]
     pub(crate) gpu: Option<crate::gpu::GpuClient>,
 }
 
@@ -122,7 +122,7 @@ impl<T: Float + AddAssign, Ops, const D: usize> PopState<T, Ops, D> {
             options,
             evaluator: &mut self.evaluator,
             grad_ctx: &mut self.grad_ctx,
-            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+            #[cfg(wgpu)]
             gpu: self.gpu.as_ref(),
             controller,
             _ops: core::marker::PhantomData,
@@ -161,7 +161,7 @@ where
         options,
         &controller,
         &mut hall,
-        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        #[cfg(wgpu)]
         None,
     );
     let counters = SearchCounters {
@@ -184,7 +184,7 @@ where
         task_order: Vec::new(),
         next_task: 0,
         progress_finished: false,
-        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        #[cfg(wgpu)]
         gpu_crosspop: None,
     };
 
@@ -198,7 +198,7 @@ where
     }
 }
 
-#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+#[cfg(wgpu)]
 pub fn equation_search_gpu<Ops, const D: usize>(
     dataset: &Dataset<f32>,
     options: &Options<f32, D>,
@@ -222,7 +222,7 @@ struct SearchCore<T: Float + AddAssign, Ops, const D: usize> {
     task_order: Vec<usize>,
     next_task: usize,
     progress_finished: bool,
-    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+    #[cfg(wgpu)]
     gpu_crosspop: Option<crate::gpu::GpuClient>,
 }
 
@@ -263,7 +263,7 @@ where
         controller: &StopController,
         n_cycles: usize,
     ) -> usize {
-        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        #[cfg(wgpu)]
         {
             let enabled = std::env::var("SYMBOLIC_REGRESSION_GPU_CROSSPOP")
                 .ok()
@@ -411,7 +411,7 @@ where
         completed_total
     }
 
-    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+    #[cfg(wgpu)]
     fn step_crosspop_gpu(
         &mut self,
         dataset: &Dataset<T>,
@@ -642,7 +642,7 @@ where
             &options,
             &controller,
             &mut hall,
-            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+            #[cfg(wgpu)]
             None,
         );
         let counters = SearchCounters {
@@ -667,7 +667,7 @@ where
             task_order: Vec::new(),
             next_task: 0,
             progress_finished: false,
-            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+            #[cfg(wgpu)]
             gpu_crosspop: None,
         };
 
@@ -741,7 +741,7 @@ where
     }
 }
 
-#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+#[cfg(wgpu)]
 impl<Ops, const D: usize> SearchEngine<f32, Ops, D>
 where
     Ops: dynamic_expressions::OperatorSet<T = f32>,
@@ -801,7 +801,7 @@ where
             task_order: Vec::new(),
             next_task: 0,
             progress_finished: false,
-            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+            #[cfg(wgpu)]
             gpu_crosspop: Some(gpu),
         };
 
@@ -939,7 +939,7 @@ fn init_populations<T, Ops, const D: usize>(
     options: &Options<T, D>,
     controller: &StopController,
     hall: &mut HallOfFame<T, Ops, D>,
-    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))] gpu: Option<crate::gpu::GpuClient>,
+    #[cfg(wgpu)] gpu: Option<crate::gpu::GpuClient>,
 ) -> PopPools<T, Ops, D>
 where
     T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + AddAssign,
@@ -976,7 +976,7 @@ where
             break;
         }
 
-        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        #[cfg(wgpu)]
         let gpu_batch = gpu
             .as_ref()
             .filter(|g| {
@@ -999,44 +999,55 @@ where
                 (packed_indices, losses)
             });
 
-        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
-        let mut packed_cursor: usize = 0;
-        for (_i, m) in members.iter_mut().enumerate() {
-            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
-            let mut used_gpu = false;
-            #[cfg(not(all(feature = "gpu", not(target_arch = "wasm32"))))]
-            let used_gpu = false;
+        #[cfg(wgpu)]
+        {
+            let mut packed_cursor: usize = 0;
+            for (i, m) in members.iter_mut().enumerate() {
+                let mut used_gpu = false;
 
-            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
-            if let Some((packed_indices, losses)) = &gpu_batch {
-                if packed_cursor < packed_indices.len() && packed_indices[packed_cursor] == _i {
-                    used_gpu = true;
-                    m.complexity = crate::complexity::compute_complexity(&m.expr.nodes, options);
-                    let loss = T::from(losses[packed_cursor]).unwrap_or_else(T::nan);
-                    packed_cursor += 1;
+                if let Some((packed_indices, losses)) = &gpu_batch {
+                    if packed_cursor < packed_indices.len() && packed_indices[packed_cursor] == i {
+                        used_gpu = true;
+                        m.complexity = crate::complexity::compute_complexity(&m.expr.nodes, options);
+                        let loss = T::from(losses[packed_cursor]).unwrap_or_else(T::nan);
+                        packed_cursor += 1;
 
-                    if !loss.is_finite() {
-                        m.loss = T::infinity();
-                        m.cost = T::infinity();
-                    } else {
-                        m.loss = loss;
-                        m.cost = crate::loss_functions::loss_to_cost(
-                            loss,
-                            m.complexity,
-                            options.parsimony,
-                            options.use_baseline,
-                            full_dataset.baseline_loss,
-                        );
+                        if !loss.is_finite() {
+                            m.loss = T::infinity();
+                            m.cost = T::infinity();
+                        } else {
+                            m.loss = loss;
+                            m.cost = crate::loss_functions::loss_to_cost(
+                                loss,
+                                m.complexity,
+                                options.parsimony,
+                                options.use_baseline,
+                                full_dataset.baseline_loss,
+                            );
+                        }
                     }
                 }
-            }
 
-            if !used_gpu {
-                let _ = m.evaluate(&full_dataset, options, &mut evaluator);
-            }
+                if !used_gpu {
+                    let _ = m.evaluate(&full_dataset, options, &mut evaluator);
+                }
 
-            total_evals += 1;
-            hall.consider(m, options, options.maxsize);
+                total_evals += 1;
+                hall.consider(m, options, options.maxsize);
+            }
+        }
+
+        #[cfg(not(wgpu))]
+        {
+            for m in members.iter_mut() {
+                let used_gpu = false;
+                if !used_gpu {
+                    let _ = m.evaluate(&full_dataset, options, &mut evaluator);
+                }
+
+                total_evals += 1;
+                hall.consider(m, options, options.maxsize);
+            }
         }
         pops.push(Some(PopState {
             pop: Population::new(members),
@@ -1044,7 +1055,7 @@ where
             grad_ctx,
             rng,
             batch_dataset: None,
-            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+            #[cfg(wgpu)]
             gpu: gpu.clone(),
         }));
     }

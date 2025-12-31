@@ -142,7 +142,7 @@ pub fn run_constant_opt_linear(env: &ConstantOptLinearEnv) -> (bool, f64, Vec<f6
             options: &env.options,
             evaluator: &mut evaluator,
             grad_ctx: &mut grad_ctx,
-            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+            #[cfg(wgpu)]
             gpu: None,
         },
     );

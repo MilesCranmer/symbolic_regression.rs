@@ -4,6 +4,9 @@ compile_error!(
 Build with RUSTFLAGS='-C target-feature=+atomics,+bulk-memory,+mutable-globals'."
 );
 
+#[cfg(all(feature = "wgpu", target_arch = "wasm32"))]
+compile_error!("feature `wgpu` is not supported on wasm32 targets.");
+
 pub(crate) mod adaptive_parsimony;
 pub(crate) mod check_constraints;
 pub(crate) mod complexity;
@@ -30,7 +33,7 @@ pub(crate) mod single_iteration;
 pub(crate) mod stop_controller;
 pub(crate) mod warmup;
 
-#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+#[cfg(wgpu)]
 pub(crate) mod gpu;
 
 #[cfg(feature = "bench")]
@@ -40,7 +43,7 @@ pub use check_constraints::{NestedConstraints, OpConstraints};
 pub use complexity::compute_complexity;
 pub use dataset::{Dataset, TaggedDataset};
 pub use dynamic_expressions::{OperatorSelectError, Operators, op, opset};
-#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+#[cfg(wgpu)]
 pub use gpu::{GpuClient, pack_expr};
 pub use hall_of_fame::HallOfFame;
 pub use loss_functions::{LossKind, epsilon_insensitive, huber, log_cosh, lp, mae, make_loss, mse, quantile, rmse};
@@ -48,7 +51,7 @@ pub use operator_library::OperatorLibrary;
 pub use operator_selection::OperatorsSampling;
 pub use options::{MutationWeights, Options, OutputStyle, WasmOptionsShim};
 pub use pop_member::PopMember;
-#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+#[cfg(wgpu)]
 pub use search_utils::equation_search_gpu;
 pub use search_utils::{SearchEngine, SearchResult, equation_search};
 #[cfg(feature = "bench")]

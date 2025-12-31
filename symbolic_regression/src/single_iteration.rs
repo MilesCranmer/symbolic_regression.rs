@@ -12,7 +12,7 @@ use crate::pop_member::Evaluator;
 use crate::population::Population;
 use crate::regularized_evolution::{RegEvolCtx, reg_evol_cycle};
 use crate::stop_controller::StopController;
-#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+#[cfg(wgpu)]
 use crate::{
     gpu::{AdamParams, MAX_CONSTS, pack_expr},
     loss_functions::{LossKind, loss_to_cost},
@@ -28,7 +28,7 @@ pub struct IterationCtx<'a, T: Float + AddAssign, Ops, const D: usize> {
     pub options: &'a Options<T, D>,
     pub evaluator: &'a mut Evaluator<T, D>,
     pub grad_ctx: &'a mut dynamic_expressions::GradContext<T, D>,
-    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+    #[cfg(wgpu)]
     pub gpu: Option<&'a crate::gpu::GpuClient>,
     pub controller: &'a StopController,
     pub _ops: core::marker::PhantomData<Ops>,
@@ -70,7 +70,7 @@ where
                 stats: ctx.stats,
                 options: ctx.options,
                 evaluator: ctx.evaluator,
-                #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+                #[cfg(wgpu)]
                 gpu: ctx.gpu,
                 controller: ctx.controller,
                 _ops: core::marker::PhantomData,
@@ -108,7 +108,7 @@ where
         ctx.evaluator.ensure_n_rows(opt_dataset.data.n_rows);
         ctx.grad_ctx.n_rows = opt_dataset.data.n_rows;
 
-        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        #[cfg(wgpu)]
         if let Some(gpu) = ctx.gpu.filter(|g| {
             ctx.options.loss_kind == LossKind::Mse
                 && opt_dataset.data.n_rows == g.n_rows
@@ -254,7 +254,7 @@ where
             }
         }
 
-        #[cfg(not(all(feature = "gpu", not(target_arch = "wasm32"))))]
+        #[cfg(not(wgpu))]
         for m in &mut pop.members {
             if ctx.rng.f64() < ctx.options.optimizer_probability {
                 let (_, evals) = optimize_constants(
@@ -276,7 +276,7 @@ where
     // batching is enabled (i.e., members were evolved on a batch and need final losses/costs).
     if ctx.options.batching {
         ctx.evaluator.ensure_n_rows(ctx.full_dataset.n_rows);
-        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        #[cfg(wgpu)]
         if let Some(gpu) = ctx.gpu.filter(|g| {
             ctx.options.loss_kind == crate::loss_functions::LossKind::Mse
                 && ctx.full_dataset.n_rows == g.n_rows
@@ -341,7 +341,7 @@ where
                 &ctx.full_dataset,
                 ctx.options,
                 ctx.evaluator,
-                #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+                #[cfg(wgpu)]
                 ctx.gpu,
             );
             num_evals += 1.0;

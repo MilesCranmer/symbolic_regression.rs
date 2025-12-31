@@ -28,20 +28,19 @@ fn main() {
 
     let operators = BuiltinOpsF32::from_names(["cos", "exp", "sin", "+", "sub", "*", "/"]).unwrap();
 
-    let is_gpu = cfg!(all(feature = "gpu", not(target_arch = "wasm32")));
+    let is_gpu = cfg!(feature = "wgpu");
     let options = Options::<f32, D> {
         operators,
         niterations: if is_gpu { 10 } else { 200 },
         population_size: if is_gpu { 8192 } else { 27 },
         populations: if is_gpu { 16 } else { 31 },
         tournament_selection_n: 15,
-        should_simplify: !is_gpu,
         ..Default::default()
     };
 
     // Target: population_size / tournament_selection_n ~ 512
 
-    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+    #[cfg(wgpu)]
     let result = {
         let batch_max = 2048;
         match symbolic_regression::equation_search_gpu::<BuiltinOpsF32, D>(&dataset, &options, batch_max) {
@@ -53,7 +52,7 @@ fn main() {
         }
     };
 
-    #[cfg(not(all(feature = "gpu", not(target_arch = "wasm32"))))]
+    #[cfg(not(wgpu))]
     let result = equation_search::<_, BuiltinOpsF32, D>(&dataset, &options);
     let dominating = result.hall_of_fame.pareto_front();
 

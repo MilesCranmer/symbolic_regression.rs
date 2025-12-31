@@ -63,7 +63,7 @@ fn optimize_constants_resets_birth_on_improvement() {
             options: &options,
             evaluator: &mut evaluator,
             grad_ctx: &mut grad_ctx,
-            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+            #[cfg(wgpu)]
             gpu: None,
         },
     );

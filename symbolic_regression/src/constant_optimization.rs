@@ -6,21 +6,21 @@ use fastrand::Rng;
 use num_traits::{Float, FromPrimitive, ToPrimitive};
 
 use crate::dataset::{Dataset, TaggedDataset};
-#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+#[cfg(wgpu)]
 use crate::loss_functions::{LossKind, loss_to_cost};
 use crate::optim::{BackTracking, Objective, OptimOptions, bfgs_minimize, newton_1d_minimize};
 use crate::options::Options;
 use crate::pop_member::{Evaluator, PopMember, get_birth_order};
 use crate::random::standard_normal;
 
-#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+#[cfg(wgpu)]
 struct GpuConstObjective<'a> {
     gpu: &'a crate::gpu::GpuClient,
     program: [u32; crate::gpu::MAX_NODES],
     n_params: usize,
 }
 
-#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+#[cfg(wgpu)]
 impl Objective for GpuConstObjective<'_> {
     fn f_only(&mut self, x: &[f64], budget: &mut crate::optim::EvalBudget) -> Option<f64> {
         budget.f_calls += 1;
@@ -267,7 +267,7 @@ where
         options,
         evaluator,
         grad_ctx,
-        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        #[cfg(wgpu)]
         gpu,
     } = ctx;
     let dataset_ref: &Dataset<T> = dataset.data;
@@ -280,7 +280,7 @@ where
     // Fast-path: if a GPU client is available, do a fused Adam optimization entirely on-GPU.
     // This avoids the disastrous CPU↔GPU round-trip that happens if we use a CPU optimizer that
     // calls into the GPU objective/gradient one evaluation at a time.
-    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+    #[cfg(wgpu)]
     {
         let enable_gpu_const_opt = std::env::var("SYMBOLIC_REGRESSION_GPU_CONST_OPT")
             .map(|v| v != "0")
@@ -360,7 +360,7 @@ where
 
     let mut workspace = EvalWorkspace::new(dataset_ref, options, evaluator, grad_ctx);
 
-    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+    #[cfg(wgpu)]
     let gpu_packed = gpu.and_then(|g| {
         // Constant optimization calls the objective/gradient many times; doing those calls on the GPU
         // requires a dispatch + readback each time and is often dramatically slower unless batching is
@@ -384,7 +384,7 @@ where
     });
 
     let baseline = {
-        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        #[cfg(wgpu)]
         if let Some((g, packed)) = gpu_packed {
             let v = g.eval_mse(packed) as f64;
             if v.is_finite() {
@@ -399,7 +399,7 @@ where
             }
         }
 
-        #[cfg(not(all(feature = "gpu", not(target_arch = "wasm32"))))]
+        #[cfg(not(wgpu))]
         match workspace.loss_only::<Ops>(&member.plan, &member.expr) {
             Some(v) => v,
             None => return (false, 0.0),
@@ -421,7 +421,7 @@ where
     let mut n_evals: u64 = 0;
 
     {
-        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        #[cfg(wgpu)]
         let res = if let Some((g, packed)) = gpu_packed {
             let mut obj = GpuConstObjective {
                 gpu: g,
@@ -437,7 +437,7 @@ where
             workspace.optimize_from_start(&x0, n_params, member, optim_opts, ls)
         };
 
-        #[cfg(not(all(feature = "gpu", not(target_arch = "wasm32"))))]
+        #[cfg(not(wgpu))]
         let res = workspace.optimize_from_start(&x0, n_params, member, optim_opts, ls);
         if let Some(res) = res {
             n_evals = n_evals.saturating_add(res.f_calls as u64);
@@ -457,7 +457,7 @@ where
         }
 
         let res = {
-            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+            #[cfg(wgpu)]
             {
                 if let Some((g, packed)) = gpu_packed {
                     let mut obj = GpuConstObjective {
@@ -474,7 +474,7 @@ where
                     workspace.optimize_from_start(&xt, n_params, member, optim_opts, ls)
                 }
             }
-            #[cfg(not(all(feature = "gpu", not(target_arch = "wasm32"))))]
+            #[cfg(not(wgpu))]
             {
                 workspace.optimize_from_start(&xt, n_params, member, optim_opts, ls)
             }
@@ -496,7 +496,7 @@ where
             &dataset,
             options,
             evaluator,
-            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+            #[cfg(wgpu)]
             gpu,
         );
         if !ok {
@@ -524,6 +524,6 @@ pub struct OptimizeConstantsCtx<'a, 'd, T: Float, const D: usize> {
     pub evaluator: &'a mut Evaluator<T, D>,
     pub grad_ctx: &'a mut GradContext<T, D>,
 
-    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+    #[cfg(wgpu)]
     pub gpu: Option<&'a crate::gpu::GpuClient>,
 }

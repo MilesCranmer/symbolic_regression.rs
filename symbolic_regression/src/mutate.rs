@@ -41,7 +41,7 @@ pub struct NextGenerationCtx<'a, T: Float + AddAssign, Ops, const D: usize> {
     pub stats: &'a RunningSearchStatistics,
     pub options: &'a Options<T, D>,
     pub evaluator: &'a mut Evaluator<T, D>,
-    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+    #[cfg(wgpu)]
     pub gpu: Option<&'a crate::gpu::GpuClient>,
     pub _ops: core::marker::PhantomData<Ops>,
 }
@@ -52,7 +52,7 @@ pub struct CrossoverCtx<'a, T: Float, Ops, const D: usize> {
     pub curmaxsize: usize,
     pub options: &'a Options<T, D>,
     pub evaluator: &'a mut Evaluator<T, D>,
-    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+    #[cfg(wgpu)]
     pub gpu: Option<&'a crate::gpu::GpuClient>,
     pub _ops: core::marker::PhantomData<Ops>,
 }
@@ -143,7 +143,7 @@ struct MutationApplyCtx<'a, 'd, T: Float + AddAssign, Ops, const D: usize> {
     curmaxsize: usize,
     options: &'a Options<T, D>,
     evaluator: &'a mut Evaluator<T, D>,
-    #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+    #[cfg(wgpu)]
     gpu: Option<&'a crate::gpu::GpuClient>,
 }
 
@@ -165,7 +165,7 @@ impl MutationChoice {
             curmaxsize,
             options,
             evaluator,
-            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+            #[cfg(wgpu)]
             gpu,
         } = ctx;
         let n_features = dataset.n_features;
@@ -264,7 +264,7 @@ impl MutationChoice {
                         options,
                         evaluator,
                         grad_ctx: &mut grad_ctx,
-                        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+                        #[cfg(wgpu)]
                         gpu,
                     },
                 );
@@ -275,7 +275,7 @@ impl MutationChoice {
     }
 }
 
-#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+#[cfg(wgpu)]
 pub(crate) fn apply_mutation_choice<
     T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + AddAssign,
     Ops,
@@ -296,7 +296,7 @@ where
         stats: _,
         options,
         evaluator,
-        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        #[cfg(wgpu)]
         gpu,
         _ops: _,
     } = ctx;
@@ -310,7 +310,7 @@ where
         curmaxsize,
         options,
         evaluator,
-        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        #[cfg(wgpu)]
         gpu,
     })
 }
@@ -334,7 +334,7 @@ where
         stats,
         options,
         evaluator,
-        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        #[cfg(wgpu)]
         gpu,
         ..
     } = ctx;
@@ -362,7 +362,7 @@ where
             curmaxsize,
             options,
             evaluator,
-            #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+            #[cfg(wgpu)]
             gpu,
         });
         match outcome {
@@ -397,7 +397,7 @@ where
         &dataset,
         options,
         evaluator,
-        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        #[cfg(wgpu)]
         gpu,
     );
     evals += 1.0;
@@ -456,7 +456,7 @@ where
         curmaxsize,
         options,
         evaluator,
-        #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+        #[cfg(wgpu)]
         gpu,
         ..
     } = ctx;
@@ -473,14 +473,14 @@ where
                 &dataset,
                 options,
                 evaluator,
-                #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+                #[cfg(wgpu)]
                 gpu,
             );
             let _ = baby2.evaluate_with_gpu(
                 &dataset,
                 options,
                 evaluator,
-                #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+                #[cfg(wgpu)]
                 gpu,
             );
             return (baby1, baby2, true, 2.0);

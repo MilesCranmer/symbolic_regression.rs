@@ -46,8 +46,12 @@ default = ["progress"]
 progress = ["dep:indicatif", "dep:console"]
 serde = ["dep:serde"]
 serde_json = ["dep:serde_json", "serde"]
-gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck", "dep:crossbeam-channel", "dep:futures-intrusive"]
+wgpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck", "dep:crossbeam-channel", "dep:futures-intrusive"]
 bench = []
+
+[build-dependencies]
+cfg_aliases = "0.2.1"
+
 [dev-dependencies]
 criterion = "0.7"
 naga = { version = "28", default-features = false, features = ["wgsl-in"] }

@@ -5,13 +5,13 @@
 //! machinery / batching / optimizer driving us into tiny batches?"
 //!
 //! Run (Metal/Vulkan):
-//!   cargo run -p symbolic_regression --example gpu_eval_bench --features gpu --release
+//!   cargo run -p symbolic_regression --example gpu_eval_bench --features wgpu --release
 //!
 //! You can tune sizes with env vars:
 //!   N_ROWS=300 N_FEAT=5 P=8192 ITERS=200 BATCH_MAX=16384 \
-//!     cargo run -p symbolic_regression --example gpu_eval_bench --features gpu --release
+//!     cargo run -p symbolic_regression --example gpu_eval_bench --features wgpu --release
 
-#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+#[cfg(wgpu)]
 fn main() {
     use std::time::Instant;
 
@@ -119,7 +119,7 @@ fn main() {
     );
 }
 
-#[cfg(not(all(feature = "gpu", not(target_arch = "wasm32"))))]
+#[cfg(not(wgpu))]
 fn main() {
-    eprintln!("Run with `--features gpu` on a native (non-wasm32) target.");
+    eprintln!("Run with `--features wgpu` on a native (non-wasm32) target.");
 }

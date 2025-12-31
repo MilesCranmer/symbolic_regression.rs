@@ -1260,7 +1260,7 @@ impl GpuClient {
     }
 }
 
-#[cfg(all(test, feature = "gpu", not(target_arch = "wasm32")))]
+#[cfg(all(test, wgpu))]
 mod tests {
     #[test]
     fn wgsl_parses() {
