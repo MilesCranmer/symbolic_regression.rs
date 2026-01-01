@@ -172,7 +172,7 @@ where
         if options.annealing {
             let temp = if temperature > 1e-6 { temperature } else { 1e-6 };
             let delta = after_cost - before_cost;
-            prob = (-delta / temp).exp();
+            prob = (-delta / (temp * options.alpha)).exp();
         }
 
         if options.use_frequency {
@@ -645,7 +645,7 @@ where
         if options.annealing {
             let temp = if temperature > 1e-6 { temperature } else { 1e-6 };
             let delta = after_cost - before_cost;
-            prob = (-delta / temp).exp();
+            prob = (-delta / (temp * options.alpha)).exp();
         }
 
         if options.use_frequency {
