@@ -269,6 +269,11 @@ impl Default for AdamParams {
     }
 }
 
+const GPU_ADAM_EARLY_STOP_MIN_ITERS: u32 = 16;
+const GPU_ADAM_EARLY_STOP_PATIENCE: u32 = 8;
+const GPU_ADAM_EARLY_STOP_REL_TOL: f32 = 1e-6;
+const GPU_ADAM_EARLY_STOP_GRAD_TOL: f32 = 1e-4;
+
 #[repr(C, align(16))]
 #[derive(Copy, Clone, Pod, Zeroable)]
 struct Params {
@@ -690,6 +695,7 @@ impl GpuBatchEvaluator {
 
         // Params: only base (sum_w, n_rows)
         self.params.u[2] = 0;
+        self.params.u[3] = 0;
         self.params.f0[1] = 0.0;
         self.params.f0[2] = 0.0;
         self.params.f0[3] = 0.0;
@@ -759,6 +765,7 @@ impl GpuBatchEvaluator {
 
         // Params: only base
         self.params.u[2] = 0;
+        self.params.u[3] = 0;
         self.params.f0[1] = 0.0;
         self.params.f0[2] = 0.0;
         self.params.f0[3] = 0.0;
@@ -834,13 +841,16 @@ impl GpuBatchEvaluator {
         self.write_inputs(programs, consts, p);
 
         self.params.u[2] = adam.iters;
+        let min_iters = GPU_ADAM_EARLY_STOP_MIN_ITERS.min(adam.iters).max(1);
+        let patience = GPU_ADAM_EARLY_STOP_PATIENCE.min(0xFFFF);
+        self.params.u[3] = (min_iters & 0xFFFF) | (patience << 16);
         self.params.f0[1] = adam.lr;
         self.params.f0[2] = adam.beta1;
         self.params.f0[3] = adam.beta2;
         self.params.f1[0] = adam.eps;
         self.params.f1[1] = adam.step_clip;
-        self.params.f1[2] = 0.0;
-        self.params.f1[3] = 0.0;
+        self.params.f1[2] = GPU_ADAM_EARLY_STOP_REL_TOL;
+        self.params.f1[3] = GPU_ADAM_EARLY_STOP_GRAD_TOL;
         self.write_params_base();
         let write_d = t0.elapsed();
 

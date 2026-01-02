@@ -118,7 +118,7 @@ where
             // Optimize many members (and their random restarts) in a single fused Adam kernel call.
             let n_restarts = 1 + ctx.options.optimizer_nrestarts;
             let iters = (ctx.options.optimizer_iterations as u32)
-                .saturating_mul(16)
+                .saturating_mul(4)
                 .clamp(16, 1024);
             let params = AdamParams {
                 iters,

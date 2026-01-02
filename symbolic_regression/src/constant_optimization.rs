@@ -13,73 +13,6 @@ use crate::options::Options;
 use crate::pop_member::{Evaluator, PopMember, get_birth_order};
 use crate::random::standard_normal;
 
-#[cfg(wgpu)]
-struct GpuConstObjective<'a> {
-    gpu: &'a crate::gpu::GpuClient,
-    program: [u32; crate::gpu::MAX_NODES],
-    n_params: usize,
-}
-
-#[cfg(wgpu)]
-impl Objective for GpuConstObjective<'_> {
-    fn f_only(&mut self, x: &[f64], budget: &mut crate::optim::EvalBudget) -> Option<f64> {
-        budget.f_calls += 1;
-
-        let xs = x.get(..self.n_params)?;
-        let mut c = [0.0f32; crate::gpu::MAX_CONSTS];
-        for (dst, &src) in c.iter_mut().take(self.n_params).zip(xs.iter()) {
-            let vf = src as f32;
-            if !vf.is_finite() {
-                return None;
-            }
-            *dst = vf;
-        }
-
-        let packed = crate::gpu::PackedProgram {
-            program: self.program,
-            consts: c,
-        };
-        let loss = self.gpu.eval_mse(packed);
-        loss.is_finite().then_some(loss as f64)
-    }
-
-    fn fg(&mut self, x: &[f64], g_out: &mut [f64], budget: &mut crate::optim::EvalBudget) -> Option<f64> {
-        budget.f_calls += 1;
-
-        let xs = x.get(..self.n_params)?;
-        let mut c = [0.0f32; crate::gpu::MAX_CONSTS];
-        for (dst, &src) in c.iter_mut().take(self.n_params).zip(xs.iter()) {
-            let vf = src as f32;
-            if !vf.is_finite() {
-                return None;
-            }
-            *dst = vf;
-        }
-
-        let packed = crate::gpu::PackedProgram {
-            program: self.program,
-            consts: c,
-        };
-        let res = self.gpu.eval_mse_grad(packed);
-        if !res.loss.is_finite() {
-            return None;
-        }
-
-        debug_assert_eq!(g_out.len(), self.n_params);
-        debug_assert!(self.n_params <= crate::gpu::MAX_CONSTS);
-
-        for (dst, &src) in g_out.iter_mut().zip_eq(res.grad[..self.n_params].iter()) {
-            let v = src as f64;
-            if !v.is_finite() {
-                return None;
-            }
-            *dst = v;
-        }
-
-        Some(res.loss as f64)
-    }
-}
-
 struct EvalWorkspace<'a, T: Float + AddAssign, const D: usize> {
     dataset: &'a Dataset<T>,
     options: &'a Options<T, D>,
@@ -282,73 +215,67 @@ where
     // calls into the GPU objective/gradient one evaluation at a time.
     #[cfg(wgpu)]
     {
-        let enable_gpu_const_opt = std::env::var("SYMBOLIC_REGRESSION_GPU_CONST_OPT")
-            .map(|v| v != "0")
-            .unwrap_or(true);
+        if let Some(g) = gpu.filter(|g| {
+            options.loss_kind == LossKind::Mse && dataset.n_rows == g.n_rows && dataset.n_features == g.n_features
+        }) {
+            if let Some(base) = crate::gpu::pack_expr(&member.expr) {
+                let n_consts = n_params.min(crate::gpu::MAX_CONSTS);
+                let n_restarts = 1 + options.optimizer_nrestarts;
+                let iters = (options.optimizer_iterations as u32).saturating_mul(4).clamp(16, 1024);
+                let params = crate::gpu::AdamParams {
+                    iters,
+                    ..Default::default()
+                };
 
-        if enable_gpu_const_opt {
-            if let Some(g) = gpu.filter(|g| {
-                options.loss_kind == LossKind::Mse && dataset.n_rows == g.n_rows && dataset.n_features == g.n_features
-            }) {
-                if let Some(base) = crate::gpu::pack_expr(&member.expr) {
-                    let n_consts = n_params.min(crate::gpu::MAX_CONSTS);
-                    let n_restarts = 1 + options.optimizer_nrestarts;
-                    let iters = (options.optimizer_iterations as u32).saturating_mul(16).clamp(16, 1024);
-                    let params = crate::gpu::AdamParams {
-                        iters,
-                        ..Default::default()
-                    };
-
-                    let mut programs: Vec<crate::gpu::PackedProgram> = Vec::with_capacity(n_restarts);
-                    for r in 0..n_restarts {
-                        let mut p = base;
-                        if r > 0 {
-                            for j in 0..n_consts {
-                                let scale = 1.0 + 0.5 * (standard_normal(rng) as f32);
-                                p.consts[j] = base.consts[j] * scale;
-                            }
-                        }
-                        programs.push(p);
-                    }
-
-                    let mut losses = vec![0.0f32; programs.len()];
-                    g.optimize_adam_many(&mut programs, params, &mut losses);
-
-                    let mut best_loss = f32::INFINITY;
-                    let mut best_consts = base.consts;
-                    for (p, &l) in programs.iter().zip(losses.iter()) {
-                        if l.is_finite() && l < best_loss {
-                            best_loss = l;
-                            best_consts = p.consts;
+                let mut programs: Vec<crate::gpu::PackedProgram> = Vec::with_capacity(n_restarts);
+                for r in 0..n_restarts {
+                    let mut p = base;
+                    if r > 0 {
+                        for j in 0..n_consts {
+                            let scale = 1.0 + 0.5 * (standard_normal(rng) as f32);
+                            p.consts[j] = base.consts[j] * scale;
                         }
                     }
-
-                    let baseline = member.loss.to_f32().unwrap_or(f32::INFINITY);
-                    let evals = (params.iters as f64) * (programs.len() as f64);
-
-                    if best_loss.is_finite() && best_loss < baseline {
-                        for (dst, &src) in member
-                            .expr
-                            .consts
-                            .iter_mut()
-                            .take(n_consts)
-                            .zip(best_consts.iter().take(n_consts))
-                        {
-                            *dst = T::from_f32(src).unwrap_or_else(T::nan);
-                        }
-                        member.loss = T::from_f32(best_loss).unwrap_or_else(T::nan);
-                        member.cost = loss_to_cost(
-                            member.loss,
-                            member.complexity,
-                            options.parsimony,
-                            options.use_baseline,
-                            dataset.baseline_loss,
-                        );
-                        member.birth = get_birth_order(options.deterministic);
-                        return (true, evals);
-                    }
-                    return (false, evals);
+                    programs.push(p);
                 }
+
+                let mut losses = vec![0.0f32; programs.len()];
+                g.optimize_adam_many(&mut programs, params, &mut losses);
+
+                let mut best_loss = f32::INFINITY;
+                let mut best_consts = base.consts;
+                for (p, &l) in programs.iter().zip(losses.iter()) {
+                    if l.is_finite() && l < best_loss {
+                        best_loss = l;
+                        best_consts = p.consts;
+                    }
+                }
+
+                let baseline = member.loss.to_f32().unwrap_or(f32::INFINITY);
+                let evals = (params.iters as f64) * (programs.len() as f64);
+
+                if best_loss.is_finite() && best_loss < baseline {
+                    for (dst, &src) in member
+                        .expr
+                        .consts
+                        .iter_mut()
+                        .take(n_consts)
+                        .zip(best_consts.iter().take(n_consts))
+                    {
+                        *dst = T::from_f32(src).unwrap_or_else(T::nan);
+                    }
+                    member.loss = T::from_f32(best_loss).unwrap_or_else(T::nan);
+                    member.cost = loss_to_cost(
+                        member.loss,
+                        member.complexity,
+                        options.parsimony,
+                        options.use_baseline,
+                        dataset.baseline_loss,
+                    );
+                    member.birth = get_birth_order(options.deterministic);
+                    return (true, evals);
+                }
+                return (false, evals);
             }
         }
     }
@@ -360,50 +287,9 @@ where
 
     let mut workspace = EvalWorkspace::new(dataset_ref, options, evaluator, grad_ctx);
 
-    #[cfg(wgpu)]
-    let gpu_packed = gpu.and_then(|g| {
-        // Constant optimization calls the objective/gradient many times; doing those calls on the GPU
-        // requires a dispatch + readback each time and is often dramatically slower unless batching is
-        // very large. Keep this opt-in until we have a fused on-GPU optimizer loop.
-        if std::env::var("SYMBOLIC_REGRESSION_GPU_CONST_OPT")
-            .ok()
-            .is_none_or(|v| v == "0")
-        {
-            return None;
-        }
-        if core::mem::size_of::<T>() != core::mem::size_of::<f32>() {
-            return None;
-        }
-        if options.loss_kind != crate::loss_functions::LossKind::Mse {
-            return None;
-        }
-        if dataset.n_rows != g.n_rows || dataset.n_features != g.n_features {
-            return None;
-        }
-        crate::gpu::pack_expr(&member.expr).map(|p| (g, p))
-    });
-
-    let baseline = {
-        #[cfg(wgpu)]
-        if let Some((g, packed)) = gpu_packed {
-            let v = g.eval_mse(packed) as f64;
-            if v.is_finite() {
-                v
-            } else {
-                return (false, 0.0);
-            }
-        } else {
-            match workspace.loss_only::<Ops>(&member.plan, &member.expr) {
-                Some(v) => v,
-                None => return (false, 0.0),
-            }
-        }
-
-        #[cfg(not(wgpu))]
-        match workspace.loss_only::<Ops>(&member.plan, &member.expr) {
-            Some(v) => v,
-            None => return (false, 0.0),
-        }
+    let baseline = match workspace.loss_only::<Ops>(&member.plan, &member.expr) {
+        Some(v) => v,
+        None => return (false, 0.0),
     };
 
     let x0: Vec<f64> = member.expr.consts.iter().map(|v| v.to_f64().unwrap_or(0.0)).collect();
@@ -421,23 +307,6 @@ where
     let mut n_evals: u64 = 0;
 
     {
-        #[cfg(wgpu)]
-        let res = if let Some((g, packed)) = gpu_packed {
-            let mut obj = GpuConstObjective {
-                gpu: g,
-                program: packed.program,
-                n_params,
-            };
-            if n_params == 1 {
-                newton_1d_minimize(x0[0], &mut obj, optim_opts, ls)
-            } else {
-                bfgs_minimize(&x0, &mut obj, optim_opts, ls)
-            }
-        } else {
-            workspace.optimize_from_start(&x0, n_params, member, optim_opts, ls)
-        };
-
-        #[cfg(not(wgpu))]
         let res = workspace.optimize_from_start(&x0, n_params, member, optim_opts, ls);
         if let Some(res) = res {
             n_evals = n_evals.saturating_add(res.f_calls as u64);
@@ -456,29 +325,7 @@ where
             *v *= 1.0 + 0.5 * eps;
         }
 
-        let res = {
-            #[cfg(wgpu)]
-            {
-                if let Some((g, packed)) = gpu_packed {
-                    let mut obj = GpuConstObjective {
-                        gpu: g,
-                        program: packed.program,
-                        n_params,
-                    };
-                    if n_params == 1 {
-                        newton_1d_minimize(xt[0], &mut obj, optim_opts, ls)
-                    } else {
-                        bfgs_minimize(&xt, &mut obj, optim_opts, ls)
-                    }
-                } else {
-                    workspace.optimize_from_start(&xt, n_params, member, optim_opts, ls)
-                }
-            }
-            #[cfg(not(wgpu))]
-            {
-                workspace.optimize_from_start(&xt, n_params, member, optim_opts, ls)
-            }
-        };
+        let res = { workspace.optimize_from_start(&xt, n_params, member, optim_opts, ls) };
         if let Some(res) = res {
             n_evals = n_evals.saturating_add(res.f_calls as u64);
             if res.minimum < best_f {

@@ -119,6 +119,7 @@ fn op_binary_deriv(op: u32, a: f32, b: f32, out: f32) -> vec2<f32> {
 
 var<workgroup> wg_c0: vec4<f32>;
 var<workgroup> wg_c1: vec4<f32>;
+var<workgroup> wg_done: u32;
 var<workgroup> wg_prog: array<u32, MAX_NODES>;
 
 
@@ -455,6 +456,19 @@ fn optimize_adam(
   let eps = params.f1.x;
   let step_clip = params.f1.y;
 
+  // Early-stop configuration (packed into Params by the Rust side).
+  // u.w = (patience << 16) | min_iters
+  // f1.z = rel_tol
+  // f1.w = grad_tol
+  let packed_stop = params.u.w;
+  let min_iters = packed_stop & 0xFFFFu;
+  let patience = (packed_stop >> 16u) & 0xFFFFu;
+  let rel_tol = params.f1.z;
+  let grad_tol = params.f1.w;
+
+  var prev_loss: f32 = 0.0;
+  var stall: u32 = 0u;
+
   // Lane 0 owns parameter state (m/v and constants).
   var m0: vec4<f32> = vec4<f32>(0.0);
   var m1: vec4<f32> = vec4<f32>(0.0);
@@ -465,7 +479,7 @@ fn optimize_adam(
   var final_loss: f32 = 0.0;
 
   load_shared(p, lane);
-for (var iter: u32 = 0u; iter < iters; iter = iter + 1u) {
+  for (var iter: u32 = 0u; iter < iters; iter = iter + 1u) {
     let n_rows = params.u.x;
 
     var sum: f32 = 0.0;
@@ -539,9 +553,37 @@ for (var iter: u32 = 0u; iter < iters; iter = iter + 1u) {
 
       wg_c0 = wg_c0 - step0;
       wg_c1 = wg_c1 - step1;
+
+      // Early-stop (lane 0 decides; all lanes observe `wg_done` after the barrier).
+      let gn = sqrt(dot(grad0, grad0) + dot(grad1, grad1));
+      if (iter == 0u) {
+        prev_loss = final_loss;
+        stall = 0u;
+      } else {
+        if (rel_tol > 0.0) {
+          let denom = max(abs(prev_loss), 1e-6);
+          let rel_impr = (prev_loss - final_loss) / denom;
+          stall = select(stall + 1u, 0u, rel_impr >= rel_tol);
+        }
+        prev_loss = final_loss;
+      }
+
+      var stop = false;
+      if (iter + 1u >= min_iters) {
+        if (grad_tol > 0.0 && gn < grad_tol) {
+          stop = true;
+        }
+        if (patience > 0u && rel_tol > 0.0 && stall >= patience) {
+          stop = true;
+        }
+      }
+      wg_done = select(0u, 1u, stop);
     }
 
     workgroupBarrier();
+    if (wg_done != 0u) {
+      break;
+    }
   }
 
   if (lane == 0u) {
