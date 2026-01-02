@@ -30,12 +30,15 @@ const END_TOKEN: u32 = KIND_END;
 //
 // Enable by setting:
 //   SYMBOLIC_REGRESSION_GPU_PROFILE=1
+// or:
+//   SYMBOLIC_REGRESSION_GPU_PROFILE=/tmp/gpu_profile.csv
 // Optional:
 //   SYMBOLIC_REGRESSION_GPU_PROFILE_PATH=/tmp/gpu_profile.log
 //   SYMBOLIC_REGRESSION_GPU_PROFILE_EVERY=1   (log every dispatch; default=100)
 //
 // Output lines look like:
-//   gpu_profile,kind=mse,p=2048,collect_us=12,write_us=80,encode_us=40,submit_us=20,map_wait_us=350,total_us=520
+//   gpu_profile,kind=mse,p=2048,collect_us=12,merge_us=55,write_us=80,encode_us=40,submit_us=20,map_wait_us=350,
+// total_us=520
 //
 // NOTE: When enabled with EVERY=1 this will *slow things down* due to I/O. For
 // realistic timings use EVERY=100 or higher.
@@ -44,13 +47,13 @@ struct GpuProfiler {
     enabled: bool,
     every: u64,
     ctr: u64,
-    out: Option<std::io::LineWriter<std::fs::File>>,
+    out: Option<std::io::BufWriter<std::fs::File>>,
 }
 
 impl GpuProfiler {
     fn new() -> Self {
-        let enabled = std::env::var("SYMBOLIC_REGRESSION_GPU_PROFILE")
-            .ok()
+        let profile = std::env::var("SYMBOLIC_REGRESSION_GPU_PROFILE").ok();
+        let enabled = profile
             .as_deref()
             .is_some_and(|v| v != "0" && !v.eq_ignore_ascii_case("false"));
 
@@ -61,10 +64,18 @@ impl GpuProfiler {
             .unwrap_or(100);
 
         let out = if enabled {
-            let path = std::env::var("SYMBOLIC_REGRESSION_GPU_PROFILE_PATH")
-                .unwrap_or_else(|_| "/tmp/gpu_profile.log".to_string());
+            let path = std::env::var("SYMBOLIC_REGRESSION_GPU_PROFILE_PATH").ok().or_else(|| {
+                profile.as_ref().and_then(|v| {
+                    if v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes") {
+                        None
+                    } else {
+                        Some(v.to_string())
+                    }
+                })
+            });
+            let path = path.unwrap_or_else(|| "/tmp/gpu_profile.csv".to_string());
             match std::fs::File::create(path) {
-                Ok(f) => Some(std::io::LineWriter::new(f)),
+                Ok(f) => Some(std::io::BufWriter::new(f)),
                 Err(_) => None,
             }
         } else {
@@ -93,7 +104,7 @@ impl GpuProfiler {
             use std::io::Write;
             let _ = out.write_all(line.as_bytes());
             let _ = out.write_all(b"\n");
-            // Don't flush every line; rely on OS buffering.
+            // Don't flush every line; rely on buffering.
         }
     }
 }
@@ -101,6 +112,12 @@ impl GpuProfiler {
 #[inline]
 fn us(d: Duration) -> u64 {
     d.as_micros() as u64
+}
+
+#[derive(Copy, Clone, Debug)]
+struct DispatchTimingUs {
+    collect_us: u64,
+    merge_us: u64,
 }
 
 fn pack_var(feature: u16) -> u32 {
@@ -657,7 +674,14 @@ impl GpuBatchEvaluator {
         out
     }
 
-    fn eval_mse_batch(&mut self, programs: &[u32], consts: &[f32], p: usize, out_loss: &mut [f32], collect_us: u64) {
+    fn eval_mse_batch(
+        &mut self,
+        programs: &[u32],
+        consts: &[f32],
+        p: usize,
+        out_loss: &mut [f32],
+        timing: DispatchTimingUs,
+    ) {
         assert_eq!(out_loss.len(), p);
 
         let t_total0 = Instant::now();
@@ -704,7 +728,9 @@ impl GpuBatchEvaluator {
         let total_d = t_total0.elapsed();
         if self.profiler.should_log() {
             self.profiler.log_line(&format!(
-                "gpu_profile,kind=mse,p={p},collect_us={collect_us},write_us={},encode_us={},submit_us={},map_wait_us={},total_us={}",
+                "gpu_profile,kind=mse,p={p},collect_us={},merge_us={},write_us={},encode_us={},submit_us={},map_wait_us={},total_us={}",
+                timing.collect_us,
+                timing.merge_us,
                 us(write_d),
                 us(encode_d),
                 us(submit_d),
@@ -722,7 +748,7 @@ impl GpuBatchEvaluator {
         p: usize,
         out_loss: &mut [f32],
         out_grad: &mut [f32], // length p*MAX_CONSTS
-        collect_us: u64,
+        timing: DispatchTimingUs,
     ) {
         assert_eq!(out_loss.len(), p);
         assert_eq!(out_grad.len(), p * MAX_CONSTS);
@@ -775,7 +801,9 @@ impl GpuBatchEvaluator {
         let total_d = t_total0.elapsed();
         if self.profiler.should_log() {
             self.profiler.log_line(&format!(
-                "gpu_profile,kind=mse_grad,p={p},collect_us={collect_us},write_us={},encode_us={},submit_us={},map_wait_us={},total_us={}",
+                "gpu_profile,kind=mse_grad,p={p},collect_us={},merge_us={},write_us={},encode_us={},submit_us={},map_wait_us={},total_us={}",
+                timing.collect_us,
+                timing.merge_us,
                 us(write_d),
                 us(encode_d),
                 us(submit_d),
@@ -796,7 +824,7 @@ impl GpuBatchEvaluator {
         adam: AdamParams,
         out_loss: &mut [f32],
         out_consts: &mut [f32], // length p*MAX_CONSTS
-        collect_us: u64,
+        timing: DispatchTimingUs,
     ) {
         assert_eq!(out_loss.len(), p);
         assert_eq!(out_consts.len(), p * MAX_CONSTS);
@@ -851,8 +879,10 @@ impl GpuBatchEvaluator {
         let total_d = t_total0.elapsed();
         if self.profiler.should_log() {
             self.profiler.log_line(&format!(
-                "gpu_profile,kind=opt_adam,iters={},p={p},collect_us={collect_us},write_us={},encode_us={},submit_us={},map_wait_us={},total_us={}",
+                "gpu_profile,kind=opt_adam,iters={},p={p},collect_us={},merge_us={},write_us={},encode_us={},submit_us={},map_wait_us={},total_us={}",
                 adam.iters,
+                timing.collect_us,
+                timing.merge_us,
                 us(write_d),
                 us(encode_d),
                 us(submit_d),
@@ -982,6 +1012,7 @@ fn gpu_server_loop(mut evaluator: GpuBatchEvaluator, rx: channel::Receiver<Job>)
         let collect_us = us(collect_t0.elapsed());
 
         // Build merged inputs
+        let merge_t0 = Instant::now();
         programs.reserve(total_p * MAX_NODES);
         consts.reserve(total_p * MAX_CONSTS);
 
@@ -991,10 +1022,12 @@ fn gpu_server_loop(mut evaluator: GpuBatchEvaluator, rx: channel::Receiver<Job>)
             programs.extend_from_slice(&j.programs);
             consts.extend_from_slice(&j.consts);
         }
+        let merge_us = us(merge_t0.elapsed());
+        let timing = DispatchTimingUs { collect_us, merge_us };
 
         match kind {
             JobKind::Mse => {
-                evaluator.eval_mse_batch(&programs, &consts, total_p, &mut out_loss[..total_p], collect_us);
+                evaluator.eval_mse_batch(&programs, &consts, total_p, &mut out_loss[..total_p], timing);
 
                 let mut off = 0usize;
                 for j in jobs.drain(..) {
@@ -1011,7 +1044,7 @@ fn gpu_server_loop(mut evaluator: GpuBatchEvaluator, rx: channel::Receiver<Job>)
                     total_p,
                     &mut out_loss[..total_p],
                     &mut out_extra[..(total_p * MAX_CONSTS)],
-                    collect_us,
+                    timing,
                 );
 
                 let mut off = 0usize;
@@ -1038,7 +1071,7 @@ fn gpu_server_loop(mut evaluator: GpuBatchEvaluator, rx: channel::Receiver<Job>)
                     adam,
                     &mut out_loss[..total_p],
                     &mut out_extra[..(total_p * MAX_CONSTS)], // reuse buffer for consts
-                    collect_us,
+                    timing,
                 );
 
                 let mut off = 0usize;
