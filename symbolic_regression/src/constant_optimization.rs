@@ -210,7 +210,7 @@ where
     if n_params == 0 {
         return (false, 0.0);
     }
-    // Fast-path: if a GPU client is available, do a fused Adam optimization entirely on-GPU.
+    // Fast-path: if a GPU client is available, do a fused LM-grid optimization entirely on-GPU.
     // This avoids the disastrous CPU↔GPU round-trip that happens if we use a CPU optimizer that
     // calls into the GPU objective/gradient one evaluation at a time.
     #[cfg(wgpu)]
@@ -221,9 +221,8 @@ where
             if let Some(base) = crate::gpu::pack_expr(&member.expr) {
                 let n_consts = n_params.min(crate::gpu::MAX_CONSTS);
                 let n_restarts = 1 + options.optimizer_nrestarts;
-                let iters = (options.optimizer_iterations as u32).saturating_mul(4).clamp(16, 1024);
-                let params = crate::gpu::AdamParams {
-                    iters,
+                let params = crate::gpu::LmGridParams {
+                    steps: (options.optimizer_iterations as u32).clamp(1, 64),
                     ..Default::default()
                 };
 
@@ -240,7 +239,7 @@ where
                 }
 
                 let mut losses = vec![0.0f32; programs.len()];
-                g.optimize_adam_many(&mut programs, params, &mut losses);
+                g.optimize_lm_grid_many(&mut programs, params, &mut losses);
 
                 let mut best_loss = f32::INFINITY;
                 let mut best_consts = base.consts;
@@ -252,7 +251,8 @@ where
                 }
 
                 let baseline = member.loss.to_f32().unwrap_or(f32::INFINITY);
-                let evals = (params.iters as f64) * (programs.len() as f64);
+                let evals =
+                    (params.steps as f64) * (crate::gpu::LM_EVAL_PASSES_PER_STEP as f64) * (programs.len() as f64);
 
                 if best_loss.is_finite() && best_loss < baseline {
                     for (dst, &src) in member

@@ -14,7 +14,7 @@ use crate::regularized_evolution::{RegEvolCtx, reg_evol_cycle};
 use crate::stop_controller::StopController;
 #[cfg(wgpu)]
 use crate::{
-    gpu::{AdamParams, MAX_CONSTS, pack_expr},
+    gpu::{LM_EVAL_PASSES_PER_STEP, LmGridParams, MAX_CONSTS, pack_expr},
     loss_functions::{LossKind, loss_to_cost},
     pop_member::get_birth_order,
     random::standard_normal,
@@ -115,13 +115,10 @@ where
                 && opt_dataset.data.n_features == g.n_features
         }) {
             // Batched GPU constant optimization:
-            // Optimize many members (and their random restarts) in a single fused Adam kernel call.
+            // Optimize many members (and their random restarts) in a single fused LM-grid kernel call.
             let n_restarts = 1 + ctx.options.optimizer_nrestarts;
-            let iters = (ctx.options.optimizer_iterations as u32)
-                .saturating_mul(4)
-                .clamp(16, 1024);
-            let params = AdamParams {
-                iters,
+            let params = LmGridParams {
+                steps: (ctx.options.optimizer_iterations as u32).clamp(1, 64),
                 ..Default::default()
             };
 
@@ -168,7 +165,7 @@ where
 
             if !packed_programs.is_empty() {
                 let mut losses = vec![0.0f32; packed_programs.len()];
-                gpu.optimize_adam_many(&mut packed_programs, params, &mut losses);
+                gpu.optimize_lm_grid_many(&mut packed_programs, params, &mut losses);
 
                 let mut best_loss: Vec<f32> = vec![f32::INFINITY; pop.members.len()];
                 let mut best_consts: Vec<[f32; MAX_CONSTS]> = vec![[0.0f32; MAX_CONSTS]; pop.members.len()];
@@ -214,7 +211,10 @@ where
                     }
                 }
 
-                num_evals += (params.iters as f64) * (n_restarts as f64) * (selected_members.len() as f64);
+                num_evals += (params.steps as f64)
+                    * (LM_EVAL_PASSES_PER_STEP as f64)
+                    * (n_restarts as f64)
+                    * (selected_members.len() as f64);
             }
 
             // CPU fallback for programs that can't be represented on the GPU.

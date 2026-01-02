@@ -13,6 +13,18 @@ use crate::Dataset;
 pub const MAX_NODES: usize = 32;
 pub const MAX_CONSTS: usize = 8;
 
+/// Number of candidate dampings evaluated per LM step inside the GPU kernel.
+// LM constant optimization kernel work budgeting.
+//
+// The WGSL kernel runs, per LM outer step:
+//   1x full pass computing SSE + (JᵀWr) + (JᵀWJ)   (value+grad)
+//   up to LM_MAX_TRIES trial SSE passes            (value-only)
+//
+// This is the *worst-case* budgeting used for progress/`evals` accounting.
+// Keep LM_MAX_TRIES in sync with `LM_MAX_TRIES` in `kernels.wgsl`.
+pub const LM_MAX_TRIES: usize = 2;
+pub const LM_EVAL_PASSES_PER_STEP: usize = 1 + LM_MAX_TRIES;
+
 const KERNELS_WGSL: &str = include_str!("kernels.wgsl");
 
 const KIND_VAR: u32 = 0;
@@ -245,51 +257,50 @@ impl core::fmt::Display for GpuInitError {
 
 impl std::error::Error for GpuInitError {}
 
-/// Parameters for the fused constant optimizer (Adam) in `kernels.wgsl`.
+/// Parameters for the fused constant optimizer (LM grid) in `kernels.wgsl`.
+///
+/// This is designed to be GPU-friendly:
+///  - Each LM step computes (SSE, J, JᵀWJ) once, then evaluates a small grid of damped Gauss–Newton steps in parallel
+///    inside the same dispatch.
+///  - That eliminates the “sequential optimizer loop on CPU” bottleneck and avoids thousands of tiny GPU round-trips.
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub struct AdamParams {
-    pub iters: u32,
-    pub lr: f32,
-    pub beta1: f32,
-    pub beta2: f32,
-    pub eps: f32,
+pub struct LmGridParams {
+    /// Number of LM outer steps per program.
+    pub steps: u32,
+    /// lambda_base = max(lambda_floor, lambda_scale * mean(diag(Jᵀ W J))).
+    pub lambda_scale: f32,
+    /// Minimum damping value for stability (prevents singular matrices).
+    pub lambda_floor: f32,
+    /// Clamp per-parameter step Δc to [-step_clip, +step_clip]. Use 0.0 to disable.
     pub step_clip: f32,
 }
 
-impl Default for AdamParams {
+impl Default for LmGridParams {
     fn default() -> Self {
         Self {
-            iters: 64,
-            lr: 0.05,
-            beta1: 0.9,
-            beta2: 0.999,
-            eps: 1e-8,
-            step_clip: 0.25,
+            // Keep this modest; each step already evaluates a grid of candidates.
+            steps: 6,
+            lambda_scale: 1e-2,
+            lambda_floor: 1e-6,
+            step_clip: 1.0,
         }
     }
 }
-
-const GPU_ADAM_EARLY_STOP_MIN_ITERS: u32 = 16;
-const GPU_ADAM_EARLY_STOP_PATIENCE: u32 = 8;
-const GPU_ADAM_EARLY_STOP_REL_TOL: f32 = 1e-6;
-const GPU_ADAM_EARLY_STOP_GRAD_TOL: f32 = 1e-4;
 
 #[repr(C, align(16))]
 #[derive(Copy, Clone, Pod, Zeroable)]
 struct Params {
     // u.x = n_rows
-    // u.y = n_features
-    // u.z = opt_iters
+    // u.y = n_features (currently unused; dataset is column-major in X)
+    // u.z = opt_steps (LM outer steps)
     // u.w = reserved
     u: [u32; 4],
     // f0.x = sum_w
-    // f0.y = opt_lr
-    // f0.z = opt_beta1
-    // f0.w = opt_beta2
+    // f0.y = lm_lambda_scale
+    // f0.z = lm_lambda_floor
+    // f0.w = lm_step_clip
     f0: [f32; 4],
-    // f1.x = opt_eps
-    // f1.y = opt_step_clip
-    // f1.zw reserved
+    // f1 reserved
     f1: [f32; 4],
 }
 
@@ -301,7 +312,7 @@ struct GpuBatchEvaluator {
 
     pipeline_mse: wgpu::ComputePipeline,
     pipeline_mse_grad: wgpu::ComputePipeline,
-    pipeline_opt_adam: wgpu::ComputePipeline,
+    pipeline_opt_lm_grid: wgpu::ComputePipeline,
     bind_group: wgpu::BindGroup,
 
     // Inputs
@@ -615,11 +626,11 @@ impl GpuBatchEvaluator {
             cache: None,
         });
 
-        let pipeline_opt_adam = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("gpu_eval_opt_adam_pipeline"),
+        let pipeline_opt_lm_grid = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("gpu_eval_opt_lm_grid_pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader,
-            entry_point: Some("optimize_adam"),
+            entry_point: Some("optimize_lm_grid"),
             compilation_options: Default::default(),
             cache: None,
         });
@@ -630,7 +641,7 @@ impl GpuBatchEvaluator {
             profiler: GpuProfiler::new(),
             pipeline_mse,
             pipeline_mse_grad,
-            pipeline_opt_adam,
+            pipeline_opt_lm_grid,
             bind_group,
             programs_buf,
             consts_buf,
@@ -823,12 +834,12 @@ impl GpuBatchEvaluator {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn optimize_adam_batch(
+    fn optimize_lm_grid_batch(
         &mut self,
         programs: &[u32],
         consts: &[f32],
         p: usize,
-        adam: AdamParams,
+        lm: LmGridParams,
         out_loss: &mut [f32],
         out_consts: &mut [f32], // length p*MAX_CONSTS
         timing: DispatchTimingUs,
@@ -840,31 +851,31 @@ impl GpuBatchEvaluator {
         let t0 = Instant::now();
         self.write_inputs(programs, consts, p);
 
-        self.params.u[2] = adam.iters;
-        let min_iters = GPU_ADAM_EARLY_STOP_MIN_ITERS.min(adam.iters).max(1);
-        let patience = GPU_ADAM_EARLY_STOP_PATIENCE.min(0xFFFF);
-        self.params.u[3] = (min_iters & 0xFFFF) | (patience << 16);
-        self.params.f0[1] = adam.lr;
-        self.params.f0[2] = adam.beta1;
-        self.params.f0[3] = adam.beta2;
-        self.params.f1[0] = adam.eps;
-        self.params.f1[1] = adam.step_clip;
-        self.params.f1[2] = GPU_ADAM_EARLY_STOP_REL_TOL;
-        self.params.f1[3] = GPU_ADAM_EARLY_STOP_GRAD_TOL;
+        // LM grid params (see `Params` layout in WGSL).
+        self.params.u[2] = lm.steps;
+        self.params.u[3] = 0;
+
+        self.params.f0[1] = lm.lambda_scale;
+        self.params.f0[2] = lm.lambda_floor;
+        self.params.f0[3] = lm.step_clip;
+
+        // f1 is currently unused by LM.
+        self.params.f1 = [0.0; 4];
+
         self.write_params_base();
         let write_d = t0.elapsed();
 
         let t1 = Instant::now();
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("gpu_eval_encoder_opt_adam"),
+            label: Some("gpu_eval_encoder_opt_lm_grid"),
         });
 
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("gpu_eval_pass_opt_adam"),
+                label: Some("gpu_eval_pass_opt_lm_grid"),
                 timestamp_writes: None,
             });
-            pass.set_pipeline(&self.pipeline_opt_adam);
+            pass.set_pipeline(&self.pipeline_opt_lm_grid);
             pass.set_bind_group(0, &self.bind_group, &[]);
             pass.dispatch_workgroups(p as u32, 1, 1);
         }
@@ -889,8 +900,8 @@ impl GpuBatchEvaluator {
         let total_d = t_total0.elapsed();
         if self.profiler.should_log() {
             self.profiler.log_line(&format!(
-                "gpu_profile,kind=opt_adam,iters={},p={p},collect_us={},merge_us={},write_us={},encode_us={},submit_us={},map_wait_us={},total_us={}",
-                adam.iters,
+                "gpu_profile,kind=opt_lm_grid,steps={},p={p},collect_us={},merge_us={},write_us={},encode_us={},submit_us={},map_wait_us={},total_us={}",
+                lm.steps,
                 timing.collect_us,
                 timing.merge_us,
                 us(write_d),
@@ -909,13 +920,13 @@ impl GpuBatchEvaluator {
 enum JobKind {
     Mse,
     MseGrad,
-    OptimizeAdam(AdamParams),
+    OptimizeLmGrid(LmGridParams),
 }
 
 enum JobResult {
     Mse(Vec<f32>),
     MseGrad { loss: Vec<f32>, grad: Vec<f32> },
-    OptimizeAdam { loss: Vec<f32>, consts: Vec<f32> },
+    OptimizeLmGrid { loss: Vec<f32>, consts: Vec<f32> },
 }
 
 struct Job {
@@ -1073,12 +1084,12 @@ fn gpu_server_loop(mut evaluator: GpuBatchEvaluator, rx: channel::Receiver<Job>)
                     });
                 }
             }
-            JobKind::OptimizeAdam(adam) => {
-                evaluator.optimize_adam_batch(
+            JobKind::OptimizeLmGrid(lm) => {
+                evaluator.optimize_lm_grid_batch(
                     &programs,
                     &consts,
                     total_p,
-                    adam,
+                    lm,
                     &mut out_loss[..total_p],
                     &mut out_extra[..(total_p * MAX_CONSTS)], // reuse buffer for consts
                     timing,
@@ -1094,7 +1105,7 @@ fn gpu_server_loop(mut evaluator: GpuBatchEvaluator, rx: channel::Receiver<Job>)
                     part_consts.copy_from_slice(&out_extra[c0..c0 + j.p * MAX_CONSTS]);
 
                     off += j.p;
-                    let _ = j.resp.send(JobResult::OptimizeAdam {
+                    let _ = j.resp.send(JobResult::OptimizeLmGrid {
                         loss: part_loss,
                         consts: part_consts,
                     });
@@ -1250,11 +1261,13 @@ impl GpuClient {
         }
     }
 
-    /// Run the fused Adam optimizer on many programs in one or more GPU batches.
+    /// Run the fused LM-grid constant optimizer on many programs in one or more GPU batches.
+    ///
+    /// This is the GPU-friendly replacement for the old Adam path.
     ///
     /// - Input: `programs` slice contains initial constants.
     /// - Output: constants are updated in-place inside `programs`, and losses are written to `out_loss`.
-    pub fn optimize_adam_many(&self, programs: &mut [PackedProgram], adam: AdamParams, out_loss: &mut [f32]) {
+    pub fn optimize_lm_grid_many(&self, programs: &mut [PackedProgram], lm: LmGridParams, out_loss: &mut [f32]) {
         assert_eq!(programs.len(), out_loss.len());
 
         for (chunk_idx, chunk) in programs.chunks_mut(self.p_max).enumerate() {
@@ -1269,7 +1282,7 @@ impl GpuClient {
 
             let (tx, rx) = channel::bounded(1);
             let job = Job {
-                kind: JobKind::OptimizeAdam(adam),
+                kind: JobKind::OptimizeLmGrid(lm),
                 p: chunk.len(),
                 programs: prog_u32,
                 consts: const_f32,
@@ -1284,7 +1297,7 @@ impl GpuClient {
             }
 
             match rx.recv() {
-                Ok(JobResult::OptimizeAdam { loss, consts }) => {
+                Ok(JobResult::OptimizeLmGrid { loss, consts }) => {
                     out_chunk.copy_from_slice(&loss);
                     // write consts back into chunk programs
                     for (i, p) in chunk.iter_mut().enumerate() {
