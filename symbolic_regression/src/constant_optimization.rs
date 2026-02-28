@@ -6,8 +6,11 @@ use fastrand::Rng;
 use num_traits::{Float, FromPrimitive, ToPrimitive};
 
 use crate::dataset::{Dataset, TaggedDataset};
-use crate::optim::{BackTracking, Objective, OptimOptions, bfgs_minimize, newton_1d_minimize};
-use crate::options::Options;
+use crate::optim::{
+    BackTracking, NelderMeadOptions, Objective, OptimOptions, bfgs_minimize, nelder_mead_minimize,
+    newton_1d_minimize,
+};
+use crate::options::{OptimizerMethod, Options};
 use crate::pop_member::{Evaluator, PopMember, get_birth_order};
 use crate::random::standard_normal;
 
@@ -143,16 +146,24 @@ impl<'a, T: Float + AddAssign, const D: usize> EvalWorkspace<'a, T, D> {
         T: FromPrimitive,
         Ops: OperatorSet<T = T>,
     {
+        let method = self.options.optimizer_method;
         let mut obj = ConstObjective {
             plan: &member.plan,
             expr: &mut member.expr,
             workspace: self,
         };
 
-        if n_params == 1 {
-            newton_1d_minimize(start[0], &mut obj, optim_opts, ls)
-        } else {
-            bfgs_minimize(start, &mut obj, optim_opts, ls)
+        match method {
+            OptimizerMethod::Bfgs => {
+                if n_params == 1 {
+                    newton_1d_minimize(start[0], &mut obj, optim_opts, ls)
+                } else {
+                    bfgs_minimize(start, &mut obj, optim_opts, ls)
+                }
+            }
+            OptimizerMethod::NelderMead => {
+                nelder_mead_minimize(start, &mut obj, optim_opts, NelderMeadOptions::default())
+            }
         }
     }
 }

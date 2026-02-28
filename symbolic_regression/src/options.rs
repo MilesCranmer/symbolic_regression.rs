@@ -90,6 +90,8 @@ macro_rules! sr_options_spec {
                     (usize, 8, "optimizer-iterations"),
                 optimizer_f_calls_limit:
                     (usize, 10_000, "optimizer-f-calls-limit"),
+                optimizer_method:
+                    (OptimizerMethod, OptimizerMethod::Bfgs, "optimizer-method"),
                 fraction_replaced:
                     (f64, 0.00036, "fraction-replaced"),
                 fraction_replaced_hof:
@@ -154,6 +156,17 @@ macro_rules! __define_mutation_weights {
 }
 
 sr_mutation_weights_spec!(__define_mutation_weights);
+
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "kebab-case"))]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
+pub enum OptimizerMethod {
+    /// Quasi-Newton optimizer using gradients (BFGS; with a Newton 1D special-case).
+    #[default]
+    Bfgs,
+    /// Derivative-free simplex search (Nelder–Mead).
+    NelderMead,
+}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
 pub enum OutputStyle {

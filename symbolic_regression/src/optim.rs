@@ -455,6 +455,219 @@ pub(crate) fn newton_1d_minimize(
     })
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct NelderMeadOptions {
+    /// Relative simplex step scale: each coordinate i gets an initial step of
+    /// `max(abs(x0[i]), 1.0) * initial_step_scale` (clamped to `initial_step_min`).
+    pub initial_step_scale: f64,
+    pub initial_step_min: f64,
+
+    /// Reflection coefficient.
+    pub alpha: f64,
+    /// Expansion coefficient.
+    pub gamma: f64,
+    /// Contraction coefficient.
+    pub rho: f64,
+    /// Shrink coefficient.
+    pub sigma: f64,
+
+    /// Simple convergence heuristic based on simplex diameter.
+    pub x_tol: f64,
+    /// Simple convergence heuristic based on function value range.
+    pub f_tol: f64,
+}
+
+impl Default for NelderMeadOptions {
+    fn default() -> Self {
+        Self {
+            initial_step_scale: 0.05,
+            initial_step_min: 1e-2,
+            alpha: 1.0,
+            gamma: 2.0,
+            rho: 0.5,
+            sigma: 0.5,
+            x_tol: 1e-10,
+            f_tol: 1e-12,
+        }
+    }
+}
+
+pub(crate) fn nelder_mead_minimize(
+    x0: &[f64],
+    obj: &mut impl Objective,
+    opts: OptimOptions,
+    nm: NelderMeadOptions,
+) -> Option<OptimResult> {
+    let n = x0.len();
+    if n == 0 {
+        return None;
+    }
+
+    let mut budget = EvalBudget::default();
+
+    let mut eval = |x: &[f64], budget: &mut EvalBudget| -> f64 {
+        if opts.f_calls_limit != 0 && budget.f_calls >= opts.f_calls_limit {
+            return f64::INFINITY;
+        }
+        obj.f_only(x, budget).unwrap_or(f64::INFINITY)
+    };
+
+    // Initialize simplex.
+    let mut simplex: Vec<Vec<f64>> = Vec::with_capacity(n + 1);
+    simplex.push(x0.to_vec());
+    for i in 0..n {
+        let mut x = x0.to_vec();
+        let step = (x0[i].abs().max(1.0) * nm.initial_step_scale).max(nm.initial_step_min);
+        x[i] += step;
+        simplex.push(x);
+    }
+
+    let mut values: Vec<f64> = simplex.iter().map(|x| eval(x, &mut budget)).collect();
+
+    // Ensure we have at least one finite point.
+    if values.iter().all(|v| !v.is_finite()) {
+        return None;
+    }
+
+    let mut centroid = vec![0.0; n];
+    let mut xr = vec![0.0; n];
+    let mut xe = vec![0.0; n];
+    let mut xc = vec![0.0; n];
+
+    for _ in 0..opts.iterations {
+        if opts.f_calls_limit != 0 && budget.f_calls >= opts.f_calls_limit {
+            break;
+        }
+
+        // Sort simplex by objective value.
+        let mut order: Vec<usize> = (0..(n + 1)).collect();
+        order.sort_by(|&a, &b| values[a].total_cmp(&values[b]));
+
+        // Reorder simplex + values in-place using a copy.
+        let simplex_old = simplex.clone();
+        let values_old = values.clone();
+        for (k, &idx) in order.iter().enumerate() {
+            simplex[k] = simplex_old[idx].clone();
+            values[k] = values_old[idx];
+        }
+
+        let f_best = values[0];
+        let f_worst = values[n];
+        if !f_best.is_finite() {
+            return None;
+        }
+
+        // Convergence heuristic: small simplex + small function range.
+        let mut diam: f64 = 0.0;
+        for v in &simplex[1..] {
+            for (&a, &b) in v.iter().zip_eq(simplex[0].iter()) {
+                diam = diam.max((a - b).abs());
+            }
+        }
+        let f_span = (f_worst - f_best).abs();
+        if diam <= nm.x_tol && f_span <= nm.f_tol {
+            break;
+        }
+
+        // Centroid of best n points (exclude worst).
+        centroid.fill(0.0);
+        for i in 0..n {
+            for (c, &xi) in centroid.iter_mut().zip_eq(simplex[i].iter()) {
+                *c += xi;
+            }
+        }
+        for c in &mut centroid {
+            *c /= n as f64;
+        }
+
+        // Reflection.
+        let x_worst = &simplex[n];
+        for ((o, &c), &xw) in xr.iter_mut().zip_eq(&centroid).zip_eq(x_worst) {
+            *o = c + nm.alpha * (c - xw);
+        }
+        let fr = eval(&xr, &mut budget);
+
+        let f_second_worst = values[n - 1];
+
+        if fr < f_best {
+            // Expansion.
+            for ((o, &c), &r) in xe.iter_mut().zip_eq(&centroid).zip_eq(&xr) {
+                *o = c + nm.gamma * (r - c);
+            }
+            let fe = eval(&xe, &mut budget);
+            if fe < fr {
+                simplex[n].clone_from(&xe);
+                values[n] = fe;
+            } else {
+                simplex[n].clone_from(&xr);
+                values[n] = fr;
+            }
+            continue;
+        }
+
+        if fr < f_second_worst {
+            // Accept reflection.
+            simplex[n].clone_from(&xr);
+            values[n] = fr;
+            continue;
+        }
+
+        // Contraction.
+        let do_outside = fr < f_worst;
+        if do_outside {
+            for ((o, &c), &r) in xc.iter_mut().zip_eq(&centroid).zip_eq(&xr) {
+                *o = c + nm.rho * (r - c);
+            }
+        } else {
+            for ((o, &c), &xw) in xc.iter_mut().zip_eq(&centroid).zip_eq(x_worst.iter()) {
+                *o = c - nm.rho * (c - xw);
+            }
+        }
+        let fc = eval(&xc, &mut budget);
+
+        let accept_contraction = if do_outside { fc <= fr } else { fc < f_worst };
+        if accept_contraction {
+            simplex[n].clone_from(&xc);
+            values[n] = fc;
+            continue;
+        }
+
+        // Shrink towards best.
+        let x_best = simplex[0].clone();
+        for i in 1..=n {
+            let xi0 = simplex[i].clone();
+            for (dst, (&xb, &xi)) in simplex[i].iter_mut().zip_eq(x_best.iter().zip(xi0.iter())) {
+                *dst = xb + nm.sigma * (xi - xb);
+            }
+            values[i] = eval(&simplex[i], &mut budget);
+        }
+
+        // If everything became invalid, bail.
+        if values.iter().all(|v| !v.is_finite()) {
+            return None;
+        }
+    }
+
+    // Return best point found.
+    let mut best_idx = 0usize;
+    for i in 1..values.len() {
+        if values[i] < values[best_idx] {
+            best_idx = i;
+        }
+    }
+
+    let best_f = values[best_idx];
+    if !best_f.is_finite() {
+        return None;
+    }
+
+    Some(OptimResult {
+        minimizer: simplex[best_idx].clone(),
+        minimum: best_f,
+        f_calls: budget.f_calls,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -538,6 +751,20 @@ mod tests {
         let res = bfgs_minimize(&[0.0, 0.0], &mut obj, opts, ls).unwrap();
         assert!((res.minimizer[0] - 1.0).abs() < 1e-6);
         assert!((res.minimizer[1] + 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn nelder_mead_minimizes_simple_quadratic() {
+        let opts = OptimOptions {
+            iterations: 200,
+            f_calls_limit: 0,
+            g_abstol: 0.0,
+        };
+        let nm = NelderMeadOptions::default();
+        let mut obj = Quad2D;
+        let res = nelder_mead_minimize(&[0.0, 0.0], &mut obj, opts, nm).unwrap();
+        assert!((res.minimizer[0] - 1.0).abs() < 1e-4);
+        assert!((res.minimizer[1] + 2.0).abs() < 1e-4);
     }
 
     #[test]
