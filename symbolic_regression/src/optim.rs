@@ -669,8 +669,9 @@ pub(crate) fn nelder_mead_minimize(
             values[i] = eval(&simplex[i], &mut budget);
         }
 
-        // If everything became invalid, bail.
-        if values.iter().all(|v| !v.is_finite()) {
+        // If every *non-best* vertex became invalid, bail.
+        // (`values[0]` is the best vertex and isn't re-evaluated during shrink.)
+        if values[1..].iter().all(|v| !v.is_finite()) {
             return None;
         }
     }
@@ -792,6 +793,180 @@ mod tests {
         let res = nelder_mead_minimize(&[0.0, 0.0], &mut obj, opts, nm).unwrap();
         assert!((res.minimizer[0] - 1.0).abs() < 1e-4);
         assert!((res.minimizer[1] + 2.0).abs() < 1e-4);
+    }
+
+    struct CounterObj {
+        pub f: fn(&[f64], usize) -> f64,
+        pub calls: usize,
+    }
+
+    impl Objective for CounterObj {
+        fn f_only(&mut self, x: &[f64], budget: &mut EvalBudget) -> Option<f64> {
+            budget.f_calls += 1;
+            self.calls += 1;
+            Some((self.f)(x, self.calls))
+        }
+
+        fn fg(&mut self, _x: &[f64], _g_out: &mut [f64], budget: &mut EvalBudget) -> Option<f64> {
+            budget.f_calls += 1;
+            self.calls += 1;
+            None
+        }
+    }
+
+    #[test]
+    fn nelder_mead_empty_input_returns_none() {
+        let opts = OptimOptions {
+            iterations: 1,
+            f_calls_limit: 0,
+            g_abstol: 0.0,
+        };
+        let nm = NelderMeadOptions::default();
+        let mut obj = CounterObj {
+            f: |_, _| 0.0,
+            calls: 0,
+        };
+        assert!(nelder_mead_minimize(&[], &mut obj, opts, nm).is_none());
+    }
+
+    #[test]
+    fn nelder_mead_eval_budget_returns_infinity_for_extra_simplex_vertex() {
+        // With n=1, we evaluate 2 simplex vertices. If f_calls_limit=1, the second
+        // eval hits the budget guard and returns +Inf.
+        let opts = OptimOptions {
+            iterations: 0,
+            f_calls_limit: 1,
+            g_abstol: 0.0,
+        };
+        let nm = NelderMeadOptions::default();
+        let mut obj = CounterObj {
+            f: |_, _| 0.0,
+            calls: 0,
+        };
+        let res = nelder_mead_minimize(&[0.0], &mut obj, opts, nm).unwrap();
+        assert!(res.minimum.is_finite());
+    }
+
+    #[test]
+    fn nelder_mead_selects_best_simplex_vertex_at_end() {
+        // Cover the `best_idx = i` update in the final best-point selection.
+        let opts = OptimOptions {
+            iterations: 0,
+            f_calls_limit: 0,
+            g_abstol: 0.0,
+        };
+        let nm = NelderMeadOptions::default();
+        let mut obj = CounterObj {
+            f: |x, _| if x[0] == 0.0 { 1.0 } else { 0.0 },
+            calls: 0,
+        };
+        let res = nelder_mead_minimize(&[0.0], &mut obj, opts, nm).unwrap();
+        assert_eq!(res.minimum, 0.0);
+    }
+
+    #[test]
+    fn nelder_mead_returns_none_when_all_initial_values_nonfinite() {
+        let opts = OptimOptions {
+            iterations: 1,
+            f_calls_limit: 0,
+            g_abstol: 0.0,
+        };
+        let nm = NelderMeadOptions::default();
+        let mut obj = CounterObj {
+            f: |_, _| f64::NAN,
+            calls: 0,
+        };
+        assert!(nelder_mead_minimize(&[0.0, 0.0], &mut obj, opts, nm).is_none());
+    }
+
+    #[test]
+    fn nelder_mead_returns_none_when_best_vertex_value_is_nonfinite() {
+        // Ensure at least one finite point so we don't hit the early all-nonfinite check.
+        let opts = OptimOptions {
+            iterations: 1,
+            f_calls_limit: 0,
+            g_abstol: 0.0,
+        };
+        let nm = NelderMeadOptions::default();
+        let mut obj = CounterObj {
+            f: |x, _| if x[0] == 0.0 { f64::NEG_INFINITY } else { 0.0 },
+            calls: 0,
+        };
+        assert!(nelder_mead_minimize(&[0.0], &mut obj, opts, nm).is_none());
+    }
+
+    #[test]
+    fn nelder_mead_breaks_immediately_when_eval_budget_exhausted() {
+        // After initializing the simplex for n=1, we have already spent 2 f-calls.
+        // Set the limit to 2, and ensure the loop breaks on its budget guard.
+        let opts = OptimOptions {
+            iterations: 10,
+            f_calls_limit: 2,
+            g_abstol: 0.0,
+        };
+        let nm = NelderMeadOptions::default();
+        let mut obj = CounterObj {
+            f: |_, _| 0.0,
+            calls: 0,
+        };
+        let res = nelder_mead_minimize(&[0.0], &mut obj, opts, nm).unwrap();
+        assert!(res.minimum.is_finite());
+    }
+
+    #[test]
+    fn nelder_mead_returns_none_when_best_value_is_nonfinite_at_end() {
+        // Skip iterations so we don't hit the in-loop `f_best` finite check.
+        // Make the initial x0 evaluate to NaN but another vertex finite.
+        let opts = OptimOptions {
+            iterations: 0,
+            f_calls_limit: 0,
+            g_abstol: 0.0,
+        };
+        let nm = NelderMeadOptions::default();
+        let mut obj = CounterObj {
+            f: |x, _| if x.iter().all(|&v| v == 0.0) { f64::NAN } else { 0.0 },
+            calls: 0,
+        };
+        assert!(nelder_mead_minimize(&[0.0, 0.0], &mut obj, opts, nm).is_none());
+    }
+
+    #[test]
+    fn nelder_mead_shrink_bails_when_all_nonbest_vertices_become_invalid() {
+        // Force a shrink step in the first iteration, then make the shrink-evaluations NaN.
+        // This covers the shrink invalid-vertex bail-out branch.
+        let opts = OptimOptions {
+            iterations: 1,
+            f_calls_limit: 0,
+            g_abstol: 0.0,
+        };
+        let nm = NelderMeadOptions::default();
+        let mut obj = CounterObj {
+            f: |x, call| {
+                // After: 3 initial simplex evals + reflection + contraction = 5 calls.
+                // The two shrink evals are calls 6 and 7.
+                if call >= 6 {
+                    return f64::NAN;
+                }
+                if x[0].abs() < 1e-12 && x[1].abs() < 1e-12 {
+                    return 0.0;
+                }
+                // Break tie so worst is the x-axis vertex.
+                if x[0] > 0.0 && x[1].abs() < 1e-12 {
+                    return 2.0;
+                }
+                if x[0].abs() < 1e-12 && x[1] > 0.0 {
+                    return 1.0;
+                }
+                // Reflection is in quadrant II.
+                if x[0] < 0.0 && x[1] > 0.0 {
+                    return 3.0;
+                }
+                // Contraction (anything else here).
+                4.0
+            },
+            calls: 0,
+        };
+        assert!(nelder_mead_minimize(&[0.0, 0.0], &mut obj, opts, nm).is_none());
     }
 
     #[test]
