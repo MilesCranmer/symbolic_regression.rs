@@ -6,9 +6,9 @@ use ndarray::{Array1, Array2};
 use super::common::{D, T, TestOps};
 use crate::Options;
 use crate::constant_optimization::{OptimizeConstantsCtx, optimize_constants};
-use crate::options::OptimizerMethod;
 use crate::dataset::TaggedDataset;
 use crate::operator_library::OperatorLibrary;
+use crate::options::OptimizerMethod;
 use crate::pop_member::{Evaluator, PopMember, reset_pseudo_time_for_tests};
 
 fn var(feature: u16) -> PostfixExpr<T, TestOps, D> {

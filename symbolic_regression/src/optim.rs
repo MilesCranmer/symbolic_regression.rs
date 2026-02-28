@@ -455,39 +455,53 @@ pub(crate) fn newton_1d_minimize(
     })
 }
 
+/// Match `Optim.NelderMead()` defaults: Gao & Han (2010) adaptive parameters.
+///
+/// In Optim.jl source, this is:
+/// α = 1
+/// β = 1 + 2/n
+/// γ = 0.75 - 1/(2n)
+/// δ = 1 - 1/n
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct NelderMeadParameters {
+    pub alpha: f64,
+    pub beta: f64,
+    pub gamma: f64,
+    pub delta: f64,
+}
+
+impl NelderMeadParameters {
+    fn coefficients(self, n: usize) -> (f64, f64, f64, f64) {
+        let n_f = n as f64;
+        let beta = self.beta + 2.0 / n_f;
+        let gamma = self.gamma - 1.0 / (2.0 * n_f);
+        let delta = self.delta - 1.0 / n_f;
+        (self.alpha, beta, gamma, delta)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum NelderMeadInitialSimplex {
+    /// Match `Optim.AffineSimplexer(a=0.025, b=0.5)`.
+    Affine { a: f64, b: f64 },
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct NelderMeadOptions {
-    /// Relative simplex step scale: each coordinate i gets an initial step of
-    /// `max(abs(x0[i]), 1.0) * initial_step_scale` (clamped to `initial_step_min`).
-    pub initial_step_scale: f64,
-    pub initial_step_min: f64,
-
-    /// Reflection coefficient.
-    pub alpha: f64,
-    /// Expansion coefficient.
-    pub gamma: f64,
-    /// Contraction coefficient.
-    pub rho: f64,
-    /// Shrink coefficient.
-    pub sigma: f64,
-
-    /// Simple convergence heuristic based on simplex diameter.
-    pub x_tol: f64,
-    /// Simple convergence heuristic based on function value range.
-    pub f_tol: f64,
+    pub initial_simplex: NelderMeadInitialSimplex,
+    pub parameters: NelderMeadParameters,
 }
 
 impl Default for NelderMeadOptions {
     fn default() -> Self {
         Self {
-            initial_step_scale: 0.05,
-            initial_step_min: 1e-2,
-            alpha: 1.0,
-            gamma: 2.0,
-            rho: 0.5,
-            sigma: 0.5,
-            x_tol: 1e-10,
-            f_tol: 1e-12,
+            initial_simplex: NelderMeadInitialSimplex::Affine { a: 0.025, b: 0.5 },
+            parameters: NelderMeadParameters {
+                alpha: 1.0,
+                beta: 1.0,
+                gamma: 0.75,
+                delta: 1.0,
+            },
         }
     }
 }
@@ -512,14 +526,18 @@ pub(crate) fn nelder_mead_minimize(
         obj.f_only(x, budget).unwrap_or(f64::INFINITY)
     };
 
-    // Initialize simplex.
+    // Initialize simplex (match Optim.jl default `AffineSimplexer(a=0.025, b=0.5)`).
     let mut simplex: Vec<Vec<f64>> = Vec::with_capacity(n + 1);
     simplex.push(x0.to_vec());
-    for i in 0..n {
-        let mut x = x0.to_vec();
-        let step = (x0[i].abs().max(1.0) * nm.initial_step_scale).max(nm.initial_step_min);
-        x[i] += step;
-        simplex.push(x);
+
+    match nm.initial_simplex {
+        NelderMeadInitialSimplex::Affine { a, b } => {
+            for i in 0..n {
+                let mut x = x0.to_vec();
+                x[i] = (1.0 + b) * x[i] + a;
+                simplex.push(x);
+            }
+        }
     }
 
     let mut values: Vec<f64> = simplex.iter().map(|x| eval(x, &mut budget)).collect();
@@ -533,6 +551,8 @@ pub(crate) fn nelder_mead_minimize(
     let mut xr = vec![0.0; n];
     let mut xe = vec![0.0; n];
     let mut xc = vec![0.0; n];
+
+    let (alpha, beta, gamma, delta) = nm.parameters.coefficients(n);
 
     for _ in 0..opts.iterations {
         if opts.f_calls_limit != 0 && budget.f_calls >= opts.f_calls_limit {
@@ -552,22 +572,29 @@ pub(crate) fn nelder_mead_minimize(
         }
 
         let f_best = values[0];
-        let f_worst = values[n];
         if !f_best.is_finite() {
             return None;
         }
 
-        // Convergence heuristic: small simplex + small function range.
-        let mut diam: f64 = 0.0;
-        for v in &simplex[1..] {
-            for (&a, &b) in v.iter().zip_eq(simplex[0].iter()) {
-                diam = diam.max((a - b).abs());
+        // Match Optim.jl stopping statistic ("nmobjective"): standard error of vertex values.
+        if opts.g_abstol > 0.0 {
+            let m = (n + 1) as f64;
+            let mean = values.iter().copied().sum::<f64>() / m;
+            let ss = values
+                .iter()
+                .map(|&v| {
+                    let d = v - mean;
+                    d * d
+                })
+                .sum::<f64>();
+            let var = if n + 1 > 1 { ss / ((n + 1 - 1) as f64) } else { 0.0 };
+            let nmobjective = (var * (m / (n as f64))).sqrt();
+            if nmobjective <= opts.g_abstol {
+                break;
             }
         }
-        let f_span = (f_worst - f_best).abs();
-        if diam <= nm.x_tol && f_span <= nm.f_tol {
-            break;
-        }
+
+        let f_worst = values[n];
 
         // Centroid of best n points (exclude worst).
         centroid.fill(0.0);
@@ -583,7 +610,7 @@ pub(crate) fn nelder_mead_minimize(
         // Reflection.
         let x_worst = &simplex[n];
         for ((o, &c), &xw) in xr.iter_mut().zip_eq(&centroid).zip_eq(x_worst) {
-            *o = c + nm.alpha * (c - xw);
+            *o = c + alpha * (c - xw);
         }
         let fr = eval(&xr, &mut budget);
 
@@ -592,7 +619,7 @@ pub(crate) fn nelder_mead_minimize(
         if fr < f_best {
             // Expansion.
             for ((o, &c), &r) in xe.iter_mut().zip_eq(&centroid).zip_eq(&xr) {
-                *o = c + nm.gamma * (r - c);
+                *o = c + beta * (r - c);
             }
             let fe = eval(&xe, &mut budget);
             if fe < fr {
@@ -616,11 +643,11 @@ pub(crate) fn nelder_mead_minimize(
         let do_outside = fr < f_worst;
         if do_outside {
             for ((o, &c), &r) in xc.iter_mut().zip_eq(&centroid).zip_eq(&xr) {
-                *o = c + nm.rho * (r - c);
+                *o = c + gamma * (r - c);
             }
         } else {
             for ((o, &c), &xw) in xc.iter_mut().zip_eq(&centroid).zip_eq(x_worst.iter()) {
-                *o = c - nm.rho * (c - xw);
+                *o = c - gamma * (c - xw);
             }
         }
         let fc = eval(&xc, &mut budget);
@@ -637,7 +664,7 @@ pub(crate) fn nelder_mead_minimize(
         for i in 1..=n {
             let xi0 = simplex[i].clone();
             for (dst, (&xb, &xi)) in simplex[i].iter_mut().zip_eq(x_best.iter().zip(xi0.iter())) {
-                *dst = xb + nm.sigma * (xi - xb);
+                *dst = xb + delta * (xi - xb);
             }
             values[i] = eval(&simplex[i], &mut budget);
         }

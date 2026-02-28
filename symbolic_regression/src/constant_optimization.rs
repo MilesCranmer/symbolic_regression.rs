@@ -7,8 +7,7 @@ use num_traits::{Float, FromPrimitive, ToPrimitive};
 
 use crate::dataset::{Dataset, TaggedDataset};
 use crate::optim::{
-    BackTracking, NelderMeadOptions, Objective, OptimOptions, bfgs_minimize, nelder_mead_minimize,
-    newton_1d_minimize,
+    BackTracking, NelderMeadOptions, Objective, OptimOptions, bfgs_minimize, nelder_mead_minimize, newton_1d_minimize,
 };
 use crate::options::{OptimizerMethod, Options};
 use crate::pop_member::{Evaluator, PopMember, get_birth_order};
