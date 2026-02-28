@@ -571,8 +571,8 @@ pub(crate) fn nelder_mead_minimize(
 
         // Centroid of best n points (exclude worst).
         centroid.fill(0.0);
-        for i in 0..n {
-            for (c, &xi) in centroid.iter_mut().zip_eq(simplex[i].iter()) {
+        for point in simplex.iter().take(n) {
+            for (c, &xi) in centroid.iter_mut().zip_eq(point.iter()) {
                 *c += xi;
             }
         }
