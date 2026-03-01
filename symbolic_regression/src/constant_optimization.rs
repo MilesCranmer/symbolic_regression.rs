@@ -7,7 +7,7 @@ use num_traits::{Float, FromPrimitive, ToPrimitive};
 
 use crate::dataset::{Dataset, TaggedDataset};
 use crate::optim::{
-    BackTracking, NelderMeadOptions, Objective, OptimOptions, bfgs_minimize, nelder_mead_minimize, newton_1d_minimize,
+    BfgsOptions, NelderMeadOptions, Objective, OptimOptions, bfgs_minimize, nelder_mead_minimize, newton_1d_minimize,
 };
 use crate::options::{OptimizerMethod, Options};
 use crate::pop_member::{Evaluator, PopMember, get_birth_order};
@@ -139,7 +139,7 @@ impl<'a, T: Float + AddAssign, const D: usize> EvalWorkspace<'a, T, D> {
         n_params: usize,
         member: &mut PopMember<T, Ops, D>,
         optim_opts: OptimOptions,
-        ls: BackTracking,
+        bfgs: BfgsOptions,
     ) -> Option<crate::optim::OptimResult>
     where
         T: FromPrimitive,
@@ -155,9 +155,9 @@ impl<'a, T: Float + AddAssign, const D: usize> EvalWorkspace<'a, T, D> {
         match method {
             OptimizerMethod::Bfgs => {
                 if n_params == 1 {
-                    newton_1d_minimize(start[0], &mut obj, optim_opts, ls)
+                    newton_1d_minimize(start[0], &mut obj, optim_opts, bfgs)
                 } else {
-                    bfgs_minimize(start, &mut obj, optim_opts, ls)
+                    bfgs_minimize(start, &mut obj, optim_opts, bfgs)
                 }
             }
             OptimizerMethod::NelderMead => {
@@ -239,12 +239,12 @@ where
         f_calls_limit: options.optimizer_f_calls_limit,
         g_abstol: 1e-8,
     };
-    let ls = BackTracking::default();
+    let bfgs = BfgsOptions::default();
 
     let mut n_evals: u64 = 0;
 
     {
-        let res = workspace.optimize_from_start(&x0, n_params, member, optim_opts, ls);
+        let res = workspace.optimize_from_start(&x0, n_params, member, optim_opts, bfgs);
         if let Some(res) = res {
             n_evals = n_evals.saturating_add(res.f_calls as u64);
             if res.minimum < best_f {
@@ -262,7 +262,7 @@ where
             *v *= 1.0 + 0.5 * eps;
         }
 
-        let res = workspace.optimize_from_start(&xt, n_params, member, optim_opts, ls);
+        let res = workspace.optimize_from_start(&xt, n_params, member, optim_opts, bfgs);
         if let Some(res) = res {
             n_evals = n_evals.saturating_add(res.f_calls as u64);
             if res.minimum < best_f {

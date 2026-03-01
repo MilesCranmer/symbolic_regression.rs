@@ -9,7 +9,7 @@ use ndarray::{Array1, Array2};
 use crate::constant_optimization::{OptimizeConstantsCtx, optimize_constants};
 use crate::dataset::TaggedDataset;
 use crate::loss_functions::baseline_loss_from_zero_expression;
-use crate::optim::{BackTracking, EvalBudget, Objective, OptimOptions, bfgs_minimize};
+use crate::optim::{BfgsOptions, EvalBudget, Objective, OptimOptions, bfgs_minimize};
 use crate::pop_member::Evaluator;
 use crate::{Dataset, OperatorLibrary, Options, PopMember};
 
@@ -64,8 +64,8 @@ pub fn bfgs_quadratic_n16() -> Option<(Vec<f64>, f64)> {
         f_calls_limit: 0,
         g_abstol: 1e-10,
     };
-    let ls = BackTracking::default();
-    let res = bfgs_minimize(&x0, &mut obj, opts, ls)?;
+    let bfgs = BfgsOptions::default();
+    let res = bfgs_minimize(&x0, &mut obj, opts, bfgs)?;
     Some((res.minimizer, res.minimum))
 }
 

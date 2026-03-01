@@ -42,6 +42,12 @@ impl Default for BackTracking {
     }
 }
 
+/// Options for the gradient-based constant optimizer (BFGS / 1D Newton).
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct BfgsOptions {
+    pub linesearch: BackTracking,
+}
+
 #[derive(Default, Clone, Copy, Debug)]
 pub(crate) struct EvalBudget {
     pub f_calls: usize,
@@ -234,7 +240,7 @@ pub(crate) fn bfgs_minimize(
     x0: &[f64],
     obj: &mut impl Objective,
     opts: OptimOptions,
-    ls: BackTracking,
+    bfgs: BfgsOptions,
 ) -> Option<OptimResult> {
     let n = x0.len();
     let mut budget = EvalBudget::default();
@@ -299,7 +305,7 @@ pub(crate) fn bfgs_minimize(
         };
 
         let (_alpha, _) = backtracking_linesearch(
-            &ls,
+            &bfgs.linesearch,
             LineSearchInput {
                 x: &x,
                 s: &s,
@@ -371,7 +377,7 @@ pub(crate) fn newton_1d_minimize(
     x0: f64,
     obj: &mut impl Objective,
     opts: OptimOptions,
-    ls: BackTracking,
+    bfgs: BfgsOptions,
 ) -> Option<OptimResult> {
     let mut budget = EvalBudget::default();
     let mut x = x0;
@@ -434,7 +440,7 @@ pub(crate) fn newton_1d_minimize(
         let s_vec = [s];
         let mut x_new = [x];
         let (alpha, _) = backtracking_linesearch(
-            &ls,
+            &bfgs.linesearch,
             LineSearchInput {
                 x: &x_vec,
                 s: &s_vec,
@@ -774,9 +780,9 @@ mod tests {
             f_calls_limit: 0,
             g_abstol: 1e-10,
         };
-        let ls = BackTracking::default();
+        let bfgs = BfgsOptions::default();
         let mut obj = Quad2D;
-        let res = bfgs_minimize(&[0.0, 0.0], &mut obj, opts, ls).unwrap();
+        let res = bfgs_minimize(&[0.0, 0.0], &mut obj, opts, bfgs).unwrap();
         assert!((res.minimizer[0] - 1.0).abs() < 1e-6);
         assert!((res.minimizer[1] + 2.0).abs() < 1e-6);
     }
@@ -812,6 +818,22 @@ mod tests {
             self.calls += 1;
             None
         }
+    }
+
+    #[test]
+    fn counter_obj_fg_path_is_exercised() {
+        let opts = OptimOptions {
+            iterations: 1,
+            f_calls_limit: 0,
+            g_abstol: 1e-8,
+        };
+        let bfgs = BfgsOptions::default();
+        let mut obj = CounterObj {
+            f: |_, _| 0.0,
+            calls: 0,
+        };
+        assert!(bfgs_minimize(&[0.0], &mut obj, opts, bfgs).is_none());
+        assert!(obj.calls > 0);
     }
 
     #[test]
@@ -976,9 +998,9 @@ mod tests {
             f_calls_limit: 0,
             g_abstol: 1e-10,
         };
-        let ls = BackTracking::default();
+        let bfgs = BfgsOptions::default();
         let mut obj = Quad1D;
-        let res = newton_1d_minimize(0.0, &mut obj, opts, ls).unwrap();
+        let res = newton_1d_minimize(0.0, &mut obj, opts, bfgs).unwrap();
         assert!((res.minimizer[0] - 3.0).abs() < 1e-6);
     }
 
@@ -1043,9 +1065,9 @@ mod tests {
             f_calls_limit: 0,
             g_abstol: 1e-10,
         };
-        let ls = BackTracking::default();
+        let bfgs = BfgsOptions::default();
         let mut obj = Quad3DOffDiag;
-        let res = bfgs_minimize(&[0.5, -0.5, 0.0], &mut obj, opts, ls).unwrap();
+        let res = bfgs_minimize(&[0.5, -0.5, 0.0], &mut obj, opts, bfgs).unwrap();
         // Solve A x = b:
         // [2 1] [x0] = [1]  => x0=2/3, x1=-1/3 ; x2 = 2/3
         assert!((res.minimizer[0] - (2.0 / 3.0)).abs() < 1e-6);
