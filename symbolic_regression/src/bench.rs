@@ -147,3 +147,15 @@ pub fn run_constant_opt_linear(env: &ConstantOptLinearEnv) -> (bool, f64, Vec<f6
 
     (improved, evals, member.expr.consts.clone())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bfgs_quadratic_n16_runs() {
+        let (x, f) = bfgs_quadratic_n16().unwrap();
+        assert_eq!(x.len(), 16);
+        assert!(f.is_finite());
+    }
+}

@@ -486,22 +486,29 @@ impl NelderMeadParameters {
     }
 }
 
+/// Match `Optim.AffineSimplexer(a=0.025, b=0.5)`.
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum NelderMeadInitialSimplex {
-    /// Match `Optim.AffineSimplexer(a=0.025, b=0.5)`.
-    Affine { a: f64, b: f64 },
+pub(crate) struct AffineSimplexer {
+    pub a: f64,
+    pub b: f64,
+}
+
+impl Default for AffineSimplexer {
+    fn default() -> Self {
+        Self { a: 0.025, b: 0.5 }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct NelderMeadOptions {
-    pub initial_simplex: NelderMeadInitialSimplex,
+    pub initial_simplex: AffineSimplexer,
     pub parameters: NelderMeadParameters,
 }
 
 impl Default for NelderMeadOptions {
     fn default() -> Self {
         Self {
-            initial_simplex: NelderMeadInitialSimplex::Affine { a: 0.025, b: 0.5 },
+            initial_simplex: AffineSimplexer::default(),
             parameters: NelderMeadParameters {
                 alpha: 1.0,
                 beta: 1.0,
@@ -536,14 +543,11 @@ pub(crate) fn nelder_mead_minimize(
     let mut simplex: Vec<Vec<f64>> = Vec::with_capacity(n + 1);
     simplex.push(x0.to_vec());
 
-    match nm.initial_simplex {
-        NelderMeadInitialSimplex::Affine { a, b } => {
-            for i in 0..n {
-                let mut x = x0.to_vec();
-                x[i] = (1.0 + b) * x[i] + a;
-                simplex.push(x);
-            }
-        }
+    let AffineSimplexer { a, b } = nm.initial_simplex;
+    for i in 0..n {
+        let mut x = x0.to_vec();
+        x[i] = (1.0 + b) * x[i] + a;
+        simplex.push(x);
     }
 
     let mut values: Vec<f64> = simplex.iter().map(|x| eval(x, &mut budget)).collect();
