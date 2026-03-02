@@ -22,10 +22,15 @@ export function QuickStatsCard(props: {
             </div>
             <button onClick={() => copyToClipboard(props.selectedSummary!.equation)}>Copy</button>
           </div>
-          <div className="smallText muted">
-            complexity {props.selectedSummary.complexity} • loss {formatSci(props.selectedSummary.loss)}
+          <div className="eqMeta">
+            <span className="eqMetaItem">
+              <strong>complexity</strong> {props.selectedSummary.complexity}
+            </span>
+            <span className="eqMetaItem">
+              <strong>loss</strong> {formatSci(props.selectedSummary.loss)}
+            </span>
           </div>
-          <div className="subTitle">Train</div>
+          <div className="sectionLabel">Train</div>
           {props.evalTrain ? (
             <MetricsTable m={props.evalTrain.metrics} />
           ) : (
@@ -35,7 +40,7 @@ export function QuickStatsCard(props: {
           )}
           {props.hasVal && (
             <>
-              <div className="subTitle">Validation</div>
+              <div className="sectionLabel">Validation</div>
               {props.evalVal ? <MetricsTable m={props.evalVal.metrics} /> : <div className="muted">No metrics yet.</div>}
             </>
           )}

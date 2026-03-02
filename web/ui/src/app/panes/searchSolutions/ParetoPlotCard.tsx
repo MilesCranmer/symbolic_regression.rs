@@ -18,7 +18,9 @@ export function ParetoPlotCard(props: {
       <div className="cardTitle">Pareto front</div>
       <div className="plotWrap">
         {props.points.length === 0 ? (
-          <div className="muted">No points yet.</div>
+          <div className="muted" style={{ padding: "40px 0", textAlign: "center" }}>
+            The Pareto front will appear here once the search begins.
+          </div>
         ) : (
           <Plot
             data={[

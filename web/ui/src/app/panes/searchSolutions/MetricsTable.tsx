@@ -7,49 +7,47 @@ export function MetricsTable({ m }: { m: WasmEvalResult["metrics"] }): React.Rea
 
   return (
     <div>
-      <table className="table tight">
-        <tbody>
-          <tr>
-            <td>n</td>
-            <td className="mono num">{m.n}</td>
-          </tr>
-          <tr>
-            <td>rmse</td>
-            <td className="mono num">{formatSci(m.rmse)}</td>
-          </tr>
-          <tr>
-            <td>mae</td>
-            <td className="mono num">{formatSci(m.mae)}</td>
-          </tr>
-          <tr>
-            <td>r²</td>
-            <td className="mono num">{formatSci(m.r2)}</td>
-          </tr>
-          <tr>
-            <td>max |err|</td>
-            <td className="mono num">{formatSci(m.max_abs_err)}</td>
-          </tr>
-          {showMore && (
-            <>
-              <tr>
-                <td>mse</td>
-                <td className="mono num">{formatSci(m.mse)}</td>
-              </tr>
-              <tr>
-                <td>corr</td>
-                <td className="mono num">{formatSci(m.corr)}</td>
-              </tr>
-              <tr>
-                <td>min |err|</td>
-                <td className="mono num">{formatSci(m.min_abs_err)}</td>
-              </tr>
-            </>
-          )}
-        </tbody>
-      </table>
+      <div className="metricsGrid">
+        <div className="metricCard">
+          <div className="metricLabel">n</div>
+          <div className="metricValue">{m.n}</div>
+        </div>
+        <div className="metricCard">
+          <div className="metricLabel">rmse</div>
+          <div className="metricValue">{formatSci(m.rmse)}</div>
+        </div>
+        <div className="metricCard">
+          <div className="metricLabel">mae</div>
+          <div className="metricValue">{formatSci(m.mae)}</div>
+        </div>
+        <div className="metricCard">
+          <div className="metricLabel">r²</div>
+          <div className="metricValue">{formatSci(m.r2)}</div>
+        </div>
+        <div className="metricCard">
+          <div className="metricLabel">max |err|</div>
+          <div className="metricValue">{formatSci(m.max_abs_err)}</div>
+        </div>
+        {showMore && (
+          <>
+            <div className="metricCard">
+              <div className="metricLabel">mse</div>
+              <div className="metricValue">{formatSci(m.mse)}</div>
+            </div>
+            <div className="metricCard">
+              <div className="metricLabel">corr</div>
+              <div className="metricValue">{formatSci(m.corr)}</div>
+            </div>
+            <div className="metricCard">
+              <div className="metricLabel">min |err|</div>
+              <div className="metricValue">{formatSci(m.min_abs_err)}</div>
+            </div>
+          </>
+        )}
+      </div>
 
-      <div className="row" style={{ marginTop: 6 }}>
-        <button onClick={() => setShowMore((v) => !v)}>{showMore ? "Hide" : "More"}</button>
+      <div className="row" style={{ marginTop: 8 }}>
+        <button onClick={() => setShowMore((v) => !v)}>{showMore ? "Hide" : "More metrics"}</button>
       </div>
     </div>
   );

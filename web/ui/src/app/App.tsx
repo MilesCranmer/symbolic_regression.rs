@@ -5,6 +5,12 @@ import { EnterData } from "./panes/EnterData";
 import { ModelingTask } from "./panes/ModelingTask";
 import { SearchSolutions } from "./panes/SearchSolutions";
 
+const tabs = [
+  { key: "data" as const, label: "Data", num: 1 },
+  { key: "configure" as const, label: "Configure", num: 2 },
+  { key: "run" as const, label: "Run", num: 3 }
+];
+
 export function App(): React.ReactElement {
   const tab = useSessionStore((s) => s.tab);
   const setTab = useSessionStore((s) => s.setTab);
@@ -19,21 +25,19 @@ export function App(): React.ReactElement {
       <header className="topbar">
         <div className="title">PySR Online</div>
         <div className="tabs">
-          <button className={tab === "data" ? "tab active" : "tab"} onClick={() => setTab("data")}>
-            Data
-          </button>
-          <span className="tabSep" aria-hidden="true">
-            →
-          </span>
-          <button className={tab === "configure" ? "tab active" : "tab"} onClick={() => setTab("configure")}>
-            Configure
-          </button>
-          <span className="tabSep" aria-hidden="true">
-            →
-          </span>
-          <button className={tab === "run" ? "tab active" : "tab"} onClick={() => setTab("run")}>
-            Run
-          </button>
+          {tabs.map((t, i) => (
+            <React.Fragment key={t.key}>
+              {i > 0 && (
+                <span className="tabSep" aria-hidden="true">
+                  ›
+                </span>
+              )}
+              <button className={tab === t.key ? "tab active" : "tab"} onClick={() => setTab(t.key)}>
+                <span className="tabNumber">{t.num}</span>
+                {t.label}
+              </button>
+            </React.Fragment>
+          ))}
         </div>
         <nav className="topbarLinks" aria-label="Project links">
           <a

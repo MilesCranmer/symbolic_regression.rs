@@ -15,11 +15,22 @@ export function SelectedFitCard(props: {
   trainXY: { x: number[]; y: number[] };
   valXY: { x: number[]; y: number[] };
 }): React.ReactElement {
+  const modeLabel = props.effectiveFitMode === "curve_1d" ? "1-D curve" : "parity";
+
   return (
     <div className="card gridCell resultsCard resultsCard--fit resultsFixed">
-      <div className="cardTitle">Selected solution fit</div>
+      <div className="cardTitle">
+        Selected solution fit
+        {props.selectedSummary && (
+          <span className="muted" style={{ fontWeight: 400, marginLeft: 8, fontSize: 12 }}>
+            ({modeLabel})
+          </span>
+        )}
+      </div>
       {!props.selectedSummary ? (
-        <div className="muted">Select a solution.</div>
+        <div className="muted" style={{ padding: "40px 0", textAlign: "center" }}>
+          Select a solution from the table to visualize its fit.
+        </div>
       ) : (
         <div className="plotWrap">
           <FitPlot

@@ -2,8 +2,36 @@
   color-scheme: light dark;
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
   --bg: rgba(127, 127, 127, 0.06);
-  --border: rgba(127, 127, 127, 0.25);
+  --bg-elevated: rgba(127, 127, 127, 0.03);
+  --border: rgba(127, 127, 127, 0.18);
+  --border-strong: rgba(127, 127, 127, 0.3);
   --muted: rgba(127, 127, 127, 0.85);
+
+  --accent: #4f7cff;
+  --accent-soft: rgba(79, 124, 255, 0.12);
+  --accent-mid: rgba(79, 124, 255, 0.25);
+  --accent-border: rgba(79, 124, 255, 0.35);
+
+  --green: #22c55e;
+  --green-soft: rgba(34, 197, 94, 0.12);
+  --green-border: rgba(34, 197, 94, 0.35);
+
+  --amber: #f59e0b;
+  --amber-soft: rgba(245, 158, 11, 0.12);
+  --amber-border: rgba(245, 158, 11, 0.35);
+
+  --red: #ef4444;
+  --red-soft: rgba(239, 68, 68, 0.12);
+  --red-border: rgba(239, 68, 68, 0.3);
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
@@ -20,18 +48,23 @@ body {
   flex-direction: column;
 }
 
+/* ─── Topbar ──────────────────────────────────────────── */
+
 .topbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
+  gap: 16px;
+  padding: 0 20px;
+  height: 56px;
   border-bottom: 1px solid var(--border);
   background: var(--bg);
+  backdrop-filter: blur(12px);
 }
 
 .title {
-  font-weight: 650;
-  letter-spacing: 0.2px;
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: -0.2px;
   white-space: nowrap;
 }
 
@@ -39,7 +72,7 @@ body {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   font-size: 13px;
   white-space: nowrap;
 }
@@ -47,7 +80,8 @@ body {
 .topbarLink {
   color: inherit;
   text-decoration: none;
-  opacity: 0.9;
+  opacity: 0.7;
+  transition: opacity 0.15s;
 }
 
 .topbarLink:hover {
@@ -56,47 +90,85 @@ body {
 }
 
 .topbarLink:focus-visible {
-  outline: 2px solid rgba(79, 124, 255, 0.8);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 6px;
 }
 
 .topbarLinkSep {
-  opacity: 0.5;
+  opacity: 0.3;
   user-select: none;
 }
 
+/* ─── Tabs ────────────────────────────────────────────── */
+
 .tabs {
   display: flex;
-  gap: 8px;
+  gap: 4px;
   flex-wrap: wrap;
   align-items: center;
 }
 
 .tabSep {
-  opacity: 0.45;
+  opacity: 0.25;
   user-select: none;
+  font-size: 11px;
+  margin: 0 2px;
 }
 
 .tab {
-  padding: 8px 10px;
-  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--border);
-  background: rgba(127, 127, 127, 0.1);
+  background: transparent;
   cursor: pointer;
   font-size: 13px;
+  font-weight: 500;
   white-space: nowrap;
+  transition: all 0.15s ease;
+  color: inherit;
+}
+
+.tab:hover {
+  background: rgba(127, 127, 127, 0.08);
+  border-color: var(--border-strong);
 }
 
 .tab.active {
-  background: rgba(79, 124, 255, 0.25);
-  border-color: rgba(79, 124, 255, 0.45);
+  background: var(--accent-mid);
+  border-color: var(--accent-border);
+  color: var(--accent);
+  font-weight: 600;
 }
+
+.tabNumber {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(127, 127, 127, 0.12);
+  color: inherit;
+  flex-shrink: 0;
+}
+
+.tab.active .tabNumber {
+  background: var(--accent);
+  color: white;
+}
+
+/* ─── Main layout ─────────────────────────────────────── */
 
 .main {
   flex: 1;
   overflow: auto;
-  padding: 14px;
+  padding: 20px;
 }
 
 .mainInner {
@@ -107,27 +179,34 @@ body {
 
 .pane {
   display: grid;
-  gap: 14px;
+  gap: 16px;
 }
+
+/* ─── Cards ───────────────────────────────────────────── */
 
 .card {
   border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 12px 12px;
-  background: var(--bg);
-  /* Cards often sit inside flex/grid layouts; allow them to shrink without forcing overflow. */
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  background: var(--bg-elevated);
   min-width: 0;
+  transition: border-color 0.15s;
 }
 
 .cardTitle {
   font-weight: 600;
-  margin-bottom: 10px;
+  font-size: 14px;
+  margin-bottom: 12px;
+  letter-spacing: -0.1px;
 }
 
 .subTitle {
   font-weight: 600;
-  margin: 10px 0 6px;
+  font-size: 13px;
+  margin: 12px 0 8px;
 }
+
+/* ─── Common layout helpers ───────────────────────────── */
 
 .row {
   display: flex;
@@ -136,31 +215,92 @@ body {
   flex-wrap: wrap;
 }
 
+/* ─── Buttons ─────────────────────────────────────────── */
+
 button {
-  padding: 8px 10px;
-  border-radius: 10px;
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: rgba(127, 127, 127, 0.12);
+  background: rgba(127, 127, 127, 0.06);
   cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+  color: inherit;
+}
+
+button:hover:not(:disabled) {
+  background: rgba(127, 127, 127, 0.12);
+  border-color: var(--border-strong);
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 button:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: not-allowed;
 }
+
+button.btnPrimary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+  font-weight: 600;
+}
+
+button.btnPrimary:hover:not(:disabled) {
+  background: #3d6ae8;
+  border-color: #3d6ae8;
+}
+
+button.btnSuccess {
+  background: var(--green);
+  border-color: var(--green);
+  color: white;
+  font-weight: 600;
+}
+
+button.btnSuccess:hover:not(:disabled) {
+  background: #1db954;
+  border-color: #1db954;
+}
+
+button.btnDanger {
+  color: var(--red);
+  border-color: var(--red-border);
+}
+
+button.btnDanger:hover:not(:disabled) {
+  background: var(--red-soft);
+}
+
+/* ─── Inputs ──────────────────────────────────────────── */
 
 .input,
 input[type="number"],
 input[type="text"],
 select {
-  padding: 7px 9px;
-  border-radius: 10px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: rgba(127, 127, 127, 0.05);
+  background: rgba(127, 127, 127, 0.04);
   min-width: 160px;
+  font-size: 13px;
+  transition: border-color 0.15s;
+  color: inherit;
 }
 
-/* Ensure dropdown options remain readable in dark mode (avoid white-on-white). */
+.input:focus,
+input[type="number"]:focus,
+input[type="text"]:focus,
+select:focus {
+  border-color: var(--accent-border);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
 select {
   color: CanvasText;
 }
@@ -173,14 +313,23 @@ select option {
 .textarea {
   width: 100%;
   resize: vertical;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
-    monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 12px;
   padding: 10px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--border);
-  background: rgba(127, 127, 127, 0.05);
+  background: rgba(127, 127, 127, 0.04);
+  transition: border-color 0.15s;
+  color: inherit;
 }
+
+.textarea:focus {
+  border-color: var(--accent-border);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* ─── Form fields ─────────────────────────────────────── */
 
 .field {
   display: grid;
@@ -189,7 +338,8 @@ select option {
 
 .label {
   font-size: 12px;
-  opacity: 0.9;
+  opacity: 0.7;
+  font-weight: 500;
 }
 
 .checkbox {
@@ -200,7 +350,7 @@ select option {
 }
 
 .checkbox.disabled {
-  opacity: 0.5;
+  opacity: 0.4;
 }
 
 .checkboxGrid {
@@ -216,8 +366,8 @@ select option {
 }
 
 .opGroup {
-  padding-top: 6px;
-  border-top: 1px solid rgba(127, 127, 127, 0.2);
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
 }
 
 .grid2 {
@@ -236,30 +386,32 @@ select option {
   gap: 10px 14px;
 }
 
+/* ─── Results grid ────────────────────────────────────── */
+
 .resultsColumns {
   display: grid;
-  /* minmax(0, 1fr) prevents long content from forcing horizontal overflow */
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   grid-template-areas:
     "table fit"
     "stats pareto";
-  gap: 14px;
+  gap: 16px;
   align-items: start;
 }
 
 .resultsFixed {
-  height: 360px;
+  height: 380px;
 }
 
 @media (max-width: 900px) {
   .topbar {
     flex-wrap: wrap;
+    height: auto;
+    padding: 10px 14px;
   }
 
   .topbarLinks {
     margin-left: 0;
     flex-wrap: wrap;
-    /* When links wrap onto their own line, keep them visually right-aligned. */
     width: 100%;
     justify-content: flex-end;
   }
@@ -295,16 +447,17 @@ select option {
   min-height: 320px;
   display: flex;
   flex-direction: column;
-  /* Allow cards (especially tables/plots) to shrink in flex/grid layouts. */
   min-width: 0;
 }
+
+/* ─── Tables ──────────────────────────────────────────── */
 
 .tableWrap {
   overflow: auto;
   flex: 1;
   min-width: 0;
-  border-radius: 12px;
-  border: 1px solid rgba(127, 127, 127, 0.18);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
 }
 
 .table {
@@ -313,7 +466,6 @@ select option {
   font-size: 13px;
 }
 
-/* Fixed-layout tables make truncation / ellipsis reliable. */
 .table.fixed {
   table-layout: fixed;
 }
@@ -321,18 +473,31 @@ select option {
 .table thead th {
   position: sticky;
   top: 0;
-  background: rgba(127, 127, 127, 0.12);
-  border-bottom: 1px solid rgba(127, 127, 127, 0.25);
+  background: rgba(127, 127, 127, 0.08);
+  border-bottom: 1px solid var(--border);
   text-align: left;
   padding: 8px 10px;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--muted);
 }
 
 .table thead th.num {
   text-align: right;
 }
 
+.table tbody tr {
+  transition: background 0.1s;
+}
+
+.table tbody tr:hover {
+  background: rgba(127, 127, 127, 0.06);
+}
+
 .table td {
-  border-bottom: 1px solid rgba(127, 127, 127, 0.18);
+  border-bottom: 1px solid rgba(127, 127, 127, 0.1);
   padding: 7px 10px;
   vertical-align: top;
 }
@@ -342,15 +507,15 @@ select option {
 }
 
 .selectedRow {
-  background: rgba(255, 209, 102, 0.15);
+  background: var(--accent-soft) !important;
 }
 
-/*
-  Monospace helpers:
-  - .mono: default monospace without forcing wrap (good for numbers)
-  - .monoWrap: wraps long expressions
-  - .monoEllipsis: single-line truncation (good for tables)
-*/
+.selectedRow:hover {
+  background: rgba(79, 124, 255, 0.18) !important;
+}
+
+/* ─── Mono / text helpers ─────────────────────────────── */
+
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 12px;
@@ -381,15 +546,15 @@ select option {
 }
 
 .bigEq {
-  padding: 8px 10px;
-  border-radius: 12px;
-  border: 1px solid rgba(127, 127, 127, 0.18);
-  background: rgba(127, 127, 127, 0.05);
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: rgba(127, 127, 127, 0.04);
 }
 
 .smallText {
   font-size: 12px;
-  opacity: 0.9;
+  opacity: 0.7;
 }
 
 .muted {
@@ -397,14 +562,140 @@ select option {
   font-size: 13px;
 }
 
+/* ─── Status chips ────────────────────────────────────── */
+
 .statusChip {
-  padding: 6px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(127, 127, 127, 0.2);
-  background: rgba(127, 127, 127, 0.1);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: rgba(127, 127, 127, 0.06);
   font-size: 12px;
+  font-weight: 600;
   cursor: default;
   user-select: none;
+  transition: all 0.2s;
+  text-transform: capitalize;
+}
+
+.statusChip .statusDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+
+.statusChip--running {
+  border-color: var(--green-border);
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.statusChip--running .statusDot {
+  background: var(--green);
+  animation: pulse 1.5s infinite;
+}
+
+.statusChip--ready {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.statusChip--ready .statusDot {
+  background: var(--accent);
+}
+
+.statusChip--paused {
+  border-color: var(--amber-border);
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.statusChip--paused .statusDot {
+  background: var(--amber);
+}
+
+.statusChip--done {
+  border-color: var(--green-border);
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.statusChip--done .statusDot {
+  background: var(--green);
+}
+
+.statusChip--error {
+  border-color: var(--red-border);
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.statusChip--error .statusDot {
+  background: var(--red);
+}
+
+.statusChip--initializing {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.statusChip--initializing .statusDot {
+  background: var(--accent);
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ─── Progress bar ────────────────────────────────────── */
+
+.progressOuter {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(127, 127, 127, 0.12);
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.progressInner {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+  min-width: 0;
+}
+
+.progressInner.progressRunning {
+  background: linear-gradient(90deg, var(--accent), var(--green), var(--accent));
+  background-size: 200% 100%;
+  animation: progressShimmer 2s linear infinite;
+}
+
+.progressInner.progressDone {
+  background: var(--green);
+}
+
+@keyframes progressShimmer {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+/* ─── Controls ────────────────────────────────────────── */
+
+.controlsBar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .statusLine {
@@ -414,17 +705,9 @@ select option {
   flex-wrap: wrap;
 }
 
-/* Controls header: keep buttons grouped and status aligned. */
-.controlsBar {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
 .buttonGroup {
   display: flex;
-  gap: 10px;
+  gap: 6px;
   align-items: center;
   flex-wrap: wrap;
 }
@@ -437,14 +720,49 @@ select option {
 }
 
 .itersInput {
-  min-width: 120px;
-  width: 120px;
-  padding: 8px 10px;
+  min-width: 100px;
+  width: 100px;
+  padding: 7px 10px;
 }
 
 .spacer {
   flex: 1;
 }
+
+/* ─── Stats bar ───────────────────────────────────────── */
+
+.statsBar {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding: 8px 0;
+  font-size: 12px;
+}
+
+.statItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.statLabel {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.5;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.statValue {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Plot area ───────────────────────────────────────── */
 
 .plotWrap {
   flex: 1;
@@ -452,7 +770,8 @@ select option {
   min-width: 0;
 }
 
-/* Quick-stats: keep the copy button aligned with the equation box. */
+/* ─── Quick stats equation header ─────────────────────── */
+
 .eqHeader {
   display: flex;
   gap: 10px;
@@ -461,14 +780,46 @@ select option {
 
 .eqHeader .bigEq {
   flex: 1;
-  /* Prevent long equations from forcing horizontal overflow in flex layouts. */
   min-width: 0;
 }
 
+/* ─── Complexity badge ────────────────────────────────── */
+
+.complexityBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  background: rgba(127, 127, 127, 0.1);
+  color: var(--muted);
+}
+
+.selectedRow .complexityBadge {
+  background: var(--accent-mid);
+  color: var(--accent);
+}
+
+/* ─── Solutions table clickable rows ──────────────────── */
+
+.solutionRow {
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+/* ─── Error text ──────────────────────────────────────── */
+
 .errorText {
-  color: #ff6b6b;
+  color: var(--red);
   font-size: 13px;
 }
+
+/* ─── Misc ────────────────────────────────────────────── */
 
 .details {
   margin-top: 10px;
@@ -480,20 +831,103 @@ select option {
 
 .dropzone {
   margin: 10px 0;
-  padding: 16px 14px;
-  border-radius: 14px;
-  border: 1px dashed rgba(127, 127, 127, 0.35);
-  background: rgba(127, 127, 127, 0.04);
+  padding: 20px 16px;
+  border-radius: var(--radius-lg);
+  border: 2px dashed var(--border);
+  background: transparent;
   cursor: pointer;
   user-select: none;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.dropzone:hover {
+  border-color: var(--border-strong);
+  background: rgba(127, 127, 127, 0.03);
 }
 
 .dropzone.active {
-  border-color: rgba(79, 124, 255, 0.65);
-  background: rgba(79, 124, 255, 0.12);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .dropzoneTitle {
   font-weight: 600;
   margin-bottom: 4px;
+}
+
+/* ─── Running card glow ───────────────────────────────── */
+
+.card.cardRunning {
+  border-color: var(--green-border);
+  box-shadow: 0 0 0 1px var(--green-soft);
+}
+
+/* ─── Equation meta ───────────────────────────────────── */
+
+.eqMeta {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.eqMetaItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(127, 127, 127, 0.06);
+  color: var(--muted);
+}
+
+.eqMetaItem strong {
+  font-weight: 600;
+  color: inherit;
+}
+
+/* ─── Metrics table styling ───────────────────────────── */
+
+.metricsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.metricCard {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(127, 127, 127, 0.04);
+  border: 1px solid var(--border);
+}
+
+.metricLabel {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.5;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 2px;
+}
+
+.metricValue {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Section divider ─────────────────────────────────── */
+
+.sectionLabel {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.4;
+  margin: 12px 0 6px;
 }
