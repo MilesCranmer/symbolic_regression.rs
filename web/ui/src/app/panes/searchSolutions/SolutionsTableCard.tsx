@@ -14,7 +14,7 @@ export function SolutionsTableCard(props: {
         <table className="table fixed" data-testid="solutions-table">
           <thead>
             <tr>
-              <th style={{ width: 50 }}>size</th>
+              <th style={{ width: 50 }}>complexity</th>
               <th className="num" style={{ width: 100 }}>
                 loss
               </th>
