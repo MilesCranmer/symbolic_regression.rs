@@ -5,7 +5,8 @@ on:
     branches:
       - main
     paths:
-      - web/**
+      - symbolic_regression_wasm/**
+      - web_ui/**
       - symbolic_regression/**
       - dynamic_expressions/**
       - .cargo/**
@@ -17,7 +18,8 @@ on:
     branches:
       - main
     paths:
-      - web/**
+      - symbolic_regression_wasm/**
+      - web_ui/**
       - symbolic_regression/**
       - dynamic_expressions/**
       - .cargo/**
@@ -63,7 +65,7 @@ jobs:
         run: cargo test -p symbolic_regression --all-targets --all-features
 
   web-ui:
-    name: web/ui (unit + e2e)
+    name: web_ui (unit + e2e)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -83,37 +85,37 @@ jobs:
         with:
           tool: wasm-pack
 
-      - name: Build WASM package for web/ui
+      - name: Build WASM package for web_ui
         env:
           RUSTFLAGS: -C target-feature=+atomics,+bulk-memory,+mutable-globals
           WASM_BINDGEN_FLAGS: --enable-threads
         run: |
-          cd web/wasm
-          wasm-pack build --no-opt --target web --out-dir ../ui/src/pkg
+          cd symbolic_regression_wasm
+          wasm-pack build --no-opt --target web --out-dir ../web_ui/src/pkg
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: web/ui/package.json
+          cache-dependency-path: web_ui/package.json
 
       - name: npm install
-        working-directory: web/ui
+        working-directory: web_ui
         run: npm install
 
       - name: UI unit tests (Vitest)
-        working-directory: web/ui
+        working-directory: web_ui
         run: npm test
 
       - name: UI build (Vite)
-        working-directory: web/ui
+        working-directory: web_ui
         run: npm run build
 
       - name: Install Playwright browsers
-        working-directory: web/ui
+        working-directory: web_ui
         run: npx playwright install --with-deps chromium
 
       - name: UI e2e (Playwright, real WASM)
-        working-directory: web/ui
+        working-directory: web_ui
         run: npm run test:e2e

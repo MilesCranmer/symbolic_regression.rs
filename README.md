@@ -22,7 +22,7 @@ This workspace contains three crates:
 |---|---|---|
 | [`symbolic_regression`](./symbolic_regression) | [![crates.io](https://img.shields.io/crates/v/symbolic_regression)](https://crates.io/crates/symbolic_regression) | [![CI (symbolic_regression)](https://github.com/astro-automata/symbolic_regression.rs/actions/workflows/ci-symbolic-regression.yml/badge.svg?branch=main)](https://github.com/astro-automata/symbolic_regression.rs/actions/workflows/ci-symbolic-regression.yml) |
 | [`dynamic_expressions`](./dynamic_expressions) | [![crates.io](https://img.shields.io/crates/v/dynamic_expressions)](https://crates.io/crates/dynamic_expressions) | [![CI (dynamic_expressions)](https://github.com/astro-automata/symbolic_regression.rs/actions/workflows/ci-dynamic-expressions.yml/badge.svg?branch=main)](https://github.com/astro-automata/symbolic_regression.rs/actions/workflows/ci-dynamic-expressions.yml) |
-| [`symbolic_regression_wasm`](./web/wasm) | [![crates.io](https://img.shields.io/crates/v/symbolic_regression_wasm)](https://crates.io/crates/symbolic_regression_wasm) | [![CI (Web UI)](https://github.com/astro-automata/symbolic_regression.rs/actions/workflows/ci-web.yml/badge.svg?branch=main)](https://github.com/astro-automata/symbolic_regression.rs/actions/workflows/ci-web.yml) |
+| [`symbolic_regression_wasm`](./symbolic_regression_wasm) | [![crates.io](https://img.shields.io/crates/v/symbolic_regression_wasm)](https://crates.io/crates/symbolic_regression_wasm) | [![CI (Web UI)](https://github.com/astro-automata/symbolic_regression.rs/actions/workflows/ci-web.yml/badge.svg?branch=main)](https://github.com/astro-automata/symbolic_regression.rs/actions/workflows/ci-web.yml) |
 
 ## Low-level API
 
@@ -143,7 +143,7 @@ let options = Options::<f64, _> { operators, ..Default::default() };
 
 ## WASM
 
-This workspace includes a thin `wasm-bindgen` wrapper crate (`symbolic_regression_wasm`) at `web/wasm/` and a minimal browser UI at `web/ui/` (Vite + WebWorker).
+This workspace includes a thin `wasm-bindgen` wrapper crate (`symbolic_regression_wasm`) at `symbolic_regression_wasm/` and a minimal browser UI at `web_ui/` (Vite + WebWorker).
 
 ```bash
 rustup target add wasm32-unknown-unknown
@@ -152,13 +152,13 @@ rustup target add wasm32-unknown-unknown
 cargo install wasm-pack
 
 # build the wasm package into the Vite app
-cd web/wasm
-wasm-pack build --target web --out-dir ../ui/src/pkg
+cd symbolic_regression_wasm
+wasm-pack build --target web --out-dir ../web_ui/src/pkg
 
 # run the dev server
-cd ../ui
+cd ../web_ui
 npm install
 npm run dev
 ```
 
-See `web/ui/README.md` for details.
+See `web_ui/README.md` for details.

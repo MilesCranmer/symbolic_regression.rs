@@ -28,7 +28,7 @@ if ! rustup target list --installed --toolchain "${TOOLCHAIN}" | grep -q "^wasm3
   exit 1
 fi
 
-cd ../wasm
+cd ../symbolic_regression_wasm
 export RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=+atomics,+bulk-memory,+mutable-globals"
 export WASM_BINDGEN_FLAGS=--enable-threads
-wasm-pack build . --release --target web --out-dir ../ui/src/pkg
+wasm-pack build . --release --target web --out-dir ../web_ui/src/pkg

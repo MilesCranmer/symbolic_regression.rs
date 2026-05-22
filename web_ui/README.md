@@ -13,14 +13,14 @@ Minimal browser UI for `symbolic_regression_wasm` (runs symbolic regression in a
 Build the wasm package into the web app:
 
 ```sh
-cd web/wasm
-wasm-pack build --target web --out-dir ../ui/src/pkg
+cd symbolic_regression_wasm
+wasm-pack build --target web --out-dir ../web_ui/src/pkg
 ```
 
 Start the dev server:
 
 ```sh
-cd web/ui
+cd web_ui
 npm install
 npm run dev
 ```
