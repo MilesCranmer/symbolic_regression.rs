@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.12.2](https://github.com/astroautomata/symbolic_regression.rs/compare/symbolic_regression-v0.12.1...symbolic_regression-v0.12.2) (2026-05-22)
+
+
+### Features
+
+* add early_stop_condition callback on Options ([e319d1a](https://github.com/astroautomata/symbolic_regression.rs/commit/e319d1a3f34eaa3dc820c0989ba5a28719ec3b98))
+* count evaluations by dataset_fraction during batching ([6d0b2c7](https://github.com/astroautomata/symbolic_regression.rs/commit/6d0b2c7c25e99ca5e9714898ee7ef5bbb62eee64))
+* honor print_precision when rendering equation constants ([9cdd9d0](https://github.com/astroautomata/symbolic_regression.rs/commit/9cdd9d0f9f6ac38bda2154b2c3757ce793c84454))
+
+
+### Bug Fixes
+
+* allow too_many_arguments on apply_task_result for clippy ([328b9ef](https://github.com/astroautomata/symbolic_regression.rs/commit/328b9ef8b543c13805435bf7d02a9d2d05e76e9c))
+* drop constraint and finite-loss filters in HallOfFame consider ([922b60c](https://github.com/astroautomata/symbolic_regression.rs/commit/922b60c812169be95f71875003524e6fd706c529))
+* drop in-range 1e-6 clamp in adaptive_parsimony freq ([93a91bb](https://github.com/astroautomata/symbolic_regression.rs/commit/93a91bbdcffe8b7a02b5e11fa7978c5aa0243622))
+* return accumulated evals on constraint-failure exhaustion in next_generation ([1564b92](https://github.com/astroautomata/symbolic_regression.rs/commit/1564b925a1c6837816a5d29241d62bbbc9e412dc))
+* stop seeding HoF from initial population in s_r_cycle ([4786261](https://github.com/astroautomata/symbolic_regression.rs/commit/4786261af6481081a88e1d2036ad5653cdf68d27))
+
+
+### Performance Improvements
+
+* faster version of rotate_tree_in_place ([9cd093a](https://github.com/astroautomata/symbolic_regression.rs/commit/9cd093a447650daea16e782b457cf01b775e63ac))
+* faster version of rotate_tree_in_place ([a083f10](https://github.com/astroautomata/symbolic_regression.rs/commit/a083f109538f66c38be8473a319b29ffe05ee9dd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * dynamic_expressions bumped from 0.10.0 to 0.10.1
+
 ## [0.12.1](https://github.com/astroautomata/symbolic_regression.rs/compare/symbolic_regression-v0.12.0...symbolic_regression-v0.12.1) (2025-12-30)
 
 
