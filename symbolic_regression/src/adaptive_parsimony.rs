@@ -89,10 +89,12 @@ impl RunningSearchStatistics {
     }
 
     pub fn freq(&self, size: usize) -> f64 {
+        // Matches SymbolicRegression.jl Mutate.jl: raw `normalized_frequencies[size]` inside the
+        // valid range, with `1e-6` fallback only when the size is out of range.
         if size == 0 || size > self.normalized_frequencies.len() {
             1e-6
         } else {
-            self.normalized_frequencies[size - 1].max(1e-6)
+            self.normalized_frequencies[size - 1]
         }
     }
 }
