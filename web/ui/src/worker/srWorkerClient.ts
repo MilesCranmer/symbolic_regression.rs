@@ -3,6 +3,7 @@ import type { WasmSearchOptions } from "../types/srTypes";
 
 type Handlers = {
   onReady?: (split: unknown) => void;
+  onThreadStatus?: (status: unknown) => void;
   onSnapshot?: (snap: unknown) => void;
   onFrontUpdate?: (front: unknown) => void;
   onEvalResult?: (requestId: string, result: unknown) => void;
@@ -21,7 +22,11 @@ export class SrWorkerClient {
     this.worker.onmessage = (e: MessageEvent<WorkerFromWorkerMsg>) => {
       const msg = e.data;
       if (msg.type === "ready") this.handlers.onReady?.(msg.split);
-      else if (msg.type === "snapshot") this.handlers.onSnapshot?.(msg.snap);
+      else if (msg.type === "thread_status") {
+        const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+        if (isLocalhost) (window as any).__sr_thread_status = msg;
+        this.handlers.onThreadStatus?.(msg);
+      } else if (msg.type === "snapshot") this.handlers.onSnapshot?.(msg.snap);
       else if (msg.type === "front_update") this.handlers.onFrontUpdate?.(msg.front);
       else if (msg.type === "eval_result") this.handlers.onEvalResult?.(msg.requestId, msg.result);
       else if (msg.type === "done") this.handlers.onDone?.();
@@ -49,6 +54,7 @@ export class SrWorkerClient {
     unary: string[];
     binary: string[];
     ternary: string[];
+    threadsEnabled: boolean;
   }): void {
     this.post({ type: "init", ...args });
   }

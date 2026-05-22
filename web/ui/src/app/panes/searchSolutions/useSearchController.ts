@@ -21,6 +21,7 @@ type SrWorkerClientLike = {
     unary: any;
     binary: any;
     ternary: any;
+    threadsEnabled: boolean;
   }) => void;
   start: () => void;
   pause: () => void;
@@ -61,6 +62,7 @@ export function useSearchController(Client: { new (): SrWorkerClientLike }) {
   const unaryOps = useSessionStore((s) => s.unaryOps);
   const binaryOps = useSessionStore((s) => s.binaryOps);
   const ternaryOps = useSessionStore((s) => s.ternaryOps);
+  const threadsEnabled = useSessionStore((s) => s.threadsEnabled);
 
   const runtime = useSessionStore((s) => s.runtime);
   const setRuntime = useSessionStore((s) => s.setRuntime);
@@ -167,7 +169,7 @@ export function useSearchController(Client: { new (): SrWorkerClientLike }) {
       }
     });
     return () => c.terminate();
-  }, [Client, setEvalResult, setFront, setRuntime, setSnapshot]);
+  }, [Client, threadsEnabled, setEvalResult, setFront, setRuntime, setSnapshot]);
 
   const canInit = Boolean(options) && unaryOps.length + binaryOps.length + ternaryOps.length > 0;
 
@@ -192,7 +194,8 @@ export function useSearchController(Client: { new (): SrWorkerClientLike }) {
       options,
       unary: unaryOps,
       binary: binaryOps,
-      ternary: ternaryOps
+      ternary: ternaryOps,
+      threadsEnabled
     });
   };
 

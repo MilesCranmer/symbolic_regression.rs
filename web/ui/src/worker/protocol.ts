@@ -7,6 +7,7 @@ export type WorkerInitMsg = {
   unary: string[];
   binary: string[];
   ternary: string[];
+  threadsEnabled: boolean;
 };
 
 export type WorkerStartMsg = { type: "start" };
@@ -29,6 +30,13 @@ export type WorkerToWorkerMsg =
   | WorkerEvaluateMsg;
 
 export type WorkerReadyMsg = { type: "ready"; split: WasmSplitIndices };
+export type WorkerThreadStatusMsg = {
+  type: "thread_status";
+  crossOriginIsolated: boolean;
+  sharedArrayBufferAvailable: boolean;
+  hasSharedMemory: boolean;
+  bufferType: string;
+};
 export type WorkerSnapshotMsg = { type: "snapshot"; snap: SearchSnapshot };
 export type WorkerFrontUpdateMsg = { type: "front_update"; front: EquationSummary[] };
 export type WorkerEvalResultMsg = { type: "eval_result"; requestId: string; result: WasmEvalResult };
@@ -39,6 +47,7 @@ export type WorkerErrorMsg = { type: "error"; error: string };
 
 export type WorkerFromWorkerMsg =
   | WorkerReadyMsg
+  | WorkerThreadStatusMsg
   | WorkerSnapshotMsg
   | WorkerFrontUpdateMsg
   | WorkerEvalResultMsg

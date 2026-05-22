@@ -67,7 +67,19 @@ self.onmessage = async (e: MessageEvent<WorkerToWorkerMsg>) => {
       const wasmExports = await init();
       const sharedArrayBufferAvailable = typeof SharedArrayBuffer !== "undefined";
       const hasSharedMemory = sharedArrayBufferAvailable && wasmExports?.memory?.buffer instanceof SharedArrayBuffer;
-      if (self.crossOriginIsolated && hasSharedMemory) {
+      const threadsEnabled = msg.threadsEnabled;
+      const isLocalhost = self.location?.hostname === "localhost" || self.location?.hostname === "127.0.0.1";
+      if (isLocalhost) {
+        const bufferType = (wasmExports?.memory?.buffer as any)?.constructor?.name ?? "unknown";
+        post({
+          type: "thread_status",
+          crossOriginIsolated: self.crossOriginIsolated,
+          sharedArrayBufferAvailable,
+          hasSharedMemory,
+          bufferType
+        });
+      }
+      if (threadsEnabled && self.crossOriginIsolated && hasSharedMemory) {
         const n = Math.max(2, Math.min(Number(self.navigator?.hardwareConcurrency ?? 4), 16));
         try {
           await init_thread_pool(n);
@@ -75,11 +87,22 @@ self.onmessage = async (e: MessageEvent<WorkerToWorkerMsg>) => {
           // eslint-disable-next-line no-console
           console.warn("init_thread_pool failed, continuing single-threaded:", err);
         }
+      } else if (!threadsEnabled) {
+        // eslint-disable-next-line no-console
+        console.info("Parallelism disabled by user; running single-threaded.");
       } else {
         // eslint-disable-next-line no-console
-        console.warn("SharedArrayBuffer unavailable; running single-threaded.");
+        console.warn(
+          "SharedArrayBuffer unavailable; running single-threaded.",
+          {
+            crossOriginIsolated: self.crossOriginIsolated,
+            sharedArrayBufferAvailable,
+            hasSharedMemory
+          }
+        );
       }
       search = new WasmSearch(msg.csvText, msg.options as any, msg.unary as any, msg.binary as any, msg.ternary as any);
+      (search as any).set_parallelism?.(threadsEnabled);
       search.set_pareto_k(PARETO_K);
       const split = search.get_split_indices();
       post({ type: "ready", split });

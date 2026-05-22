@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import Plot from "react-plotly.js";
+import Plot from "@/plotly/Plot";
 import { useSessionStore } from "../../state/sessionStore";
 import { formatSci, plotLayoutBase, usePrefersDark } from "./searchSolutions/plotUtils";
 
