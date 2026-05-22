@@ -1,6 +1,5 @@
 use num_traits::Float;
 
-use crate::check_constraints::check_constraints;
 use crate::options::Options;
 use crate::pop_member::PopMember;
 
@@ -15,15 +14,10 @@ impl<T: Float, Ops, const D: usize> HallOfFame<T, Ops, D> {
         }
     }
 
-    pub fn consider(&mut self, member: &PopMember<T, Ops, D>, options: &Options<T, D>, curmaxsize: usize) {
-        if !member.loss.is_finite() {
-            return;
-        }
-        if !check_constraints(&member.expr, options, curmaxsize) {
-            return;
-        }
+    pub fn consider(&mut self, member: &PopMember<T, Ops, D>, options: &Options<T, D>) {
         let c = member.complexity;
-        if c == 0 {
+        // Match SymbolicRegression.jl `s_r_cycle`: keep entries with `0 < c <= maxsize`.
+        if c == 0 || c > options.maxsize {
             return;
         }
         if c >= self.best_by_complexity.len() {
@@ -44,14 +38,9 @@ impl<T: Float, Ops, const D: usize> HallOfFame<T, Ops, D> {
         }
     }
 
-    pub fn update_from_members(
-        &mut self,
-        members: &[PopMember<T, Ops, D>],
-        options: &Options<T, D>,
-        curmaxsize: usize,
-    ) {
+    pub fn update_from_members(&mut self, members: &[PopMember<T, Ops, D>], options: &Options<T, D>) {
         for m in members {
-            self.consider(m, options, curmaxsize);
+            self.consider(m, options);
         }
     }
 

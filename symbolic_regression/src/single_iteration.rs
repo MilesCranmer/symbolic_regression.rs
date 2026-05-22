@@ -39,7 +39,7 @@ where
     let ncycles = ctx.options.ncycles_per_iteration.max(1);
     let mut num_evals = 0.0;
     let mut best_seen = HallOfFame::new(ctx.options.maxsize);
-    best_seen.update_from_members(&pop.members, ctx.options, ctx.curmaxsize);
+    best_seen.update_from_members(&pop.members, ctx.options);
 
     for i in 0..ncycles {
         if ctx.controller.is_cancelled() {
@@ -65,7 +65,7 @@ where
                 _ops: core::marker::PhantomData,
             },
         );
-        best_seen.update_from_members(&pop.members, ctx.options, ctx.curmaxsize);
+        best_seen.update_from_members(&pop.members, ctx.options);
     }
     (num_evals, best_seen)
 }

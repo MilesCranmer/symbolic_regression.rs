@@ -572,10 +572,10 @@ fn apply_task_result<T, Ops, const D: usize>(
     stats.move_window();
 
     for m in res.best_seen.members() {
-        hall.consider(m, options, curmaxsize);
+        hall.consider(m, options);
     }
     for m in &st.pop.members {
-        hall.consider(m, options, curmaxsize);
+        hall.consider(m, options);
         if check_constraints(&m.expr, options, curmaxsize) && m.loss < pools.best.loss {
             pools.best = m.clone();
         }
@@ -649,7 +649,7 @@ where
             let mut m = PopMember::from_expr(expr, dataset.n_features, options);
             let _ = m.evaluate(&full_dataset, options, &mut evaluator);
             total_evals += 1;
-            hall.consider(&m, options, options.maxsize);
+            hall.consider(&m, options);
             members.push(m);
         }
 
