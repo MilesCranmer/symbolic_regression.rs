@@ -549,6 +549,7 @@ where
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn apply_task_result<T, Ops, const D: usize>(
     options: &Options<T, D>,
     counters: &mut SearchCounters,
