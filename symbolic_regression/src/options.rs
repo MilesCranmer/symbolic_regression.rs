@@ -69,7 +69,7 @@ macro_rules! sr_options_spec {
                 parsimony:
                     (f64, 0.0, "parsimony"),
                 adaptive_parsimony_scaling:
-                    (f64, 1040.0, "adaptive-parsimony-scaling"),
+                    (f64, 20.0, "adaptive-parsimony-scaling"),
                 crossover_probability:
                     (f64, 0.0259, "crossover-probability"),
                 perturbation_factor:
