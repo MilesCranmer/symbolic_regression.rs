@@ -5,6 +5,7 @@ mod imp {
     use std::time::{Duration, Instant};
 
     use dynamic_expressions::OperatorSet;
+    use dynamic_expressions::strings::{StringTreeOptions, string_tree};
     use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
     use num_traits::Float;
 
@@ -88,6 +89,7 @@ mod imp {
             hall: &HallOfFame<T, Ops, D>,
             total_evals: u64,
             cycles_remaining: usize,
+            print_precision: usize,
         ) where
             T: Float + num_traits::ToPrimitive + Display,
             Ops: OperatorSet,
@@ -105,6 +107,7 @@ mod imp {
                 render: self.render,
                 total_evals,
                 cycles_remaining,
+                print_precision,
             });
         }
 
@@ -124,6 +127,7 @@ mod imp {
         render: RenderOptions,
         total_evals: u64,
         cycles_remaining: usize,
+        print_precision: usize,
     }
 
     fn update_progress_msg<T, Ops, const D: usize>(ctx: ProgressMsgCtx<'_, T, Ops, D>)
@@ -140,6 +144,7 @@ mod imp {
             render,
             total_evals,
             cycles_remaining,
+            print_precision,
         } = ctx;
 
         let now = Instant::now();
@@ -183,7 +188,7 @@ mod imp {
             ),
         };
 
-        let hof = format_hall_of_fame(hall, term_width, usize::MAX, render);
+        let hof = format_hall_of_fame(hall, term_width, usize::MAX, render, print_precision);
         let hof_title = "Hall of Fame:".to_string();
         pb.set_message(format!(
             "{}\n{}\n{}",
@@ -200,6 +205,7 @@ mod imp {
         terminal_width: usize,
         max_entries: usize,
         render: RenderOptions,
+        print_precision: usize,
     ) -> String
     where
         T: Float + num_traits::ToPrimitive + Display,
@@ -245,7 +251,13 @@ mod imp {
             let stats = format!("{:<10}  {:<10.3e}  ", m.complexity, loss);
             let left_cols_width = stats.chars().count();
 
-            let eqn_plain = m.expr.to_string();
+            let eqn_plain = string_tree(
+                &m.expr,
+                StringTreeOptions {
+                    print_precision: Some(print_precision),
+                    ..Default::default()
+                },
+            );
             let eqn_lines = wrap_equation(&eqn_plain, terminal_width, left_cols_width);
 
             if let Some((first, rest)) = eqn_lines.split_first() {
@@ -376,6 +388,7 @@ mod imp {
             _hall: &HallOfFame<T, Ops, D>,
             _total_evals: u64,
             _cycles_remaining: usize,
+            _print_precision: usize,
         ) {
         }
 

@@ -37,6 +37,7 @@ function minimalOptions() {
     fraction_replaced: 0.00036,
     fraction_replaced_hof: 0.0614,
     topn: 12,
+    print_precision: 5,
 
     use_frequency: true,
     use_frequency_in_tournament: true,

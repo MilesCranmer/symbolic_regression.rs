@@ -18,9 +18,9 @@ export function QuickStatsCard(props: {
         <>
           <div className="eqHeader">
             <div className="mono monoWrap bigEq" data-testid="selected-equation">
-              {props.selectedSummary.equation}
+              {props.selectedSummary.equation_full}
             </div>
-            <button onClick={() => copyToClipboard(props.selectedSummary!.equation)}>Copy</button>
+            <button onClick={() => copyToClipboard(props.selectedSummary!.equation_full)}>Copy</button>
           </div>
           <div className="smallText muted">
             complexity {props.selectedSummary.complexity} • loss {formatSci(props.selectedSummary.loss)}

@@ -621,7 +621,12 @@ fn apply_task_result<T, Ops, const D: usize>(
     }
 
     let cycles_remaining = counters.mark_completed();
-    progress.on_cycle_complete(hall, pools.total_evals as u64, cycles_remaining);
+    progress.on_cycle_complete(
+        hall,
+        pools.total_evals as u64,
+        cycles_remaining,
+        options.print_precision,
+    );
 }
 
 fn init_populations<T, Ops, const D: usize>(

@@ -57,6 +57,7 @@ export type WasmSearchOptions = {
   fraction_replaced: number;
   fraction_replaced_hof: number;
   topn: number;
+  print_precision: number;
 
   use_frequency: boolean;
   use_frequency_in_tournament: boolean;
@@ -84,7 +85,10 @@ export type EquationSummary = {
   complexity: number;
   loss: number;
   cost: number;
+  /** Display-precision equation (matches `print_precision`, default 5 significant digits). */
   equation: string;
+  /** Full-precision equation, suitable for copy-to-clipboard. */
+  equation_full: string;
 };
 
 export type SearchSnapshot = {

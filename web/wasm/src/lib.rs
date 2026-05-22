@@ -135,7 +135,11 @@ pub struct EquationSummary {
     pub complexity: usize,
     pub loss: f64,
     pub cost: f64,
+    /// Display-precision equation (matches SymbolicRegression.jl `print_precision`, default 5
+    /// significant digits). Use this for tables / inline rendering.
     pub equation: String,
+    /// Full-precision equation, suitable for copy-to-clipboard.
+    pub equation_full: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -349,11 +353,21 @@ fn summary_from_member(
     engine: &SearchEngine<f64, BuiltinOpsF64, 3>,
     m: &symbolic_regression::PopMember<f64, BuiltinOpsF64, 3>,
 ) -> EquationSummary {
+    let variable_names = Some(engine.dataset().variable_names.as_slice());
     let equation = string_tree::<f64, BuiltinOpsF64, 3>(
         &m.expr,
         StringTreeOptions {
-            variable_names: Some(&engine.dataset().variable_names),
+            variable_names,
             pretty: false,
+            print_precision: Some(engine.options().print_precision),
+        },
+    );
+    let equation_full = string_tree::<f64, BuiltinOpsF64, 3>(
+        &m.expr,
+        StringTreeOptions {
+            variable_names,
+            pretty: false,
+            print_precision: None,
         },
     );
     EquationSummary {
@@ -362,6 +376,7 @@ fn summary_from_member(
         loss: m.loss,
         cost: m.cost,
         equation,
+        equation_full,
     }
 }
 

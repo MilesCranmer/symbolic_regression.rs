@@ -113,6 +113,8 @@ macro_rules! sr_options_spec {
                     (f64, 0.0614, "fraction-replaced-hof"),
                 topn:
                     (usize, 12, "topn"),
+                print_precision:
+                    (usize, 5, "print-precision"),
                 max_evals:
                     (u64, 0, "max-evals"),
                 timeout_in_seconds:
