@@ -335,7 +335,7 @@ where
         baby.complexity = member.complexity;
         baby.loss = member.loss;
         baby.cost = member.cost;
-        return (baby, false, 0.0);
+        return (baby, false, evals);
     }
 
     let mut baby = PopMember::from_expr(tree, n_features, options);
