@@ -56,7 +56,6 @@ export type WasmSearchOptions = {
   optimizer_f_calls_limit: number;
   fraction_replaced: number;
   fraction_replaced_hof: number;
-  fraction_replaced_guesses: number;
   topn: number;
 
   use_frequency: boolean;

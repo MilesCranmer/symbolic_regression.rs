@@ -314,10 +314,6 @@ export function ModelingTask(): React.ReactElement {
                 <div className="label">fraction_replaced_hof</div>
                 <input type="number" step={0.0001} value={options.fraction_replaced_hof} onChange={(e) => setOptionsPatch({ fraction_replaced_hof: Number(e.target.value) })} />
               </label>
-              <label className="field">
-                <div className="label">fraction_replaced_guesses</div>
-                <input type="number" step={0.0001} value={options.fraction_replaced_guesses} onChange={(e) => setOptionsPatch({ fraction_replaced_guesses: Number(e.target.value) })} />
-              </label>
             </section>
 
             <section className="section">

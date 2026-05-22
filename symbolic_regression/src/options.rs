@@ -111,8 +111,6 @@ macro_rules! sr_options_spec {
                     (f64, 0.00036, "fraction-replaced"),
                 fraction_replaced_hof:
                     (f64, 0.0614, "fraction-replaced-hof"),
-                fraction_replaced_guesses:
-                    (f64, 0.001, "fraction-replaced-guesses"),
                 topn:
                     (usize, 12, "topn"),
                 max_evals:

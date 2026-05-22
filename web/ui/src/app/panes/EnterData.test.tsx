@@ -36,7 +36,6 @@ function minimalOptions() {
     optimizer_f_calls_limit: 10_000,
     fraction_replaced: 0.00036,
     fraction_replaced_hof: 0.0614,
-    fraction_replaced_guesses: 0.001,
     topn: 12,
 
     use_frequency: true,
