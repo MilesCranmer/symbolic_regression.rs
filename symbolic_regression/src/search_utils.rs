@@ -204,8 +204,12 @@ impl<T: Float + AddAssign, Ops, const D: usize> SearchCore<T, Ops, D> {
             return;
         }
 
-        self.task_order = (0..self.pools.pops.len()).collect();
-        shuffle(&mut self.order_rng, &mut self.task_order);
+        // Matches SymbolicRegression.jl `equation_search`: `task_order` is built and shuffled
+        // exactly once at the start of the search, then cycled through forever.
+        if self.task_order.is_empty() {
+            self.task_order = (0..self.pools.pops.len()).collect();
+            shuffle(&mut self.order_rng, &mut self.task_order);
+        }
         self.next_task = 0;
         self.cur_iter += 1;
     }
