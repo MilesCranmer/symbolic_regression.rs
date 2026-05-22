@@ -157,6 +157,12 @@ jobs:
   cargo-package:
     name: cargo package
     runs-on: ubuntu-latest
+    # `cargo package` resolves dependencies against crates.io, which races with the
+    # release-please publish workflow whenever a release commit lands on `main` (the new dep
+    # version isn't on the index yet). Skip on `push` events: PRs already validate packaging
+    # before merge, and `release-please.yml -> publish-crates.yml` runs `cargo publish`
+    # (a strict superset) for actual releases.
+    if: github.event_name != 'push'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
