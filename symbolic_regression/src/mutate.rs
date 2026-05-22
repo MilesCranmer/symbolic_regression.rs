@@ -340,7 +340,7 @@ where
 
     let mut baby = PopMember::from_expr(tree, n_features, options);
     let _ok = baby.evaluate(&dataset, options, evaluator);
-    evals += 1.0;
+    evals += dataset.dataset_fraction();
     let after_cost = baby.cost.to_f64().unwrap_or(f64::INFINITY);
     if after_cost.is_nan() {
         let mut reject = PopMember::from_expr(member.expr.clone(), n_features, options);
@@ -409,7 +409,7 @@ where
             let mut baby2 = PopMember::from_expr(c2_expr, dataset.n_features, options);
             let _ = baby1.evaluate(&dataset, options, evaluator);
             let _ = baby2.evaluate(&dataset, options, evaluator);
-            return (baby1, baby2, true, 2.0);
+            return (baby1, baby2, true, 2.0 * dataset.dataset_fraction());
         }
         if tries >= max_tries {
             let baby1 = member1.clone();

@@ -42,11 +42,11 @@ impl StopController {
         false
     }
 
-    pub(crate) fn should_stop(&self, total_evals: u64) -> bool {
+    pub(crate) fn should_stop(&self, total_evals: f64) -> bool {
         if self.is_cancelled() {
             return true;
         }
-        if self.max_evals > 0 && total_evals >= self.max_evals {
+        if self.max_evals > 0 && total_evals >= self.max_evals as f64 {
             return true;
         }
         false

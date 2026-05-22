@@ -231,12 +231,15 @@ where
     };
     let ls = BackTracking::default();
 
-    let mut n_evals: u64 = 0;
+    // Matches SymbolicRegression.jl `ConstantOptimization.jl`: each f-call counts as one
+    // `dataset_fraction(dataset)` toward `num_evals`.
+    let eval_fraction = dataset.dataset_fraction();
+    let mut n_evals: f64 = 0.0;
 
     {
         let res = workspace.optimize_from_start(&x0, n_params, member, optim_opts, ls);
         if let Some(res) = res {
-            n_evals = n_evals.saturating_add(res.f_calls as u64);
+            n_evals += (res.f_calls as f64) * eval_fraction;
             if res.minimum < best_f {
                 best_f = res.minimum;
                 best_x = res.minimizer;
@@ -254,7 +257,7 @@ where
 
         let res = workspace.optimize_from_start(&xt, n_params, member, optim_opts, ls);
         if let Some(res) = res {
-            n_evals = n_evals.saturating_add(res.f_calls as u64);
+            n_evals += (res.f_calls as f64) * eval_fraction;
             if res.minimum < best_f {
                 best_f = res.minimum;
                 best_x = res.minimizer;
@@ -272,17 +275,17 @@ where
             member.birth = orig_birth;
             member.loss = orig_loss;
             member.cost = orig_cost;
-            return (false, n_evals as f64);
+            return (false, n_evals);
         }
-        n_evals = n_evals.saturating_add(1);
+        n_evals += eval_fraction;
         member.birth = get_birth_order(options.deterministic);
-        (true, n_evals as f64)
+        (true, n_evals)
     } else {
         member.expr.consts = orig_consts;
         member.birth = orig_birth;
         member.loss = orig_loss;
         member.cost = orig_cost;
-        (false, n_evals as f64)
+        (false, n_evals)
     }
 }
 

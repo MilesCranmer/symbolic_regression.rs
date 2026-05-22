@@ -58,7 +58,7 @@ impl SearchCounters {
 struct SearchTaskResult<T: Float + AddAssign, Ops, const D: usize> {
     pop_idx: usize,
     curmaxsize: usize,
-    evals: u64,
+    evals: f64,
     best_seen: HallOfFame<T, Ops, D>,
     best_sub_pop: Vec<PopMember<T, Ops, D>>,
     pop_state: PopState<T, Ops, D>,
@@ -104,10 +104,7 @@ impl<T: Float + AddAssign, Ops, const D: usize> PopState<T, Ops, D> {
             }
             let batch = self.batch_dataset.as_mut().expect("set above");
             batch.resample_from(full_data, &mut self.rng);
-            TaggedDataset {
-                data: batch,
-                baseline_loss: full_dataset.baseline_loss,
-            }
+            TaggedDataset::for_batch(batch, full_dataset.baseline_loss, full_data.n_rows)
         } else {
             full_dataset
         };
@@ -132,7 +129,7 @@ struct PopPools<T: Float + AddAssign, Ops, const D: usize> {
     pops: Vec<Option<PopState<T, Ops, D>>>,
     best_sub_pops: Vec<Vec<PopMember<T, Ops, D>>>,
     best: PopMember<T, Ops, D>,
-    total_evals: u64,
+    total_evals: f64,
 }
 
 pub fn equation_search<T, Ops, const D: usize>(dataset: &Dataset<T>, options: &Options<T, D>) -> SearchResult<T, Ops, D>
@@ -160,7 +157,7 @@ where
     };
 
     let mut progress = SearchProgress::new(options, counters.total_cycles);
-    progress.set_initial_evals(pools.total_evals);
+    progress.set_initial_evals(pools.total_evals as u64);
 
     let mut core = SearchCore {
         counters,
@@ -406,7 +403,7 @@ where
         };
 
         let mut progress = SearchProgress::new(&options, counters.total_cycles);
-        progress.set_initial_evals(pools.total_evals);
+        progress.set_initial_evals(pools.total_evals as u64);
 
         let order_rng = Rng::with_seed(options.seed ^ 0x9e37_79b9_7f4a_7c15);
 
@@ -441,7 +438,7 @@ where
     }
 
     pub fn total_evals(&self) -> u64 {
-        self.core.pools.total_evals
+        self.core.pools.total_evals as u64
     }
 
     pub fn is_finished(&self) -> bool {
@@ -510,7 +507,7 @@ where
         return SearchTaskResult {
             pop_idx,
             curmaxsize,
-            evals: 0,
+            evals: 0.0,
             best_seen: HallOfFame::new(options.maxsize),
             best_sub_pop: migration::best_sub_pop(&pop_state.pop, options.topn),
             pop_state,
@@ -533,7 +530,7 @@ where
         &stats,
         controller,
     );
-    let evals = (evals1.max(0.0) + evals2.max(0.0)) as u64;
+    let evals = evals1.max(0.0) + evals2.max(0.0);
 
     let best_sub_pop = migration::best_sub_pop(&pop_state.pop, options.topn);
 
@@ -559,7 +556,7 @@ fn apply_task_result<T, Ops, const D: usize>(
     T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + AddAssign,
     Ops: dynamic_expressions::OperatorSet<T = T>,
 {
-    pools.total_evals = pools.total_evals.saturating_add(res.evals);
+    pools.total_evals += res.evals;
 
     let pop_idx = res.pop_idx;
     let curmaxsize = res.curmaxsize;
@@ -609,7 +606,7 @@ fn apply_task_result<T, Ops, const D: usize>(
     }
 
     let cycles_remaining = counters.mark_completed();
-    progress.on_cycle_complete(hall, pools.total_evals, cycles_remaining);
+    progress.on_cycle_complete(hall, pools.total_evals as u64, cycles_remaining);
 }
 
 fn init_populations<T, Ops, const D: usize>(
@@ -623,7 +620,7 @@ where
     Ops: dynamic_expressions::OperatorSet<T = T>,
 {
     let dataset = full_dataset.data;
-    let mut total_evals: u64 = 0;
+    let mut total_evals: f64 = 0.0;
     let mut pops: Vec<Option<PopState<T, Ops, D>>> = Vec::with_capacity(options.populations);
 
     for pop_i in 0..options.populations {
@@ -648,7 +645,7 @@ where
             );
             let mut m = PopMember::from_expr(expr, dataset.n_features, options);
             let _ = m.evaluate(&full_dataset, options, &mut evaluator);
-            total_evals += 1;
+            total_evals += full_dataset.dataset_fraction();
             hall.consider(&m, options);
             members.push(m);
         }

@@ -9,11 +9,34 @@ use crate::random::usize_range;
 pub struct TaggedDataset<'a, T: Float> {
     pub data: &'a Dataset<T>,
     pub baseline_loss: Option<T>,
+    /// Row count of the *full* dataset this tag refers to. Equal to `data.n_rows` when the tag
+    /// wraps the full dataset; when it wraps a batch buffer, this is the underlying full size.
+    /// Mirrors SymbolicRegression.jl's `SubDataset` / `BasicDataset` distinction.
+    pub full_n_rows: usize,
 }
 
 impl<'a, T: Float> TaggedDataset<'a, T> {
     pub fn new(data: &'a Dataset<T>, baseline_loss: Option<T>) -> Self {
-        Self { data, baseline_loss }
+        Self {
+            data,
+            baseline_loss,
+            full_n_rows: data.n_rows,
+        }
+    }
+    pub fn for_batch(batch: &'a Dataset<T>, baseline_loss: Option<T>, full_n_rows: usize) -> Self {
+        Self {
+            data: batch,
+            baseline_loss,
+            full_n_rows,
+        }
+    }
+    /// Matches SymbolicRegression.jl `dataset_fraction`: ratio of `data.n_rows` to the full size.
+    pub fn dataset_fraction(&self) -> f64 {
+        if self.full_n_rows == 0 {
+            1.0
+        } else {
+            (self.data.n_rows as f64) / (self.full_n_rows as f64)
+        }
     }
 }
 
