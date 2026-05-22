@@ -1,7 +1,24 @@
+use std::sync::Arc;
+
 use dynamic_expressions::Operators;
 use num_traits::Float;
 
 use crate::loss_functions::{LossObject, mse};
+
+/// Matches SymbolicRegression.jl `early_stop_condition`: takes `(loss, complexity)` and returns
+/// `true` to terminate the search early. Wrapping a scalar threshold `t` is `EarlyStop::below(t)`.
+pub type EarlyStopCondition<T> = Arc<dyn Fn(T, usize) -> bool + Send + Sync>;
+
+/// Helper constructors for the standard kinds of early stop conditions Julia supports.
+pub struct EarlyStop;
+
+impl EarlyStop {
+    /// Stop when any hall-of-fame member has `loss < threshold`. Matches Julia's wrapping of a
+    /// scalar `early_stop_condition::Real` into `(l, c) -> l < threshold`.
+    pub fn below<T: Float + Send + Sync + 'static>(threshold: T) -> EarlyStopCondition<T> {
+        Arc::new(move |loss: T, _complexity: usize| loss < threshold)
+    }
+}
 
 #[rustfmt::skip]
 macro_rules! sr_mutation_weights_spec {
@@ -191,6 +208,10 @@ macro_rules! __define_options {
             >,
             pub op_constraints: crate::check_constraints::OpConstraints<D>,
             pub nested_constraints: crate::check_constraints::NestedConstraints,
+
+            /// Optional early-stop callback. Matches SymbolicRegression.jl `early_stop_condition`:
+            /// search terminates as soon as any hall-of-fame member satisfies `f(loss, complexity)`.
+            pub early_stop_condition: Option<EarlyStopCondition<T>>,
         }
 
         impl<T: Float, const D: usize> Default for Options<T, D> {
@@ -207,6 +228,7 @@ macro_rules! __define_options {
                     operator_complexity_overrides: std::collections::HashMap::new(),
                     op_constraints: Default::default(),
                     nested_constraints: Default::default(),
+                    early_stop_condition: None,
                 }
             }
         }

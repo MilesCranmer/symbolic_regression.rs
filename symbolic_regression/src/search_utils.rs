@@ -349,6 +349,7 @@ where
                     &mut self.progress,
                     &mut self.pools,
                     res,
+                    controller,
                 );
                 completed_total += 1;
 
@@ -552,6 +553,7 @@ fn apply_task_result<T, Ops, const D: usize>(
     progress: &mut SearchProgress,
     pools: &mut PopPools<T, Ops, D>,
     res: SearchTaskResult<T, Ops, D>,
+    controller: &StopController,
 ) where
     T: Float + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + AddAssign,
     Ops: dynamic_expressions::OperatorSet<T = T>,
@@ -603,6 +605,14 @@ fn apply_task_result<T, Ops, const D: usize>(
             &mut st.rng,
             options.deterministic,
         );
+    }
+
+    // Matches SymbolicRegression.jl `check_for_loss_threshold`: cancel as soon as any HoF member
+    // satisfies the user's early-stop callback.
+    if let Some(ref f) = options.early_stop_condition {
+        if hall.any_member_satisfies(f.as_ref()) {
+            controller.cancel();
+        }
     }
 
     let cycles_remaining = counters.mark_completed();

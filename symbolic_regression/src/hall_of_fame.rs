@@ -48,6 +48,15 @@ impl<T: Float, Ops, const D: usize> HallOfFame<T, Ops, D> {
         self.best_by_complexity.iter().flatten()
     }
 
+    /// Matches SymbolicRegression.jl `check_for_loss_threshold`: returns true if any existing
+    /// member satisfies the callback. Caller passes `(loss, complexity) -> bool`.
+    pub fn any_member_satisfies(&self, f: &dyn Fn(T, usize) -> bool) -> bool {
+        self.best_by_complexity
+            .iter()
+            .flatten()
+            .any(|m| f(m.loss, m.complexity))
+    }
+
     pub fn pareto_front(&self) -> Vec<PopMember<T, Ops, D>> {
         let mut out = Vec::new();
         let mut best_loss = T::infinity();
