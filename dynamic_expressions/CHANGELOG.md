@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/astroautomata/symbolic_regression.rs/compare/dynamic_expressions-v0.10.0...dynamic_expressions-v0.10.1) (2026-05-22)
+
+
+### Features
+
+* honor print_precision when rendering equation constants ([9cdd9d0](https://github.com/astroautomata/symbolic_regression.rs/commit/9cdd9d0f9f6ac38bda2154b2c3757ce793c84454))
+
 ## [0.10.0](https://github.com/astroautomata/symbolic_regression.rs/compare/dynamic_expressions-v0.9.1...dynamic_expressions-v0.10.0) (2025-12-30)
 
 
