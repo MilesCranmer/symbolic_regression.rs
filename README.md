@@ -16,13 +16,14 @@ Try out a fully browser-based demo of WebAssembly-compiled symbolic regression [
 > This package is an **experiment**. The API is not stabilized, and you should expect large breaking changes in the syntax.
 > This library is not ready for use.
 
-This workspace contains three crates:
+This workspace contains three Rust crates and one Python extension package:
 
 | Crate | crates.io | CI |
 |---|---|---|
 | [`symbolic_regression`](./symbolic_regression) | [![crates.io](https://img.shields.io/crates/v/symbolic_regression)](https://crates.io/crates/symbolic_regression) | [![CI (symbolic_regression)](https://github.com/astro-automata/symbolic_regression.rs/actions/workflows/ci-symbolic-regression.yml/badge.svg?branch=main)](https://github.com/astro-automata/symbolic_regression.rs/actions/workflows/ci-symbolic-regression.yml) |
 | [`dynamic_expressions`](./dynamic_expressions) | [![crates.io](https://img.shields.io/crates/v/dynamic_expressions)](https://crates.io/crates/dynamic_expressions) | [![CI (dynamic_expressions)](https://github.com/astro-automata/symbolic_regression.rs/actions/workflows/ci-dynamic-expressions.yml/badge.svg?branch=main)](https://github.com/astro-automata/symbolic_regression.rs/actions/workflows/ci-dynamic-expressions.yml) |
 | [`symbolic_regression_wasm`](./symbolic_regression_wasm) | [![crates.io](https://img.shields.io/crates/v/symbolic_regression_wasm)](https://crates.io/crates/symbolic_regression_wasm) | [![CI (Web UI)](https://github.com/astro-automata/symbolic_regression.rs/actions/workflows/ci-web.yml/badge.svg?branch=main)](https://github.com/astro-automata/symbolic_regression.rs/actions/workflows/ci-web.yml) |
+| [`symbolic_regression_py`](./symbolic_regression_py) | `pysr-rust-backend` package draft | [![CI (Python wrapper)](https://github.com/astroautomata/symbolic_regression.rs/actions/workflows/ci-python-wrapper.yml/badge.svg?branch=main)](https://github.com/astroautomata/symbolic_regression.rs/actions/workflows/ci-python-wrapper.yml) |
 
 ## Low-level API
 

@@ -17,5 +17,7 @@ Cargo.lock
 !web_ui/package-lock.json
 web_ui/src/generated/defaultCsv.ts
 **/.playwright-browsers/**
+**/__pycache__/
+**/.pytest_cache/
 !symbolic_regression_wasm/.cargo/
 !symbolic_regression_wasm/.cargo/**
