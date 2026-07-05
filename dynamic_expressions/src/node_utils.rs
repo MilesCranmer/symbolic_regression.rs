@@ -39,7 +39,7 @@ fn tree_mapreduce_impl<R, B>(
 ) -> R {
     for n in nodes {
         match *n {
-            PNode::Var { .. } | PNode::Const { .. } => stack.push(f_leaf(n)),
+            PNode::Var { .. } | PNode::Delay { .. } | PNode::Const { .. } => stack.push(f_leaf(n)),
             PNode::Op { arity, .. } => {
                 let a = arity as usize;
                 let start = stack.len().checked_sub(a).expect("invalid postfix (stack underflow)");
@@ -88,15 +88,31 @@ pub fn has_operators(nodes: &[PNode]) -> bool {
 }
 
 pub fn has_variables(nodes: &[PNode]) -> bool {
-    nodes.iter().any(|n| matches!(n, PNode::Var { .. }))
+    nodes
+        .iter()
+        .any(|n| matches!(n, PNode::Var { .. } | PNode::Delay { .. }))
 }
 
 pub fn count_variable_nodes(nodes: &[PNode]) -> usize {
-    nodes.iter().filter(|n| matches!(n, PNode::Var { .. })).count()
+    nodes
+        .iter()
+        .filter(|n| matches!(n, PNode::Var { .. } | PNode::Delay { .. }))
+        .count()
 }
 
 pub fn count_operator_nodes(nodes: &[PNode]) -> usize {
     nodes.iter().filter(|n| matches!(n, PNode::Op { .. })).count()
+}
+
+pub fn max_delay(nodes: &[PNode]) -> usize {
+    nodes
+        .iter()
+        .filter_map(|n| match n {
+            PNode::Delay { offset, .. } => Some(*offset as usize),
+            _ => None,
+        })
+        .max()
+        .unwrap_or(0)
 }
 
 pub fn max_arity(nodes: &[PNode]) -> u8 {
@@ -111,14 +127,17 @@ pub fn max_arity(nodes: &[PNode]) -> u8 {
 }
 
 pub fn is_leaf(nodes: &[PNode]) -> bool {
-    matches!(nodes, [PNode::Var { .. }] | [PNode::Const { .. }])
+    matches!(
+        nodes,
+        [PNode::Var { .. }] | [PNode::Delay { .. }] | [PNode::Const { .. }]
+    )
 }
 
 pub fn is_valid_postfix(nodes: &[PNode]) -> bool {
     let mut stack: isize = 0;
     for n in nodes {
         match *n {
-            PNode::Var { .. } | PNode::Const { .. } => stack += 1,
+            PNode::Var { .. } | PNode::Delay { .. } | PNode::Const { .. } => stack += 1,
             PNode::Op { arity, .. } => {
                 let a = arity as isize;
                 if a <= 0 {
@@ -140,7 +159,7 @@ pub fn subtree_sizes(nodes: &[PNode]) -> Vec<usize> {
 
     for (i, n) in nodes.iter().enumerate() {
         match *n {
-            PNode::Var { .. } | PNode::Const { .. } => {
+            PNode::Var { .. } | PNode::Delay { .. } | PNode::Const { .. } => {
                 sizes[i] = 1;
                 stack.push(1);
             }

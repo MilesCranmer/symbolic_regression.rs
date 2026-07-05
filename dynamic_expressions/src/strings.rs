@@ -150,6 +150,9 @@ where
         &expr.nodes,
         |n| match *n {
             PNode::Var { feature } => default_string_variable(feature, names),
+            PNode::Delay { feature, offset } => {
+                format!("delay({}, {})", default_string_variable(feature, names), offset)
+            }
             PNode::Const { idx } => format_constant(&expr.consts[usize::from(idx)], opts.print_precision),
             _ => unreachable!("branch node in leaf mapper"),
         },

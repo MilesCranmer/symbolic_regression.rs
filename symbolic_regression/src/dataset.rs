@@ -57,6 +57,8 @@ pub struct Dataset<T: Float> {
     pub n_rows: usize,
     pub weights: Option<Array1<T>>,
     pub variable_names: Vec<String>,
+    /// Optional sequence/group id per row. Delays are valid only within a sequence.
+    pub sequence_ids: Option<Vec<usize>>,
     /// Weighted mean of `y` (or unweighted mean when no weights).
     pub avg_y: T,
 }
@@ -67,6 +69,7 @@ impl<T: Float> Dataset<T> {
         y: Array1<T>,
         weights: Option<Array1<T>>,
         variable_names: Vec<String>,
+        sequence_ids: Option<Vec<usize>>,
         avg_y: Option<T>,
     ) -> Self {
         let x = x.as_standard_layout().to_owned();
@@ -74,6 +77,13 @@ impl<T: Float> Dataset<T> {
         assert_eq!(y.len(), n_rows);
         if let Some(ref w) = weights {
             assert_eq!(w.len(), n_rows);
+        }
+        if let Some(ref ids) = sequence_ids {
+            assert_eq!(ids.len(), n_rows);
+            assert!(
+                ids.windows(2).all(|w| w[0] <= w[1]),
+                "sequence_ids must be nondecreasing so each sequence is contiguous"
+            );
         }
 
         let avg_y = avg_y
@@ -86,12 +96,13 @@ impl<T: Float> Dataset<T> {
             n_rows,
             weights,
             variable_names,
+            sequence_ids,
             avg_y,
         }
     }
 
     pub fn new(x: Array2<T>, y: Array1<T>) -> Self {
-        Self::build_dataset(x, y, None, Vec::new(), None)
+        Self::build_dataset(x, y, None, Vec::new(), None, None)
     }
 
     pub fn with_weights_and_names(
@@ -100,7 +111,17 @@ impl<T: Float> Dataset<T> {
         weights: Option<Array1<T>>,
         variable_names: Vec<String>,
     ) -> Self {
-        Self::build_dataset(x, y, weights, variable_names, None)
+        Self::build_dataset(x, y, weights, variable_names, None, None)
+    }
+
+    pub fn with_weights_names_and_sequence_ids(
+        x: Array2<T>,
+        y: Array1<T>,
+        weights: Option<Array1<T>>,
+        variable_names: Vec<String>,
+        sequence_ids: Vec<usize>,
+    ) -> Self {
+        Self::build_dataset(x, y, weights, variable_names, Some(sequence_ids), None)
     }
 
     pub fn y_slice(&self) -> &[T] {
@@ -109,6 +130,24 @@ impl<T: Float> Dataset<T> {
 
     pub fn weights_slice(&self) -> Option<&[T]> {
         self.weights.as_ref().and_then(|w| w.as_slice())
+    }
+
+    pub fn sequence_ids_slice(&self) -> Option<&[usize]> {
+        self.sequence_ids.as_deref()
+    }
+
+    pub fn delay_valid_at(&self, row: usize, offset: usize) -> bool {
+        if row < offset {
+            return false;
+        }
+        match self.sequence_ids.as_deref() {
+            None => true,
+            Some(ids) => ids[row] == ids[row - offset],
+        }
+    }
+
+    pub fn has_valid_delay_rows(&self, offset: usize) -> bool {
+        (0..self.n_rows).any(|row| self.delay_valid_at(row, offset))
     }
 
     pub fn compute_avg_y(y: &[T], weights: Option<&[T]>) -> T {
@@ -140,7 +179,7 @@ impl<T: Float> Dataset<T> {
         let x = Array2::<T>::zeros((full.n_features, batch_size));
         let y = Array1::<T>::zeros(batch_size);
         let weights = full.weights.as_ref().map(|_| Array1::<T>::zeros(batch_size));
-        Self::build_dataset(x, y, weights, full.variable_names.clone(), Some(full.avg_y))
+        Self::build_dataset(x, y, weights, full.variable_names.clone(), None, Some(full.avg_y))
     }
 
     pub fn resample_from(&mut self, full: &Dataset<T>, rng: &mut Rng) {

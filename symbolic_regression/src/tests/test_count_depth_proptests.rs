@@ -8,6 +8,7 @@ use proptest::prelude::*;
 use super::common::{D, T, TestOps};
 use crate::mutation_functions::prepend_random_op_in_place;
 use crate::operator_library::OperatorLibrary;
+use crate::options::Options;
 
 const N_FEATURES: usize = 5;
 const N_CONSTS: usize = 3;
@@ -37,8 +38,9 @@ proptest! {
         let before = node_utils::count_depth(&expr.nodes);
 
         let ops = OperatorLibrary::sr_default::<TestOps, D>();
+        let options = Options::<T, D>::default();
         let mut rng = Rng::with_seed(rng_seed);
-        prop_assert!(prepend_random_op_in_place(&mut rng, &mut expr, &ops, N_FEATURES));
+        prop_assert!(prepend_random_op_in_place(&mut rng, &mut expr, &ops, N_FEATURES, &options));
 
         let after = node_utils::count_depth(&expr.nodes);
         prop_assert_eq!(after, before + 1);

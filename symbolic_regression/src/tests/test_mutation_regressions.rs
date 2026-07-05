@@ -32,6 +32,7 @@ fn randomize_mutation_can_succeed_below_size_3() {
     options.use_frequency = false;
     options.mutation_weights = MutationWeights {
         mutate_constant: 0.0,
+        mutate_delay_offset: 0.0,
         mutate_operator: 0.0,
         mutate_feature: 0.0,
         swap_operands: 0.0,
@@ -156,6 +157,7 @@ fn add_node_includes_append_at_leaf_move() {
     options.use_frequency = false;
     options.mutation_weights = MutationWeights {
         mutate_constant: 0.0,
+        mutate_delay_offset: 0.0,
         mutate_operator: 0.0,
         mutate_feature: 0.0,
         swap_operands: 0.0,
@@ -251,6 +253,7 @@ fn mutate_operator_can_be_a_noop_and_still_succeeds() {
     options.use_frequency = false;
     options.mutation_weights = MutationWeights {
         mutate_constant: 0.0,
+        mutate_delay_offset: 0.0,
         mutate_operator: 1.0,
         mutate_feature: 0.0,
         swap_operands: 0.0,

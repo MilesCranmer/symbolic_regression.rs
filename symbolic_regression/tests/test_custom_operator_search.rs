@@ -22,6 +22,7 @@ fn custom_operator_is_used_in_end_to_end_search() {
 
     let mutation_weights = MutationWeights {
         mutate_constant: 0.0,
+        mutate_delay_offset: 0.0,
         mutate_operator: 0.0,
         mutate_feature: 0.0,
         swap_operands: 0.0,

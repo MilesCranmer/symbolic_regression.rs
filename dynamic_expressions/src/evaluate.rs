@@ -95,6 +95,14 @@ pub(crate) fn resolve_val_src<'a, T: Float>(
             let end = start + n_rows;
             SrcRef::Slice(&x_columns[start..end])
         }
+        Src::Delay { feature, offset } => {
+            let start = feature as usize * n_rows;
+            let end = start + n_rows;
+            SrcRef::ShiftedSlice {
+                slice: &x_columns[start..end],
+                offset: offset as usize,
+            }
+        }
         Src::Const(c) => SrcRef::Const(consts[c as usize]),
         Src::Slot(s) => {
             let slot = s as usize;
@@ -126,6 +134,33 @@ where
     let mut out = vec![T::zero(); n_rows];
     let complete = eval_tree_array_into::<T, Ops, D>(&mut out, expr, x_columns, &mut ctx, opts);
     (out, complete)
+}
+
+pub fn delay_validity_mask(nodes: &[crate::node::PNode], n_rows: usize, sequence_ids: Option<&[usize]>) -> Vec<bool> {
+    let mut out = vec![false; n_rows];
+    delay_validity_mask_into(&mut out, nodes, sequence_ids);
+    out
+}
+
+pub fn delay_validity_mask_into(out: &mut [bool], nodes: &[crate::node::PNode], sequence_ids: Option<&[usize]>) {
+    let n_rows = out.len();
+    if let Some(ids) = sequence_ids {
+        assert_eq!(ids.len(), n_rows);
+    }
+
+    let max_delay = crate::node_utils::max_delay(nodes);
+    if max_delay == 0 {
+        out.fill(true);
+        return;
+    }
+
+    for (row, dst) in out.iter_mut().enumerate() {
+        *dst = if row < max_delay {
+            false
+        } else {
+            sequence_ids.map_or(true, |ids| ids[row] == ids[row - max_delay])
+        };
+    }
 }
 
 pub fn eval_plan_array_into<T, Ops, const D: usize>(
@@ -186,6 +221,14 @@ where
         Src::Var(f) => {
             out.copy_from_slice(&x_data[f as usize * n_rows..(f as usize + 1) * n_rows]);
         }
+        Src::Delay { feature, offset } => {
+            let start = feature as usize * n_rows;
+            let source = &x_data[start..start + n_rows];
+            let offset = offset as usize;
+            for (row, dst) in out.iter_mut().enumerate() {
+                *dst = source[row.saturating_sub(offset)];
+            }
+        }
         Src::Const(c) => {
             let v = expr.consts[c as usize];
             if opts.check_finite && !v.is_finite() {
@@ -238,6 +281,7 @@ pub mod kernels {
     fn __src_val<T: Float>(src: SrcRef<'_, T>, row: usize) -> T {
         match src {
             SrcRef::Slice(s) => s[row],
+            SrcRef::ShiftedSlice { slice, offset } => slice[row.saturating_sub(offset)],
             SrcRef::Const(c) => c,
         }
     }
@@ -254,6 +298,7 @@ pub mod kernels {
     #[derive(Clone, Copy)]
     enum ArgView<'a, T> {
         Slice(&'a [T]),
+        ShiftedSlice { slice: &'a [T], offset: usize },
         Const(T),
     }
 
@@ -261,6 +306,7 @@ pub mod kernels {
         fn from(value: SrcRef<'a, T>) -> Self {
             match value {
                 SrcRef::Slice(s) => Self::Slice(s),
+                SrcRef::ShiftedSlice { slice, offset } => Self::ShiftedSlice { slice, offset },
                 SrcRef::Const(c) => Self::Const(c),
             }
         }
@@ -271,6 +317,7 @@ pub mod kernels {
         fn get(&self, row: usize) -> T {
             match self {
                 Self::Slice(s) => s[row],
+                Self::ShiftedSlice { slice, offset } => slice[row.saturating_sub(*offset)],
                 Self::Const(c) => *c,
             }
         }
@@ -307,6 +354,12 @@ pub mod kernels {
     {
         match (x, dx) {
             (_, ArgView::Const(dx_c)) if dx_c.is_zero() => out.fill(T::zero()),
+            (ArgView::ShiftedSlice { .. }, _) | (_, ArgView::ShiftedSlice { .. }) => {
+                for (row, outg) in out.iter_mut().enumerate() {
+                    let vals = vals1(x.get(row));
+                    *outg = partial(&vals, 0) * dx.get(row);
+                }
+            }
             (ArgView::Slice(x_s), ArgView::Slice(dx_s)) => {
                 for ((outg, &xv), &dxv) in out.iter_mut().zip_eq(x_s).zip_eq(dx_s) {
                     let vals = vals1(xv);
@@ -340,6 +393,15 @@ pub mod kernels {
         F: Fn(&[T; A], usize) -> T,
     {
         match (x, y, dx, dy) {
+            (ArgView::ShiftedSlice { .. }, _, _, _)
+            | (_, ArgView::ShiftedSlice { .. }, _, _)
+            | (_, _, ArgView::ShiftedSlice { .. }, _)
+            | (_, _, _, ArgView::ShiftedSlice { .. }) => {
+                for (row, outv) in out.iter_mut().enumerate() {
+                    let vals = vals2(x.get(row), y.get(row));
+                    *outv = partial(&vals, 0) * dx.get(row) + partial(&vals, 1) * dy.get(row);
+                }
+            }
             (ArgView::Slice(x_s), ArgView::Slice(y_s), ArgView::Slice(dx_s), ArgView::Slice(dy_s)) => {
                 let data = (x_s.iter().zip_eq(y_s)).zip_eq(dx_s.iter().zip_eq(dy_s));
                 for (outv, ((&xv, &yv), (&dxv, &dyv))) in out.iter_mut().zip_eq(data) {
@@ -414,6 +476,11 @@ pub mod kernels {
                     *outv = eval(xv);
                 }
             }
+            ArgView::ShiftedSlice { .. } => {
+                for (row, outv) in out.iter_mut().enumerate() {
+                    *outv = eval(x.get(row));
+                }
+            }
             ArgView::Const(x_c) => out.fill(eval(x_c)),
         }
     }
@@ -426,6 +493,11 @@ pub mod kernels {
         eval: impl Copy + Fn(T, T) -> T,
     ) {
         match (x, y) {
+            (ArgView::ShiftedSlice { .. }, _) | (_, ArgView::ShiftedSlice { .. }) => {
+                for (row, outv) in out.iter_mut().enumerate() {
+                    *outv = eval(x.get(row), y.get(row));
+                }
+            }
             (ArgView::Slice(x_s), ArgView::Slice(y_s)) => {
                 for (outv, (&xv, &yv)) in out.iter_mut().zip_eq(x_s.iter().zip_eq(y_s)) {
                     *outv = eval(xv, yv);

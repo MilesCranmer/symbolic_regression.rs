@@ -57,6 +57,10 @@ pub fn compile_plan<const D: usize>(nodes: &[PNode], n_features: usize, n_consts
                 assert!(feature < n_features_u16, "Var index out of bounds");
                 stack.push(Src::Var(feature));
             }
+            PNode::Delay { feature, offset } => {
+                assert!(feature < n_features_u16, "Delay feature index out of bounds");
+                stack.push(Src::Delay { feature, offset });
+            }
             PNode::Const { idx } => {
                 assert!(idx < n_consts_u16, "Const index out of bounds");
                 stack.push(Src::Const(idx));

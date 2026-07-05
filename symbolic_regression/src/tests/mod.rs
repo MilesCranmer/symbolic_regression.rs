@@ -4,6 +4,7 @@ mod test_compress_constants;
 mod test_constant_optimization_birth_reset;
 mod test_cost_normalization;
 mod test_count_depth_proptests;
+mod test_delay_warmup;
 mod test_early_stop;
 mod test_equation_search_runs;
 mod test_frequency_in_tournament;

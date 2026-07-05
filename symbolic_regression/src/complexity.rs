@@ -25,6 +25,18 @@ pub(crate) fn compute_custom_complexity_checked<T: Float, const D: usize>(
                     .unwrap_or(options.complexity_of_variables);
                 st.push(c as usize);
             }
+            PNode::Delay { feature, .. } => {
+                let idx = feature as usize;
+                let c = options
+                    .variable_complexities
+                    .as_ref()
+                    .and_then(|v| v.get(idx))
+                    .copied()
+                    .unwrap_or(options.complexity_of_variables);
+                st.push(
+                    c as usize + options.complexity_of_delay as usize + options.complexity_of_delay_offset as usize,
+                );
+            }
             PNode::Const { .. } => st.push(options.complexity_of_constants as usize),
             PNode::Op { arity, op } => {
                 let a = arity as usize;

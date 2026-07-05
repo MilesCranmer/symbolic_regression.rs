@@ -102,6 +102,17 @@ fn resolve_jac_src<'a, T: Float>(
                 }
             }
         },
+        Src::Delay { feature, .. } => match target {
+            JacTarget::Variables => GradRef::Basis(feature as usize),
+            JacTarget::Constants => GradRef::Zero,
+            JacTarget::VariableDir(dir) => {
+                if feature as usize == dir {
+                    GradRef::Basis(0)
+                } else {
+                    GradRef::Zero
+                }
+            }
+        },
         Src::Const(c) => match target {
             JacTarget::Variables | JacTarget::VariableDir(_) => GradRef::Zero,
             JacTarget::Constants => GradRef::Basis(c as usize),
@@ -238,6 +249,33 @@ where
                 JacTarget::Constants => {}
                 JacTarget::VariableDir(dir) => {
                     if f as usize == dir {
+                        out_jac.fill(T::one());
+                    } else {
+                        out_jac.fill(T::zero());
+                    }
+                }
+            }
+        }
+        Src::Delay { feature, offset } => {
+            let start = feature as usize * n_rows;
+            let source = &x_data[start..start + n_rows];
+            let offset = offset as usize;
+            for (row, dst) in out_val.iter_mut().enumerate() {
+                *dst = source[row.saturating_sub(offset)];
+            }
+            match target {
+                JacTarget::Variables => {
+                    for (dir, jac_dir) in out_jac.chunks_mut(n_rows).enumerate() {
+                        if dir == feature as usize {
+                            jac_dir.fill(T::one());
+                        } else {
+                            jac_dir.fill(T::zero());
+                        }
+                    }
+                }
+                JacTarget::Constants => {}
+                JacTarget::VariableDir(dir) => {
+                    if feature as usize == dir {
                         out_jac.fill(T::one());
                     } else {
                         out_jac.fill(T::zero());

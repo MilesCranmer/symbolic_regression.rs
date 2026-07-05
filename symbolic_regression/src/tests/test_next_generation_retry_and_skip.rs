@@ -24,6 +24,7 @@ fn next_generation_fails_constraints_after_retries() {
 
     let weights = MutationWeights {
         mutate_constant: 0.0,
+        mutate_delay_offset: 0.0,
         mutate_operator: 0.0,
         mutate_feature: 0.0,
         swap_operands: 0.0,
@@ -89,6 +90,7 @@ fn reg_evol_cycle_skips_replacement_when_configured() {
     );
     let weights = MutationWeights {
         mutate_constant: 0.0,
+        mutate_delay_offset: 0.0,
         mutate_operator: 0.0,
         mutate_feature: 0.0,
         swap_operands: 0.0,

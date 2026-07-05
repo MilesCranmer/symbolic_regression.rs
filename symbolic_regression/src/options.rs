@@ -30,6 +30,8 @@ macro_rules! sr_mutation_weights_spec {
                 (f64, 0.293, "mw-mutate-operator"),
             mutate_feature:
                 (f64, 0.1, "mw-mutate-feature"),
+            mutate_delay_offset:
+                (f64, 0.1, "mw-mutate-delay-offset"),
             swap_operands:
                 (f64, 0.198, "mw-swap-operands"),
             rotate_tree:
@@ -77,12 +79,20 @@ macro_rules! sr_options_spec {
                     (u16, 1, "complexity-of-constants"),
                 complexity_of_variables:
                     (u16, 1, "complexity-of-variables"),
+                complexity_of_delay:
+                    (u16, 1, "complexity-of-delay"),
+                complexity_of_delay_offset:
+                    (u16, 1, "complexity-of-delay-offset"),
                 maxsize:
                     (usize, 30, "maxsize"),
                 maxdepth:
                     (usize, 30, "maxdepth"),
+                max_delay:
+                    (usize, 0, "max-delay"),
                 warmup_maxsize_by:
                     (f32, 0.0, "warmup-maxsize-by"),
+                delay_probability:
+                    (f64, 0.0, "delay-probability"),
                 parsimony:
                     (f64, 0.0, "parsimony"),
                 adaptive_parsimony_scaling:
