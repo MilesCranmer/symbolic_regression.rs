@@ -21,6 +21,7 @@ struct ArenaNode<const D: usize> {
 #[derive(Clone, Copy)]
 enum ArenaNodeKind<const D: usize> {
     Var(u16),
+    Delay { feature: u16, offset: u16 },
     Const(u16),
     Op { arity: u8, op: u16, children: [usize; D] },
 }
@@ -291,6 +292,7 @@ fn combine_node<T: Float, const D: usize>(
 fn emit_postfix<const D: usize>(id: usize, arena: &[ArenaNode<D>], out: &mut Vec<PNode>) {
     match arena[id].kind {
         ArenaNodeKind::Var(f) => out.push(PNode::Var { feature: f }),
+        ArenaNodeKind::Delay { feature, offset } => out.push(PNode::Delay { feature, offset }),
         ArenaNodeKind::Const(idx) => out.push(PNode::Const { idx }),
         ArenaNodeKind::Op { arity, op, children } => {
             for &cid in children.iter().take(arity as usize) {
@@ -313,6 +315,13 @@ where
                 let id = arena.len();
                 arena.push(ArenaNode {
                     kind: ArenaNodeKind::Var(feature),
+                });
+                st.push(id);
+            }
+            PNode::Delay { feature, offset } => {
+                let id = arena.len();
+                arena.push(ArenaNode {
+                    kind: ArenaNodeKind::Delay { feature, offset },
                 });
                 st.push(id);
             }
@@ -401,7 +410,7 @@ where
 
     for node in expr.nodes.iter().copied() {
         match node {
-            PNode::Var { .. } => {
+            PNode::Var { .. } | PNode::Delay { .. } => {
                 out_nodes.push(node);
                 push_nonconst_frame(&mut stack, out_nodes.len() - 1);
             }

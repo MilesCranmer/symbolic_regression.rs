@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dynamic_expressions::expression::PostfixExpr;
-use dynamic_expressions::{EvalOptions, EvalPlan};
+use dynamic_expressions::{EvalOptions, EvalPlan, node_utils};
 use num_traits::Float;
 #[cfg(target_arch = "wasm32")]
 use web_time::{SystemTime, UNIX_EPOCH};
@@ -68,6 +68,7 @@ impl<T: Float, Ops, const D: usize> Clone for PopMember<T, Ops, D> {
 pub struct Evaluator<T: Float, const D: usize> {
     pub eval_opts: EvalOptions,
     pub yhat: Vec<T>,
+    pub loss_weights: Vec<T>,
     pub scratch: ndarray::Array2<T>,
 }
 
@@ -79,6 +80,7 @@ impl<T: Float, const D: usize> Evaluator<T, D> {
                 early_exit: true,
             },
             yhat: vec![T::zero(); n_rows],
+            loss_weights: vec![T::zero(); n_rows],
             scratch: ndarray::Array2::zeros((0, 0)),
         }
     }
@@ -86,6 +88,9 @@ impl<T: Float, const D: usize> Evaluator<T, D> {
     pub fn ensure_n_rows(&mut self, n_rows: usize) {
         if self.yhat.len() != n_rows {
             self.yhat.resize(n_rows, T::zero());
+        }
+        if self.loss_weights.len() != n_rows {
+            self.loss_weights.resize(n_rows, T::zero());
         }
     }
 }
@@ -146,11 +151,53 @@ where
             return false;
         }
 
-        let loss = options.loss.loss(
-            &evaluator.yhat,
-            dataset.y.as_slice().unwrap(),
-            dataset.weights.as_ref().and_then(|w| w.as_slice()),
-        );
+        let max_delay = node_utils::max_delay(&self.expr.nodes);
+        let loss = if max_delay == 0 {
+            options
+                .loss
+                .loss(&evaluator.yhat, dataset.y.as_slice().unwrap(), dataset.weights_slice())
+        } else if dataset.sequence_ids.is_none() {
+            let valid_start = max_delay.min(dataset.n_rows);
+            if valid_start >= dataset.n_rows {
+                self.loss = T::infinity();
+                self.cost = T::infinity();
+                return false;
+            }
+            let weights = dataset
+                .weights
+                .as_ref()
+                .and_then(|w| w.as_slice())
+                .map(|w| &w[valid_start..]);
+            options.loss.loss(
+                &evaluator.yhat[valid_start..],
+                &dataset.y.as_slice().unwrap()[valid_start..],
+                weights,
+            )
+        } else {
+            if !dataset.has_valid_delay_rows(max_delay) {
+                self.loss = T::infinity();
+                self.cost = T::infinity();
+                return false;
+            }
+            let validity = dynamic_expressions::delay_validity_mask(
+                &self.expr.nodes,
+                dataset.n_rows,
+                dataset.sequence_ids_slice(),
+            );
+            let base_weights = dataset.weights_slice();
+            for (row, valid) in validity.into_iter().enumerate() {
+                evaluator.loss_weights[row] = if valid {
+                    base_weights.map_or_else(T::one, |w| w[row])
+                } else {
+                    T::zero()
+                };
+            }
+            options.loss.loss(
+                &evaluator.yhat,
+                dataset.y.as_slice().unwrap(),
+                Some(&evaluator.loss_weights),
+            )
+        };
         if loss.is_nan() {
             self.loss = loss;
             self.cost = T::nan();

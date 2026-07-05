@@ -5,6 +5,7 @@ use crate::evaluate::EvalOptions;
 #[derive(Copy, Clone, Debug)]
 pub enum SrcRef<'a, T> {
     Slice(&'a [T]),
+    ShiftedSlice { slice: &'a [T], offset: usize },
     Const(T),
 }
 

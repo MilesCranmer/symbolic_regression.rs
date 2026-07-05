@@ -10,7 +10,21 @@ use crate::operator_selection::OperatorsSampling;
 use crate::options::Options;
 use crate::random::{standard_normal, usize_range, usize_range_excl};
 
-fn random_leaf<T: Float>(rng: &mut Rng, n_features: usize, consts: &mut Vec<T>) -> PNode {
+fn random_leaf<T: Float, const D: usize>(
+    rng: &mut Rng,
+    n_features: usize,
+    consts: &mut Vec<T>,
+    options: &Options<T, D>,
+) -> PNode {
+    if n_features > 0 && options.max_delay > 0 && rng.f64() < options.delay_probability {
+        let feature: u16 = usize_range(rng, 0..n_features)
+            .try_into()
+            .unwrap_or_else(|_| panic!("too many features to index in u16"));
+        let offset: u16 = usize_range(rng, 1..options.max_delay + 1)
+            .try_into()
+            .unwrap_or_else(|_| panic!("max_delay too large to index in u16"));
+        return PNode::Delay { feature, offset };
+    }
     if rng.bool() {
         let val_f64: f64 = standard_normal(rng);
         let val = T::from(val_f64).unwrap();
@@ -33,11 +47,12 @@ pub fn random_expr<T: Float, Ops, const D: usize>(
     operators: &Operators<D>,
     n_features: usize,
     target_size: usize,
+    options: &Options<T, D>,
 ) -> PostfixExpr<T, Ops, D> {
     assert!(target_size >= 1);
     let mut nodes: Vec<PNode> = Vec::with_capacity(target_size);
     let mut consts: Vec<T> = Vec::new();
-    nodes.push(random_leaf(rng, n_features, &mut consts));
+    nodes.push(random_leaf(rng, n_features, &mut consts, options));
 
     while nodes.len() < target_size && operators.total_ops_up_to(D.min(target_size - nodes.len())) > 0 {
         let rem = target_size - nodes.len();
@@ -48,13 +63,15 @@ pub fn random_expr<T: Float, Ops, const D: usize>(
         let leaf_positions: Vec<usize> = nodes
             .iter()
             .enumerate()
-            .filter_map(|(i, n)| matches!(n, PNode::Var { .. } | PNode::Const { .. }).then_some(i))
+            .filter_map(|(i, n)| {
+                matches!(n, PNode::Var { .. } | PNode::Delay { .. } | PNode::Const { .. }).then_some(i)
+            })
             .collect();
         let leaf_idx = leaf_positions[usize_range(rng, 0..leaf_positions.len())];
 
         let mut repl: Vec<PNode> = Vec::with_capacity(arity + 1);
         for _ in 0..arity {
-            repl.push(random_leaf(rng, n_features, &mut consts));
+            repl.push(random_leaf(rng, n_features, &mut consts, options));
         }
         repl.push(PNode::Op {
             arity: arity as u8,
@@ -78,6 +95,7 @@ pub fn random_expr_append_ops<T: Float, Ops, const D: usize>(
     n_features: usize,
     n_append_ops: usize,
     max_size: usize,
+    options: &Options<T, D>,
 ) -> PostfixExpr<T, Ops, D> {
     let max_size = max_size.max(1);
     let mut expr = PostfixExpr::<T, Ops, D>::zero();
@@ -98,7 +116,9 @@ pub fn random_expr_append_ops<T: Float, Ops, const D: usize>(
             .nodes
             .iter()
             .enumerate()
-            .filter_map(|(i, n)| matches!(n, PNode::Var { .. } | PNode::Const { .. }).then_some(i))
+            .filter_map(|(i, n)| {
+                matches!(n, PNode::Var { .. } | PNode::Delay { .. } | PNode::Const { .. }).then_some(i)
+            })
             .collect();
         if leaf_positions.is_empty() {
             break;
@@ -107,7 +127,7 @@ pub fn random_expr_append_ops<T: Float, Ops, const D: usize>(
 
         let mut repl: Vec<PNode> = Vec::with_capacity(arity + 1);
         for _ in 0..arity {
-            repl.push(random_leaf(rng, n_features, &mut expr.consts));
+            repl.push(random_leaf(rng, n_features, &mut expr.consts, options));
         }
         repl.push(PNode::Op {
             arity: arity as u8,
@@ -140,7 +160,7 @@ fn var_node_indices(nodes: &[PNode]) -> Vec<usize> {
     nodes
         .iter()
         .enumerate()
-        .filter_map(|(i, n)| matches!(n, PNode::Var { .. }).then_some(i))
+        .filter_map(|(i, n)| matches!(n, PNode::Var { .. } | PNode::Delay { .. }).then_some(i))
         .collect()
 }
 
@@ -225,13 +245,44 @@ pub(crate) fn mutate_feature_in_place<T, Ops, const D: usize>(
         return;
     }
     let node_i = rng.choice(idxs).unwrap();
-    let PNode::Var { ref mut feature } = &mut expr.nodes[node_i] else {
-        unreachable!("expected var node");
+    let feature = match &mut expr.nodes[node_i] {
+        PNode::Var { feature } | PNode::Delay { feature, .. } => feature,
+        _ => unreachable!("expected variable-like node"),
     };
     let old = usize::from(*feature);
     assert!(old < n_features, "feature index out of bounds");
     let new_feature = usize_range_excl(rng, 0..n_features, old);
     *feature = new_feature as u16;
+}
+
+pub(crate) fn mutate_delay_offset_in_place<T, Ops, const D: usize>(
+    rng: &mut Rng,
+    expr: &mut PostfixExpr<T, Ops, D>,
+    max_delay: usize,
+) {
+    if max_delay <= 1 {
+        return;
+    }
+    let idxs: Vec<usize> = expr
+        .nodes
+        .iter()
+        .enumerate()
+        .filter_map(|(i, n)| matches!(n, PNode::Delay { .. }).then_some(i))
+        .collect();
+    if idxs.is_empty() {
+        return;
+    }
+    let node_i = rng.choice(idxs).unwrap();
+    let PNode::Delay { offset, .. } = &mut expr.nodes[node_i] else {
+        unreachable!("expected delay node");
+    };
+    let old = usize::from(*offset);
+    let new_offset = if old <= max_delay {
+        usize_range_excl(rng, 1..max_delay + 1, old)
+    } else {
+        usize_range(rng, 1..max_delay + 1)
+    };
+    *offset = new_offset as u16;
 }
 
 pub(crate) fn is_swappable_op(node: &PNode) -> bool {
@@ -301,7 +352,7 @@ fn subtree_sizes_into(nodes: &[PNode], sizes: &mut Vec<usize>, stack: &mut Vec<u
 
     for (i, n) in nodes.iter().enumerate() {
         match *n {
-            PNode::Var { .. } | PNode::Const { .. } => {
+            PNode::Var { .. } | PNode::Delay { .. } | PNode::Const { .. } => {
                 sizes[i] = 1;
                 stack.push(1);
             }
@@ -499,6 +550,7 @@ pub fn insert_random_op_in_place<T: Float, Ops, const D: usize>(
     expr: &mut PostfixExpr<T, Ops, D>,
     operators: &Operators<D>,
     n_features: usize,
+    options: &Options<T, D>,
 ) -> bool {
     if expr.nodes.is_empty() {
         return false;
@@ -520,7 +572,7 @@ pub fn insert_random_op_in_place<T: Float, Ops, const D: usize>(
         if j == carry_pos {
             new_sub.extend_from_slice(&old_sub);
         } else {
-            new_sub.push(random_leaf(rng, n_features, &mut expr.consts));
+            new_sub.push(random_leaf(rng, n_features, &mut expr.consts, options));
         }
     }
     new_sub.push(PNode::Op {
@@ -537,6 +589,7 @@ pub(crate) fn prepend_random_op_in_place<T: Float, Ops, const D: usize>(
     expr: &mut PostfixExpr<T, Ops, D>,
     operators: &Operators<D>,
     n_features: usize,
+    options: &Options<T, D>,
 ) -> bool {
     if expr.nodes.is_empty() {
         return false;
@@ -554,7 +607,7 @@ pub(crate) fn prepend_random_op_in_place<T: Float, Ops, const D: usize>(
         if j == carry_pos {
             new_nodes.extend_from_slice(&old);
         } else {
-            new_nodes.push(random_leaf(rng, n_features, &mut expr.consts));
+            new_nodes.push(random_leaf(rng, n_features, &mut expr.consts, options));
         }
     }
     new_nodes.push(PNode::Op {
@@ -571,6 +624,7 @@ pub(crate) fn append_random_op_in_place<T: Float, Ops, const D: usize>(
     expr: &mut PostfixExpr<T, Ops, D>,
     operators: &Operators<D>,
     n_features: usize,
+    options: &Options<T, D>,
 ) -> bool {
     if expr.nodes.is_empty() {
         return false;
@@ -583,7 +637,7 @@ pub(crate) fn append_random_op_in_place<T: Float, Ops, const D: usize>(
         .nodes
         .iter()
         .enumerate()
-        .filter_map(|(i, n)| matches!(n, PNode::Var { .. } | PNode::Const { .. }).then_some(i))
+        .filter_map(|(i, n)| matches!(n, PNode::Var { .. } | PNode::Delay { .. } | PNode::Const { .. }).then_some(i))
         .collect();
     if leaf_positions.is_empty() {
         return false;
@@ -595,7 +649,7 @@ pub(crate) fn append_random_op_in_place<T: Float, Ops, const D: usize>(
 
     let mut replace_with: Vec<PNode> = Vec::with_capacity(arity + 1);
     for _ in 0..arity {
-        replace_with.push(random_leaf(rng, n_features, &mut expr.consts));
+        replace_with.push(random_leaf(rng, n_features, &mut expr.consts, options));
     }
     replace_with.push(PNode::Op {
         arity: arity as u8,
@@ -612,11 +666,12 @@ pub(crate) fn add_node_in_place<T: Float, Ops, const D: usize>(
     expr: &mut PostfixExpr<T, Ops, D>,
     operators: &Operators<D>,
     n_features: usize,
+    options: &Options<T, D>,
 ) -> bool {
     if rng.bool() {
-        append_random_op_in_place(rng, expr, operators, n_features)
+        append_random_op_in_place(rng, expr, operators, n_features, options)
     } else {
-        prepend_random_op_in_place(rng, expr, operators, n_features)
+        prepend_random_op_in_place(rng, expr, operators, n_features, options)
     }
 }
 
@@ -680,6 +735,7 @@ pub(crate) fn crossover_trees<T: Clone, Ops, const D: usize>(
                     out.push(PNode::Const { idx: new_idx });
                 }
                 PNode::Var { feature } => out.push(PNode::Var { feature }),
+                PNode::Delay { feature, offset } => out.push(PNode::Delay { feature, offset }),
                 PNode::Op { arity, op } => out.push(PNode::Op { arity, op }),
             }
         }

@@ -22,6 +22,7 @@ pub enum MutationChoice {
     MutateConstant,
     MutateOperator,
     MutateFeature,
+    MutateDelayOffset,
     SwapOperands,
     RotateTree,
     AddNode,
@@ -68,7 +69,7 @@ pub fn condition_mutation_weights<T: Float + AddAssign, Ops, const D: usize>(
         .expr
         .nodes
         .iter()
-        .all(|n| matches!(n, PNode::Var { .. } | PNode::Const { .. }));
+        .all(|n| matches!(n, PNode::Var { .. } | PNode::Delay { .. } | PNode::Const { .. }));
     if tree_is_leaf {
         weights.mutate_operator = 0.0;
         weights.swap_operands = 0.0;
@@ -79,6 +80,9 @@ pub fn condition_mutation_weights<T: Float + AddAssign, Ops, const D: usize>(
             weights.mutate_constant = 0.0;
         } else {
             weights.mutate_feature = 0.0;
+        }
+        if options.max_delay <= 1 || !member.expr.nodes.iter().any(|n| matches!(n, PNode::Delay { .. })) {
+            weights.mutate_delay_offset = 0.0;
         }
         return;
     }
@@ -92,6 +96,10 @@ pub fn condition_mutation_weights<T: Float + AddAssign, Ops, const D: usize>(
 
     if nfeatures <= 1 {
         weights.mutate_feature = 0.0;
+    }
+
+    if options.max_delay <= 1 || !member.expr.nodes.iter().any(|n| matches!(n, PNode::Delay { .. })) {
+        weights.mutate_delay_offset = 0.0;
     }
 
     let complexity = member.complexity;
@@ -110,6 +118,7 @@ pub fn sample_mutation(rng: &mut Rng, weights: &MutationWeights) -> MutationChoi
         (MutationChoice::MutateConstant, weights.mutate_constant),
         (MutationChoice::MutateOperator, weights.mutate_operator),
         (MutationChoice::MutateFeature, weights.mutate_feature),
+        (MutationChoice::MutateDelayOffset, weights.mutate_delay_offset),
         (MutationChoice::SwapOperands, weights.swap_operands),
         (MutationChoice::RotateTree, weights.rotate_tree),
         (MutationChoice::AddNode, weights.add_node),
@@ -175,6 +184,10 @@ impl MutationChoice {
                 mutation_functions::mutate_feature_in_place(rng, &mut expr, n_features);
                 MutationResult::ProposedExpr { expr, evals: 0.0 }
             }
+            MutationChoice::MutateDelayOffset => {
+                mutation_functions::mutate_delay_offset_in_place(rng, &mut expr, options.max_delay);
+                MutationResult::ProposedExpr { expr, evals: 0.0 }
+            }
             MutationChoice::SwapOperands => {
                 let _ = mutation_functions::swap_operands_in_place(rng, &mut expr);
                 MutationResult::ProposedExpr { expr, evals: 0.0 }
@@ -184,11 +197,17 @@ impl MutationChoice {
                 MutationResult::ProposedExpr { expr, evals: 0.0 }
             }
             MutationChoice::AddNode => {
-                let _ = mutation_functions::add_node_in_place(rng, &mut expr, &options.operators, n_features);
+                let _ = mutation_functions::add_node_in_place(rng, &mut expr, &options.operators, n_features, options);
                 MutationResult::ProposedExpr { expr, evals: 0.0 }
             }
             MutationChoice::InsertNode => {
-                let _ = mutation_functions::insert_random_op_in_place(rng, &mut expr, &options.operators, n_features);
+                let _ = mutation_functions::insert_random_op_in_place(
+                    rng,
+                    &mut expr,
+                    &options.operators,
+                    n_features,
+                    options,
+                );
                 MutationResult::ProposedExpr { expr, evals: 0.0 }
             }
             MutationChoice::DeleteNode => {
@@ -220,7 +239,7 @@ impl MutationChoice {
                 // Match SymbolicRegression.jl: sample a *uniform* random size in 1:curmaxsize.
                 let max_size = curmaxsize.max(1).min(options.maxsize.max(1));
                 let target_size = usize_range_inclusive(rng, 1..=max_size);
-                let expr = mutation_functions::random_expr(rng, &options.operators, n_features, target_size);
+                let expr = mutation_functions::random_expr(rng, &options.operators, n_features, target_size, options);
                 MutationResult::ProposedExpr { expr, evals: 0.0 }
             }
             MutationChoice::DoNothing => {

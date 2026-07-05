@@ -111,7 +111,7 @@ fn check_nested_constraints<const D: usize>(nodes: &[PNode], nested: &NestedCons
         let mut out: Vec<u16> = Vec::with_capacity(nodes.len());
         for n in nodes {
             match *n {
-                PNode::Var { .. } | PNode::Const { .. } => {
+                PNode::Var { .. } | PNode::Delay { .. } | PNode::Const { .. } => {
                     st.push(0);
                     out.push(0);
                 }

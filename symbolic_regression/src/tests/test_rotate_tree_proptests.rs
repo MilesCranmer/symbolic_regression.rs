@@ -123,12 +123,14 @@ fn node_multiset(nodes: &[PNode]) -> BTreeMap<(u8, u16, u16), usize> {
     // - Var:   (0, feature, 0)
     // - Const: (1, idx, 0)
     // - Op:    (2, arity, op)
+    // - Delay: (3, feature, offset)
     let mut m: BTreeMap<(u8, u16, u16), usize> = BTreeMap::new();
     for n in nodes {
         let k = match *n {
             PNode::Var { feature } => (0, feature, 0),
             PNode::Const { idx } => (1, idx, 0),
             PNode::Op { arity, op } => (2, arity as u16, op),
+            PNode::Delay { feature, offset } => (3, feature, offset),
         };
         *m.entry(k).or_insert(0) += 1;
     }

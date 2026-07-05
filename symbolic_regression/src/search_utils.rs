@@ -137,6 +137,8 @@ where
     T: Float + AddAssign + num_traits::FromPrimitive + num_traits::ToPrimitive + Display + Send + Sync,
     Ops: dynamic_expressions::OperatorSet<T = T> + Send + Sync,
 {
+    validate_delay_options(options);
+
     let baseline_loss = if options.use_baseline {
         baseline_loss_from_zero_expression::<T, Ops, D>(dataset, options.loss.as_ref())
     } else {
@@ -388,6 +390,8 @@ where
     Ops: dynamic_expressions::OperatorSet<T = T>,
 {
     pub fn new(dataset: Dataset<T>, options: Options<T, D>) -> Self {
+        validate_delay_options(&options);
+
         let baseline_loss = if options.use_baseline {
             baseline_loss_from_zero_expression::<T, Ops, D>(&dataset, options.loss.as_ref())
         } else {
@@ -492,6 +496,14 @@ where
             hall_of_fame: hall,
             best: pools.best,
         }
+    }
+}
+
+fn validate_delay_options<T: Float, const D: usize>(options: &Options<T, D>) {
+    if options.max_delay > 0 && options.batching {
+        panic!(
+            "delay expressions require ordered rows, but batching samples random rows; disable batching or add contiguous sequence-aware batching"
+        );
     }
 }
 
@@ -662,6 +674,7 @@ where
                 dataset.n_features,
                 nlength,
                 options.maxsize,
+                options,
             );
             let mut m = PopMember::from_expr(expr, dataset.n_features, options);
             let _ = m.evaluate(&full_dataset, options, &mut evaluator);
@@ -818,5 +831,34 @@ mod batching_search_tests {
 
         let pop_state = engine.core.pools.pops[0].as_ref().expect("pop exists");
         assert!(pop_state.batch_dataset.is_none());
+    }
+
+    #[test]
+    #[should_panic(expected = "delay expressions require ordered rows")]
+    fn delay_rejects_random_row_batching() {
+        type T = f64;
+        type Ops = BuiltinOpsF64;
+        const D: usize = 3;
+
+        let n_rows = 20;
+        let n_features = 1;
+        let x = Array2::<T>::zeros((n_features, n_rows));
+        let y = Array1::zeros(n_rows);
+        let dataset = Dataset::new(x, y);
+
+        let operators = Ops::from_names::<D, _>(["+", "*"]).expect("valid opset");
+        let options: Options<T, D> = Options {
+            operators,
+            batching: true,
+            max_delay: 3,
+            niterations: 1,
+            ncycles_per_iteration: 1,
+            populations: 1,
+            population_size: 6,
+            progress: false,
+            ..Default::default()
+        };
+
+        let _ = SearchEngine::<T, Ops, D>::new(dataset, options);
     }
 }

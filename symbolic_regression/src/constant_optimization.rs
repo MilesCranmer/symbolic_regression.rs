@@ -1,7 +1,7 @@
 use std::ops::AddAssign;
 
 use dynamic_expressions::utils::ZipEq;
-use dynamic_expressions::{EvalOptions, GradContext, OperatorSet};
+use dynamic_expressions::{EvalOptions, GradContext, OperatorSet, node_utils};
 use fastrand::Rng;
 use num_traits::{Float, FromPrimitive, ToPrimitive};
 
@@ -18,6 +18,7 @@ struct EvalWorkspace<'a, T: Float + AddAssign, const D: usize> {
     grad_ctx: &'a mut GradContext<T, D>,
     eval_opts: EvalOptions,
     dloss_dyhat: Vec<T>,
+    loss_weights: Vec<T>,
 }
 
 impl<'a, T: Float + AddAssign, const D: usize> EvalWorkspace<'a, T, D> {
@@ -39,7 +40,23 @@ impl<'a, T: Float + AddAssign, const D: usize> EvalWorkspace<'a, T, D> {
             grad_ctx,
             eval_opts,
             dloss_dyhat: vec![T::zero(); dataset.n_rows],
+            loss_weights: vec![T::zero(); dataset.n_rows],
         }
+    }
+
+    fn fill_delay_weights(&mut self, max_delay: usize) -> bool {
+        if !self.dataset.has_valid_delay_rows(max_delay) {
+            return false;
+        }
+        let base_weights = self.dataset.weights_slice();
+        for row in 0..self.dataset.n_rows {
+            self.loss_weights[row] = if self.dataset.delay_valid_at(row, max_delay) {
+                base_weights.map_or_else(T::one, |w| w[row])
+            } else {
+                T::zero()
+            };
+        }
+        true
     }
 
     fn loss_only<Ops>(
@@ -62,11 +79,39 @@ impl<'a, T: Float + AddAssign, const D: usize> EvalWorkspace<'a, T, D> {
             return None;
         }
 
-        let loss = self.options.loss.loss(
-            &self.evaluator.yhat,
-            self.dataset.y.as_slice().unwrap(),
-            self.dataset.weights.as_ref().and_then(|w| w.as_slice()),
-        );
+        let max_delay = node_utils::max_delay(&expr.nodes);
+        let loss = if max_delay == 0 {
+            self.options.loss.loss(
+                &self.evaluator.yhat,
+                self.dataset.y.as_slice().unwrap(),
+                self.dataset.weights_slice(),
+            )
+        } else if self.dataset.sequence_ids.is_none() {
+            let valid_start = max_delay.min(self.dataset.n_rows);
+            if valid_start >= self.dataset.n_rows {
+                return None;
+            }
+            let weights = self
+                .dataset
+                .weights
+                .as_ref()
+                .and_then(|w| w.as_slice())
+                .map(|w| &w[valid_start..]);
+            self.options.loss.loss(
+                &self.evaluator.yhat[valid_start..],
+                &self.dataset.y.as_slice().unwrap()[valid_start..],
+                weights,
+            )
+        } else {
+            if !self.fill_delay_weights(max_delay) {
+                return None;
+            }
+            self.options.loss.loss(
+                &self.evaluator.yhat,
+                self.dataset.y.as_slice().unwrap(),
+                Some(&self.loss_weights),
+            )
+        };
         if !loss.is_finite() {
             return None;
         }
@@ -98,21 +143,69 @@ impl<'a, T: Float + AddAssign, const D: usize> EvalWorkspace<'a, T, D> {
             return None;
         }
 
-        let loss = self.options.loss.loss(
-            &yhat,
-            self.dataset.y.as_slice().unwrap(),
-            self.dataset.weights.as_ref().and_then(|w| w.as_slice()),
-        );
+        let max_delay = node_utils::max_delay(&expr.nodes);
+        let loss = if max_delay == 0 {
+            self.options
+                .loss
+                .loss(&yhat, self.dataset.y.as_slice().unwrap(), self.dataset.weights_slice())
+        } else if self.dataset.sequence_ids.is_none() {
+            let valid_start = max_delay.min(self.dataset.n_rows);
+            if valid_start >= self.dataset.n_rows {
+                return None;
+            }
+            let weights = self
+                .dataset
+                .weights
+                .as_ref()
+                .and_then(|w| w.as_slice())
+                .map(|w| &w[valid_start..]);
+            self.options.loss.loss(
+                &yhat[valid_start..],
+                &self.dataset.y.as_slice().unwrap()[valid_start..],
+                weights,
+            )
+        } else {
+            if !self.fill_delay_weights(max_delay) {
+                return None;
+            }
+            self.options
+                .loss
+                .loss(&yhat, self.dataset.y.as_slice().unwrap(), Some(&self.loss_weights))
+        };
         if !loss.is_finite() {
             return None;
         }
 
-        self.options.loss.dloss_dyhat(
-            &yhat,
-            self.dataset.y.as_slice().unwrap(),
-            self.dataset.weights.as_ref().and_then(|w| w.as_slice()),
-            &mut self.dloss_dyhat,
-        );
+        if max_delay == 0 {
+            self.options.loss.dloss_dyhat(
+                &yhat,
+                self.dataset.y.as_slice().unwrap(),
+                self.dataset.weights_slice(),
+                &mut self.dloss_dyhat,
+            );
+        } else if self.dataset.sequence_ids.is_none() {
+            let valid_start = max_delay.min(self.dataset.n_rows);
+            let weights = self
+                .dataset
+                .weights
+                .as_ref()
+                .and_then(|w| w.as_slice())
+                .map(|w| &w[valid_start..]);
+            self.options.loss.dloss_dyhat(
+                &yhat[valid_start..],
+                &self.dataset.y.as_slice().unwrap()[valid_start..],
+                weights,
+                &mut self.dloss_dyhat[valid_start..],
+            );
+            self.dloss_dyhat[..valid_start].fill(T::zero());
+        } else {
+            self.options.loss.dloss_dyhat(
+                &yhat,
+                self.dataset.y.as_slice().unwrap(),
+                Some(&self.loss_weights),
+                &mut self.dloss_dyhat,
+            );
+        }
 
         for (ci, gout) in grad_out.iter_mut().enumerate() {
             if ci >= n_params {
